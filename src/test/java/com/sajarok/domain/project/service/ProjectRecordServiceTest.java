@@ -3,6 +3,7 @@ package com.sajarok.domain.project.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -41,6 +42,40 @@ class ProjectRecordServiceTest {
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(ErrorCode.NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("delete: 내 기록이면 지운다")
+  void delete_ownRecord_deletes() {
+    when(projectRecordRepository.findUserIdById(10L)).thenReturn(Optional.of(1L));
+
+    projectRecordService.delete(1L, 10L);
+
+    verify(projectRecordRepository).deleteById(10L);
+  }
+
+  @Test
+  @DisplayName("delete: 남의 기록이면 NOT_FOUND이고 아무것도 지우지 않는다")
+  void delete_othersRecord_throwsNotFoundAndDeletesNothing() {
+    when(projectRecordRepository.findUserIdById(10L)).thenReturn(Optional.of(2L));
+
+    assertThatThrownBy(() -> projectRecordService.delete(1L, 10L))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verify(projectRecordRepository, never()).deleteById(anyLong());
+  }
+
+  @Test
+  @DisplayName("delete: 없는 기록이면 NOT_FOUND이고 아무것도 지우지 않는다")
+  void delete_missingRecord_throwsNotFoundAndDeletesNothing() {
+    when(projectRecordRepository.findUserIdById(999L)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> projectRecordService.delete(1L, 999L))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verify(projectRecordRepository, never()).deleteById(anyLong());
   }
 
   @Test
