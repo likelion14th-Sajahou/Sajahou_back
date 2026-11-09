@@ -10,10 +10,14 @@ import com.sajarok.domain.project.dto.ProjectListResponse.ProjectSummary;
 import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
 import com.sajarok.domain.project.entity.ProjectStatus;
+import com.sajarok.domain.project.repository.ProjectName;
 import com.sajarok.domain.project.repository.ProjectRecordRepository;
 import com.sajarok.domain.project.repository.ProjectRepository;
 import com.sajarok.domain.project.repository.RecordStats;
+import com.sajarok.global.exception.BusinessException;
+import com.sajarok.global.exception.ErrorCode;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -75,6 +79,22 @@ public class ProjectService {
         filter(projects, ProjectStatus.DONE).stream()
             .map(p -> new DoneTile(p.getId(), p.getName(), recordCount(stats, p)))
             .toList());
+  }
+
+  /** 프로젝트 주인 회원 ID. 다른 도메인이 소유 확인에 쓴다. 없으면 NOT_FOUND. */
+  public Long getOwnerId(Long projectId) {
+    return projectRepository
+        .findUserIdById(projectId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+  }
+
+  /** 프로젝트 ID → 이름. 없는 ID는 결과에서 빠진다. */
+  public Map<Long, String> names(Collection<Long> projectIds) {
+    if (projectIds == null || projectIds.isEmpty()) {
+      return Map.of();
+    }
+    return projectRepository.findNamesByIdIn(projectIds).stream()
+        .collect(Collectors.toMap(ProjectName::projectId, ProjectName::name));
   }
 
   /** 프로젝트들의 저장된 기록 통계를 쿼리 한 번으로 가져온다. */

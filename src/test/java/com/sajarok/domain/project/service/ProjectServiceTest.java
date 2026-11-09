@@ -1,6 +1,7 @@
 package com.sajarok.domain.project.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.never;
@@ -18,12 +19,17 @@ import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
 import com.sajarok.domain.project.entity.ProjectRole;
 import com.sajarok.domain.project.entity.ProjectStatus;
+import com.sajarok.domain.project.repository.ProjectName;
 import com.sajarok.domain.project.repository.ProjectRecordRepository;
 import com.sajarok.domain.project.repository.ProjectRepository;
 import com.sajarok.domain.project.repository.RecordStats;
+import com.sajarok.global.exception.BusinessException;
+import com.sajarok.global.exception.ErrorCode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -113,6 +119,30 @@ class ProjectServiceTest {
     assertThat(tiles.inProgressProjects())
         .containsExactly(new InProgressTile(3L, "사자록", 5, LocalDate.of(2026, 11, 4)));
     assertThat(tiles.doneProjects()).containsExactly(new DoneTile(1L, "아이디어톤", 8));
+  }
+
+  @Test
+  @DisplayName("getOwnerId: 프로젝트가 있으면 주인 회원 ID를, 없으면 NOT_FOUND를 준다")
+  void getOwnerId_returnsOwnerOrThrowsNotFound() {
+    when(projectRepository.findUserIdById(3L)).thenReturn(Optional.of(1L));
+    when(projectRepository.findUserIdById(999L)).thenReturn(Optional.empty());
+
+    assertThat(projectService.getOwnerId(3L)).isEqualTo(1L);
+    assertThatThrownBy(() -> projectService.getOwnerId(999L))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("names: 프로젝트 ID → 이름 Map을 주고, 빈 목록이면 쿼리 없이 빈 Map을 준다")
+  void names_returnsIdToNameMap() {
+    when(projectRepository.findNamesByIdIn(List.of(3L, 1L)))
+        .thenReturn(List.of(new ProjectName(3L, "사자록"), new ProjectName(1L, "아이디어톤")));
+
+    assertThat(projectService.names(List.of(3L, 1L))).isEqualTo(Map.of(3L, "사자록", 1L, "아이디어톤"));
+    assertThat(projectService.names(List.of())).isEmpty();
+    verify(projectRepository).findNamesByIdIn(anyCollection());
   }
 
   /** 테스트용 프로젝트. id와 상태는 DB나 엔티티 메서드가 정하므로 테스트에서는 직접 넣는다. */
