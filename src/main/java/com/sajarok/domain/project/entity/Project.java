@@ -1,17 +1,13 @@
 package com.sajarok.domain.project.entity;
 
-import com.sajarok.domain.user.entity.User;
 import com.sajarok.global.entity.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -33,9 +29,9 @@ public class Project extends BaseTimeEntity {
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
 
-  @ManyToOne(fetch = FetchType.LAZY, optional = false)
-  @JoinColumn(name = "user_id", nullable = false)
-  private User user;
+  /** 회원 ID. 팀 인터페이스 규칙에 따라 User 엔티티와 연관관계를 맺지 않고 ID로만 참조한다. */
+  @Column(name = "user_id", nullable = false)
+  private Long userId;
 
   @Column(nullable = false, length = 100)
   private String name;
@@ -58,8 +54,8 @@ public class Project extends BaseTimeEntity {
   private LocalDateTime portfolioSavedAt;
 
   @Builder
-  private Project(User user, String name, String subtitle, List<ProjectRole> roles) {
-    this.user = user;
+  private Project(Long userId, String name, String subtitle, List<ProjectRole> roles) {
+    this.userId = userId;
     this.name = name;
     this.subtitle = subtitle;
     this.roles = roles == null ? new ArrayList<>() : new ArrayList<>(roles);
