@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: sajarok
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/sajarok?serverTimezone=Asia/Seoul}
+    username: ${DB_USERNAME:sajarok}
+    password: ${DB_PASSWORD:sajarok}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
