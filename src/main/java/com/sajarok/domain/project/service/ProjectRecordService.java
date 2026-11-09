@@ -47,7 +47,7 @@ public class ProjectRecordService {
     // TODO(첨부 담당): AttachmentService가 생기면 호출한다. owner 형태는 아직 정해지지 않았다. S3 파일까지 지운다.
     // attachmentService.deleteAll(owner);
 
-    // TODO(AI 질문 담당): AiQuestionService가 생기면 호출한다. owner 형태는 아직 정해지지 않았다.
+    // TODO(회고 담당): AiQuestionService가 생기면 호출한다. owner 형태는 아직 정해지지 않았다.
     // aiQuestionService.deleteAll(owner);
 
     projectRecordRepository.deleteById(recordId);
