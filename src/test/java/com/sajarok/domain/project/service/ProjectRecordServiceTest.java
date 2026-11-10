@@ -44,6 +44,7 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -489,5 +490,68 @@ class ProjectRecordServiceTest {
     order.verify(storyCardService).deleteByRecord(77L);
     order.verify(aiQuestionService).deleteAll(QuestionOwner.projectRecord(77L));
     verify(projectRecordRepository, never()).deleteById(anyLong());
+  }
+
+  private static final LocalDateTime CUTOFF = LocalDateTime.of(2026, 11, 9, 12, 0);
+
+  private ProjectRecord recordAt(ProjectRecordStatus status, LocalDateTime createdAt) {
+    ProjectRecord record = ProjectRecord.builder().project(myProject()).status(status).build();
+    ReflectionTestUtils.setField(record, "id", 77L);
+    ReflectionTestUtils.setField(record, "createdAt", createdAt);
+    return record;
+  }
+
+  @Test
+  @DisplayName("DRAFT 정리: 지울 ID는 DRAFT만, 최대 limit개로 조회한다")
+  void findExpiredDraftIds_queriesDraftWithLimit() {
+    when(projectRecordRepository.findIdsByStatusAndCreatedAtBefore(
+            ProjectRecordStatus.DRAFT, CUTOFF, PageRequest.of(0, 100)))
+        .thenReturn(List.of(5L, 6L));
+
+    assertThat(projectRecordService.findExpiredDraftIds(CUTOFF, 100)).containsExactly(5L, 6L);
+  }
+
+  @Test
+  @DisplayName("DRAFT 정리: 오래된 DRAFT면 카드 → AI 질문 → 기록 순서로 지운다")
+  void deleteExpiredDraft_oldDraft_deletesChildrenThenRecord() {
+    ProjectRecord record = recordAt(ProjectRecordStatus.DRAFT, CUTOFF.minusMinutes(1));
+    when(projectRecordRepository.findById(77L)).thenReturn(Optional.of(record));
+
+    assertThat(projectRecordService.deleteExpiredDraft(77L, CUTOFF)).isTrue();
+
+    InOrder order = inOrder(storyCardService, aiQuestionService, projectRecordRepository);
+    order.verify(storyCardService).deleteByRecord(77L);
+    order.verify(aiQuestionService).deleteAll(QuestionOwner.projectRecord(77L));
+    order.verify(projectRecordRepository).delete(record);
+  }
+
+  @Test
+  @DisplayName("DRAFT 정리: 목록을 읽은 뒤 SAVED로 바뀐 기록은 지우지 않는다")
+  void deleteExpiredDraft_becameSaved_skips() {
+    when(projectRecordRepository.findById(77L))
+        .thenReturn(Optional.of(recordAt(ProjectRecordStatus.SAVED, CUTOFF.minusDays(1))));
+
+    assertThat(projectRecordService.deleteExpiredDraft(77L, CUTOFF)).isFalse();
+    verifyNoInteractions(storyCardService, aiQuestionService);
+    verify(projectRecordRepository, never()).delete(any(ProjectRecord.class));
+  }
+
+  @Test
+  @DisplayName("DRAFT 정리: 기준 시각보다 늦게 만든 DRAFT는 지우지 않는다")
+  void deleteExpiredDraft_notExpired_skips() {
+    when(projectRecordRepository.findById(77L))
+        .thenReturn(Optional.of(recordAt(ProjectRecordStatus.DRAFT, CUTOFF)));
+
+    assertThat(projectRecordService.deleteExpiredDraft(77L, CUTOFF)).isFalse();
+    verifyNoInteractions(storyCardService, aiQuestionService);
+  }
+
+  @Test
+  @DisplayName("DRAFT 정리: 이미 지워진 기록은 건너뛴다")
+  void deleteExpiredDraft_missing_skips() {
+    when(projectRecordRepository.findById(77L)).thenReturn(Optional.empty());
+
+    assertThat(projectRecordService.deleteExpiredDraft(77L, CUTOFF)).isFalse();
+    verifyNoInteractions(storyCardService, aiQuestionService);
   }
 }
