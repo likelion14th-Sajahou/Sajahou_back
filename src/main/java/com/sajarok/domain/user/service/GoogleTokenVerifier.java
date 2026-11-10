@@ -15,7 +15,7 @@ public class GoogleTokenVerifier {
 
   private final GoogleIdTokenVerifier verifier;
 
-  public GoogleTokenVerifier(@Value("${GOOGLE_CLIENT_ID}") String clientId) {
+  public GoogleTokenVerifier(@Value("${auth.google.client-id}") String clientId) {
     this.verifier =
         new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), GsonFactory.getDefaultInstance())
             .setAudience(List.of(clientId))
