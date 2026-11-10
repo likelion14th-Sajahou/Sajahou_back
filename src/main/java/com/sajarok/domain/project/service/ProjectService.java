@@ -5,15 +5,19 @@ import com.sajarok.domain.project.dto.HomeProjectTiles.DoneTile;
 import com.sajarok.domain.project.dto.HomeProjectTiles.InProgressTile;
 import com.sajarok.domain.project.dto.ProjectCreateRequest;
 import com.sajarok.domain.project.dto.ProjectCreateResponse;
+import com.sajarok.domain.project.dto.ProjectDetailResponse;
 import com.sajarok.domain.project.dto.ProjectListResponse;
 import com.sajarok.domain.project.dto.ProjectListResponse.ProjectSummary;
 import com.sajarok.domain.project.entity.Project;
+import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
 import com.sajarok.domain.project.entity.ProjectStatus;
 import com.sajarok.domain.project.repository.ProjectName;
 import com.sajarok.domain.project.repository.ProjectRecordRepository;
 import com.sajarok.domain.project.repository.ProjectRepository;
 import com.sajarok.domain.project.repository.RecordStats;
+import com.sajarok.domain.storycard.dto.RecordCardInfo;
+import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.time.LocalDate;
@@ -33,6 +37,7 @@ public class ProjectService {
 
   private final ProjectRepository projectRepository;
   private final ProjectRecordRepository projectRecordRepository;
+  private final StoryCardService storyCardService;
 
   /** 25번: 프로젝트를 만든다. 같은 역할을 여러 번 보내면 하나로 줄인다. 상태는 진행 중(IN_PROGRESS)으로 시작한다. */
   @Transactional
@@ -63,6 +68,34 @@ public class ProjectService {
     return new ProjectListResponse(
         filter(projects, ProjectStatus.IN_PROGRESS).stream().map(toSummary).toList(),
         filter(projects, ProjectStatus.DONE).stream().map(toSummary).toList());
+  }
+
+  /**
+   * 26번: 프로젝트 상세. 남의 프로젝트거나 없으면 NOT_FOUND.
+   *
+   * <p>저장된(SAVED) 기록을 쿼리 한 번으로 읽고, 기록 수·마지막 날짜는 그 목록에서 계산한다(통계 쿼리를 따로 부르지 않음).
+   */
+  public ProjectDetailResponse getDetail(Long userId, Long projectId) {
+    Project project =
+        projectRepository
+            .findByIdAndUserId(projectId, userId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+    List<ProjectRecord> records =
+        projectRecordRepository.findAllByProjectIdAndStatusOrderByCreatedAtDescIdDesc(
+            projectId, ProjectRecordStatus.SAVED);
+
+    // 카드 ID를 기록마다 따로 묻지 않고 한 번에 가져온다 (N+1 방지).
+    Map<Long, Long> cardIds = Map.of();
+    if (!records.isEmpty()) {
+      cardIds =
+          storyCardService
+              .findByRecordIds(records.stream().map(ProjectRecord::getId).toList())
+              .values()
+              .stream()
+              .filter(card -> card.cardId() != null)
+              .collect(Collectors.toMap(RecordCardInfo::recordId, RecordCardInfo::cardId));
+    }
+    return ProjectDetailResponse.of(project, records, cardIds);
   }
 
   /** 홈(4번)용 프로젝트 타일. 홈 담당이 부른다. */
