@@ -2,6 +2,8 @@ package com.sajarok.domain.project.controller;
 
 import com.sajarok.domain.project.dto.FinishQuestionsRequest;
 import com.sajarok.domain.project.dto.FinishQuestionsResponse;
+import com.sajarok.domain.project.dto.PortfolioDraftRequest;
+import com.sajarok.domain.project.dto.PortfolioDraftResponse;
 import com.sajarok.domain.project.dto.PortfolioSaveRequest;
 import com.sajarok.domain.project.dto.PortfolioSaveResponse;
 import com.sajarok.domain.project.service.ProjectFinishService;
@@ -36,6 +38,15 @@ public class ProjectFinishController {
             currentUserProvider.getUserId(), projectId, request.recordIds());
     return ResponseEntity.status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
         .body(ApiResponse.ok(result.response()));
+  }
+
+  /** 33번: 포트폴리오 초안 (AI 호출, 최대 50초). 저장하지 않음. 명세대로 200. */
+  @PostMapping("/draft")
+  public ApiResponse<PortfolioDraftResponse> draft(
+      @PathVariable Long projectId, @Valid @RequestBody PortfolioDraftRequest request) {
+    return ApiResponse.ok(
+        projectFinishService.createPortfolioDraft(
+            currentUserProvider.getUserId(), projectId, request.recordIds()));
   }
 
   /** 34번: 포트폴리오 저장 (처음이면 프로젝트 완료) */
