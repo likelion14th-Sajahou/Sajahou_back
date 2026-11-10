@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class DemoLoginService {
 
-  private static final String DEMO_PROVIDER_ID = "demo-sajarok";
+  static final String DEMO_PROVIDER_ID = "demo-sajarok";
 
   private final UserRepository userRepository;
   private final boolean enabled;
