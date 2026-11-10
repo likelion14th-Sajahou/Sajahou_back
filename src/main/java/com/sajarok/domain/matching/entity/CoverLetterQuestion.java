@@ -61,4 +61,17 @@ public class CoverLetterQuestion extends BaseTimeEntity {
     this.content = content;
     this.charLimit = charLimit;
   }
+
+  /** 직접 고친 답을 저장한다. null이면 AI 초안으로 되돌린다. charLimit을 넘어도 막지 않는다. */
+  public void editAnswer(String editedAnswer) {
+    this.editedAnswer = editedAnswer;
+  }
+
+  /** 지금 보이는 답의 글자 수. 고친 답이 있으면 그 글자 수, 없으면 초안 글자 수. */
+  public int charCount() {
+    if (editedAnswer != null) {
+      return AnswerDraft.countChars(editedAnswer);
+    }
+    return answerDraft == null ? 0 : answerDraft.charCount();
+  }
 }
