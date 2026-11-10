@@ -2,9 +2,11 @@ package com.sajarok.domain.project.repository;
 
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -46,6 +48,15 @@ public interface ProjectRecordRepository extends JpaRepository<ProjectRecord, Lo
   @Modifying(flushAutomatically = true)
   @Query("delete from ProjectRecord r where r.project.id = :projectId")
   int deleteAllByProjectId(@Param("projectId") Long projectId);
+
+  /** cutoff보다 먼저 만든 해당 상태 기록의 ID를 오래된 순으로 읽는다 (DRAFT 정리 스케줄러용, 개수는 pageable로 자름). */
+  @Query(
+      "select r.id from ProjectRecord r where r.status = :status and r.createdAt < :cutoff"
+          + " order by r.createdAt, r.id")
+  List<Long> findIdsByStatusAndCreatedAtBefore(
+      @Param("status") ProjectRecordStatus status,
+      @Param("cutoff") LocalDateTime cutoff,
+      Pageable pageable);
 
   /** 내 기록만 찾는다. 없거나 남의 기록이면 비어 있다 (둘 다 NOT_FOUND로 처리). */
   @Query("select r from ProjectRecord r where r.id = :recordId and r.project.userId = :userId")

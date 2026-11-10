@@ -17,6 +17,7 @@ import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -24,6 +25,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -259,6 +261,29 @@ public class ProjectRecordService {
 
     // TODO(첨부 담당): AttachmentService가 생기면 호출한다. S3 파일까지 지운다.
     // attachmentService.deleteAll(owner);
+  }
+
+  /** cutoff보다 먼저 만든 DRAFT 기록 ID를 오래된 순으로 최대 limit개 (DRAFT 정리 스케줄러용). */
+  public List<Long> findExpiredDraftIds(LocalDateTime cutoff, int limit) {
+    return projectRecordRepository.findIdsByStatusAndCreatedAtBefore(
+        ProjectRecordStatus.DRAFT, cutoff, PageRequest.of(0, limit));
+  }
+
+  /**
+   * 오래된 DRAFT 기록 하나를 딸린 것과 함께 지운다 (DRAFT 정리 스케줄러용). 지웠으면 true.
+   *
+   * <p>목록을 읽은 뒤 사용자가 저장(SAVED)했거나 이미 지웠을 수 있어서, 트랜잭션 안에서 다시 읽어 아직 DRAFT이고 cutoff보다 오래됐을 때만 지운다.
+   * 기록마다 따로 트랜잭션이라 하나가 실패해도 다른 기록 삭제는 되돌리지 않는다.
+   */
+  @Transactional
+  public boolean deleteExpiredDraft(Long recordId, LocalDateTime cutoff) {
+    ProjectRecord record = projectRecordRepository.findById(recordId).orElse(null);
+    if (record == null || !record.isDraft() || !record.getCreatedAt().isBefore(cutoff)) {
+      return false;
+    }
+    deleteChildren(recordId);
+    projectRecordRepository.delete(record);
+    return true;
   }
 
   /** 기록 ID → 기록 날짜(만든 날). 없는 ID는 결과에서 빠진다. */
