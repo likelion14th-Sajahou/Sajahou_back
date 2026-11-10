@@ -85,4 +85,14 @@ public class AiQuestion extends BaseTimeEntity {
     this.answer = null;
     this.status = QuestionStatus.SKIPPED;
   }
+
+  public QuestionOwner owner() {
+    if (retrospectiveId != null) {
+      return QuestionOwner.retrospective(retrospectiveId);
+    }
+    if (projectId != null) {
+      return QuestionOwner.project(projectId);
+    }
+    return QuestionOwner.projectRecord(projectRecordId);
+  }
 }
