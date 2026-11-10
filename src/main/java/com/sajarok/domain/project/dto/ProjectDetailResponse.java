@@ -5,10 +5,10 @@ import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRole;
 import com.sajarok.domain.project.entity.ProjectStatus;
+import com.sajarok.global.time.KstTime;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 
@@ -24,8 +24,6 @@ public record ProjectDetailResponse(
     LocalDate lastRecordDate,
     Portfolio portfolio,
     List<RecordItem> records) {
-
-  private static final ZoneOffset KST = ZoneOffset.ofHours(9);
 
   /** 저장한 포트폴리오 (H-21). 없으면 portfolio 자체가 null. */
   public record Portfolio(String markdown, OffsetDateTime savedAt) {}
@@ -88,19 +86,11 @@ public record ProjectDetailResponse(
     if (project.getPortfolioMarkdown() == null) {
       return null;
     }
-    return new Portfolio(project.getPortfolioMarkdown(), toKst(project.getPortfolioSavedAt()));
+    return new Portfolio(
+        project.getPortfolioMarkdown(), KstTime.toOffset(project.getPortfolioSavedAt()));
   }
 
   private static LocalDate toDate(LocalDateTime dateTime) {
     return dateTime == null ? null : dateTime.toLocalDate();
-  }
-
-  /**
-   * DB 시각(DATETIME, 시간대 없음)을 한국 시각(+09:00)으로 바꾼다. DB 시각이 한국 시간이라고 가정한다(JVM 시간대는 팀과 정하는 중).
-   *
-   * <p>TODO(팀 논의): 다른 API도 쓰게 되면 global 공통 유틸로 옮긴다.
-   */
-  private static OffsetDateTime toKst(LocalDateTime dateTime) {
-    return dateTime == null ? null : dateTime.atOffset(KST);
   }
 }
