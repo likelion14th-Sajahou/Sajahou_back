@@ -105,6 +105,22 @@ class ProjectRecordControllerTest {
   }
 
   @Test
+  @DisplayName("27번: 역량 태그가 1~3개가 아니면 400 COMPETENCY_LIMIT")
+  void create_competencyLimit_returns400() throws Exception {
+    when(projectRecordService.create(eq(1L), eq(3L), any(ProjectRecordCreateRequest.class)))
+        .thenThrow(new BusinessException(ErrorCode.COMPETENCY_LIMIT));
+
+    mockMvc
+        .perform(
+            post("/api/v1/projects/3/records")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"aiOrganize\": false, \"did\": \"한 일\", \"competencyIds\": []}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value("COMPETENCY_LIMIT"));
+  }
+
+  @Test
   @DisplayName("27번: aiOrganize가 없으면 400 VALIDATION_ERROR와 aiOrganize 칸의 이유(fields)를 준다")
   void create_missingAiOrganize_returns400WithFields() throws Exception {
     mockMvc

@@ -12,6 +12,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import java.util.stream.Stream;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -82,5 +83,11 @@ public class ProjectRecord extends BaseTimeEntity {
   /** 메모에 공백 말고 글자가 있는지. */
   public boolean hasMemo() {
     return memo != null && !memo.isBlank();
+  }
+
+  /** 다섯 칸(한 일·고민·선택·결과·다음) 중 하나라도 공백 말고 글자가 있는지. 메모는 세지 않는다. */
+  public boolean hasFiveFields() {
+    return Stream.of(did, concern, decision, result, nextStep)
+        .anyMatch(v -> v != null && !v.isBlank());
   }
 }

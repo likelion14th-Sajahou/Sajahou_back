@@ -41,10 +41,63 @@ public class ProjectRecordService {
             .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 
     if (!request.aiOrganize()) {
-      // TODO(27번 2차 커밋): '이대로 저장'(SAVED + 카드 생성) 경로. 이 브랜치에서 PR 전에 채운다.
-      throw new BusinessException(ErrorCode.INVALID_STATE);
+      return createSaved(userId, project, request);
     }
     return createDraft(project, request);
+  }
+
+  /**
+   * '이대로 저장': 바로 SAVED로 저장하고 프로젝트 카드 1장을 만든다.
+   *
+   * <p>확인(자료·역량)은 저장 전에 한다. 카드 생성까지 한 트랜잭션이라, 카드가 실패하면 기록 저장도 되돌아간다(SAVED인데 카드 없는 기록이 생기지 않음).
+   */
+  private ProjectRecordResponse createSaved(
+      Long userId, Project project, ProjectRecordCreateRequest request) {
+    ProjectRecord record =
+        ProjectRecord.builder()
+            .project(project)
+            .status(ProjectRecordStatus.SAVED)
+            .memo(request.memo())
+            .did(request.did())
+            .concern(request.concern())
+            .decision(request.decision())
+            .result(request.result())
+            .nextStep(request.nextStep())
+            .aiOrganized(false)
+            .build();
+    // H-14: 5칸과 첨부가 모두 비어 있으면 저장하지 않음 (메모는 조건에 없음)
+    if (!record.hasFiveFields() && !request.hasAttachments()) {
+      throw new BusinessException(ErrorCode.EMPTY_MATERIAL);
+    }
+    List<Long> competencyIds = validateCompetencyCount(request.competencyIds());
+    // TODO(역량 담당): CompetencyService가 생기면 위 개수 확인을 지우고 이 호출로 바꾼다 (1~3·내 파트 확인).
+    // competencyService.validate(userId, competencyIds, true);
+
+    ProjectRecord saved = projectRecordRepository.save(record);
+
+    // TODO(첨부 담당): AttachmentService가 생기면 호출한다. 내 첨부인지 확인도 여기서 된다.
+    // attachmentService.connect(userId, request.attachmentIds(), owner);
+
+    // TODO(카드 담당): StoryCardService가 생기면(PR #7) 호출하고 cardId를 응답에 넣는다.
+    // Long cardId = storyCardService.createFromRecord(
+    //     new RecordCardSource(userId, project.getId(), saved.getId(), ...), competencyIds);
+
+    // TODO(역량 담당): competencyService.names(competencyIds)로 태그 이름을 채운다.
+    return ProjectRecordResponse.of(saved, null, List.of(), List.of());
+  }
+
+  /**
+   * 역량 태그 개수 확인(1~3개, 같은 ID는 1개로 셈). 아니면 COMPETENCY_LIMIT.
+   *
+   * <p>CompetencyService.validate가 생기기 전까지 쓰는 임시 확인이다. 한 규칙이 두 곳에 있으면 어긋나므로, 생기면 지운다.
+   */
+  private List<Long> validateCompetencyCount(List<Long> competencyIds) {
+    List<Long> distinct =
+        competencyIds == null ? List.of() : competencyIds.stream().distinct().toList();
+    if (distinct.isEmpty() || distinct.size() > 3) {
+      throw new BusinessException(ErrorCode.COMPETENCY_LIMIT);
+    }
+    return distinct;
   }
 
   /**

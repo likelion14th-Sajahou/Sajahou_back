@@ -89,6 +89,67 @@ class ProjectRecordServiceTest {
     verify(projectRecordRepository, never()).save(any());
   }
 
+  private static ProjectRecordCreateRequest savedRequest(
+      String memo, String did, List<Long> attachmentIds, List<Long> competencyIds) {
+    return new ProjectRecordCreateRequest(
+        false, memo, did, null, null, null, null, attachmentIds, competencyIds);
+  }
+
+  @Test
+  @DisplayName("27번 SAVED: 5칸 중 하나만 있어도 SAVED·AI 정리 전으로 저장한다")
+  void create_saved_oneField_saves() {
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
+    when(projectRecordRepository.save(any(ProjectRecord.class))).thenAnswer(i -> i.getArgument(0));
+
+    ProjectRecordResponse response =
+        projectRecordService.create(1L, 3L, savedRequest(null, "API 명세 확정", null, List.of(3L)));
+
+    assertThat(response.status()).isEqualTo(ProjectRecordStatus.SAVED);
+    assertThat(response.isAiOrganized()).isFalse();
+    assertThat(response.did()).isEqualTo("API 명세 확정");
+  }
+
+  @Test
+  @DisplayName("27번 SAVED: 5칸이 비어도 첨부가 있으면 저장하고, 같은 역량 ID가 겹쳐도 1개로 센다")
+  void create_saved_attachmentOnly_andDuplicateCompetency_saves() {
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
+    when(projectRecordRepository.save(any(ProjectRecord.class))).thenAnswer(i -> i.getArgument(0));
+
+    ProjectRecordResponse response =
+        projectRecordService.create(
+            1L, 3L, savedRequest(null, null, List.of(601L), List.of(3L, 3L, 21L, 21L)));
+
+    assertThat(response.status()).isEqualTo(ProjectRecordStatus.SAVED);
+  }
+
+  @Test
+  @DisplayName("27번 SAVED: 메모만 있으면 EMPTY_MATERIAL이고 저장하지 않는다 (H-14: 메모는 조건에 없음)")
+  void create_saved_memoOnly_throwsEmptyMaterial() {
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
+
+    assertThatThrownBy(
+            () -> projectRecordService.create(1L, 3L, savedRequest("메모", " ", null, List.of(3L))))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.EMPTY_MATERIAL);
+    verify(projectRecordRepository, never()).save(any());
+  }
+
+  @Test
+  @DisplayName("27번 SAVED: 역량이 없거나 0개·4개면 COMPETENCY_LIMIT이고 저장하지 않는다")
+  void create_saved_competencyCountOutOfRange_throwsCompetencyLimit() {
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
+
+    for (List<Long> ids : java.util.Arrays.asList(null, List.<Long>of(), List.of(1L, 2L, 3L, 4L))) {
+      assertThatThrownBy(
+              () -> projectRecordService.create(1L, 3L, savedRequest(null, "한 일", null, ids)))
+          .isInstanceOf(BusinessException.class)
+          .extracting("errorCode")
+          .isEqualTo(ErrorCode.COMPETENCY_LIMIT);
+    }
+    verify(projectRecordRepository, never()).save(any());
+  }
+
   @Test
   @DisplayName("27번: 남의 프로젝트거나 없으면 NOT_FOUND이고 저장하지 않는다")
   void create_notMyProject_throwsNotFound() {
