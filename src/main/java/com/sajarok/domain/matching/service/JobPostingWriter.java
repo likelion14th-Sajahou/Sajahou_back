@@ -107,7 +107,7 @@ public class JobPostingWriter {
    */
   @Transactional
   public void discard(Long jobPostingId) {
-    // TODO(첨부 담당): 이 공고에 연결한 첨부를 어떻게 할지(S3까지 삭제 / 연결만 해제) 정해지면 여기서 처리한다.
+    // TODO(첨부 담당): AI 실패 시 첨부는 공고 연결만 해제, 첨부 데이터·S3 파일은 유지 (첨부 담당 의견, PR #19)
     coverLetterQuestionRepository.deleteAllByJobPostingId(jobPostingId);
     jobPostingRepository.deleteById(jobPostingId);
   }
