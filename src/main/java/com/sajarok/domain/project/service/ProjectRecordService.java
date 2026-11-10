@@ -243,14 +243,22 @@ public class ProjectRecordService {
       throw new BusinessException(ErrorCode.NOT_FOUND);
     }
 
-    // 자식부터 지운다: 카드 → AI 질문 → 첨부 → 기록
+    deleteChildren(recordId);
+    projectRecordRepository.deleteById(recordId);
+  }
+
+  /**
+   * 기록에 딸린 것을 지운다: 카드 → AI 질문 → 첨부 순서. 기록 행은 지우지 않는다(부르는 쪽이 지움). 29·44번이 같이 쓴다.
+   *
+   * <p>소유 확인을 하지 않는다. 부르는 쪽(29번 delete, 44번 ProjectService.delete)이 먼저 확인한다.
+   */
+  @Transactional
+  public void deleteChildren(Long recordId) {
     storyCardService.deleteByRecord(recordId);
     aiQuestionService.deleteAll(QuestionOwner.projectRecord(recordId));
 
     // TODO(첨부 담당): AttachmentService가 생기면 호출한다. S3 파일까지 지운다.
     // attachmentService.deleteAll(owner);
-
-    projectRecordRepository.deleteById(recordId);
   }
 
   /** 기록 ID → 기록 날짜(만든 날). 없는 ID는 결과에서 빠진다. */

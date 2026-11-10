@@ -3,10 +3,14 @@ package com.sajarok.domain.project.controller;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -233,6 +237,27 @@ class ProjectControllerTest {
         .andExpect(jsonPath("$.data.records.length()").value(0));
     mockMvc
         .perform(get("/api/v1/projects/999"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+  }
+
+  @Test
+  @DisplayName("44번: 지우면 204와 빈 본문을 주고, 로그인 회원 ID로 서비스를 부른다")
+  void delete_returns204WithEmptyBody() throws Exception {
+    mockMvc
+        .perform(delete("/api/v1/projects/3"))
+        .andExpect(status().isNoContent())
+        .andExpect(content().string(""));
+    verify(projectService).delete(1L, 3L);
+  }
+
+  @Test
+  @DisplayName("44번: 남의 프로젝트거나 없으면 404 NOT_FOUND")
+  void delete_notMine_returns404() throws Exception {
+    doThrow(new BusinessException(ErrorCode.NOT_FOUND)).when(projectService).delete(1L, 3L);
+
+    mockMvc
+        .perform(delete("/api/v1/projects/3"))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
   }
