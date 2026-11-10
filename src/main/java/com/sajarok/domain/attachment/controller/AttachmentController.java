@@ -53,11 +53,14 @@ public class AttachmentController {
     var attachment =
         attachmentService.registerFile(currentUserProvider.getUserId(), file, category);
     String name = attachment.getName().toLowerCase(Locale.ROOT);
-    boolean pdf = name.endsWith(".pdf");
-    boolean text = name.endsWith(".txt") || name.endsWith(".md");
+    String extension = name.substring(name.lastIndexOf('.') + 1);
 
-    if (pdf || text) {
-      extractionJob.run(attachment.getId(), attachment.getS3Key(), pdf);
+    switch (extension) {
+      case "txt", "md", "pdf", "zip" ->
+          extractionJob.run(attachment.getId(), attachment.getS3Key(), extension);
+      default -> {
+        // 현재 추출을 지원하는 형식만 작업을 시작한다.
+      }
     }
 
     return ResponseEntity.status(HttpStatus.CREATED)
