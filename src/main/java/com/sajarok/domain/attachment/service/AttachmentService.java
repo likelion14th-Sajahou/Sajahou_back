@@ -206,9 +206,16 @@ public class AttachmentService {
     }
 
     int dot = name.lastIndexOf('.');
-    if (dot < 0 || !ALLOWED_EXTENSIONS.contains(name.substring(dot + 1).toLowerCase(Locale.ROOT))) {
+    String extension = dot < 0 ? "" : name.substring(dot + 1).toLowerCase(Locale.ROOT);
+    if (!ALLOWED_EXTENSIONS.contains(extension)) {
       throw new BusinessException(ErrorCode.VALIDATION_ERROR, "지원하지 않는 파일 형식이에요.");
     }
+
+    ExtractStatus initialStatus =
+        switch (extension) {
+          case "png", "jpg" -> ExtractStatus.SKIPPED;
+          default -> ExtractStatus.PENDING;
+        };
 
     String key = "attachments/" + UUID.randomUUID();
     String contentType = file.getContentType();
@@ -217,7 +224,8 @@ public class AttachmentService {
     }
 
     Attachment attachment =
-        Attachment.createFile(userId, category, name, key, contentType, file.getSize());
+        Attachment.createFile(
+            userId, category, name, key, contentType, file.getSize(), initialStatus);
 
     boolean uploaded = false;
     try (var input = file.getInputStream()) {

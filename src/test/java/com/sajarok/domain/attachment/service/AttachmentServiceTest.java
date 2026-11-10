@@ -18,6 +18,8 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -76,5 +78,17 @@ class AttachmentServiceTest {
   private static MockMultipartFile textFile() {
     return new MockMultipartFile(
         "file", "meeting.txt", "text/plain", "회의 메모".getBytes(StandardCharsets.UTF_8));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"capture.png", "capture.jpg"})
+  void registerFile_savesImagesAsSkipped(String filename) {
+    var file = new MockMultipartFile("file", filename, "application/octet-stream", new byte[] {1});
+    when(attachmentRepository.save(any(Attachment.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    Attachment saved = attachmentService.registerFile(2L, file, AttachmentCategory.DESIGN);
+
+    assertThat(saved.getExtractStatus()).isEqualTo(ExtractStatus.SKIPPED);
   }
 }

@@ -117,7 +117,8 @@ public class Attachment extends BaseTimeEntity {
       String name,
       String s3Key,
       String contentType,
-      long sizeBytes) {
+      long sizeBytes,
+      ExtractStatus initialStatus) {
     Attachment attachment = new Attachment();
     attachment.userId = userId;
     attachment.type = AttachmentType.FILE;
@@ -126,7 +127,7 @@ public class Attachment extends BaseTimeEntity {
     attachment.s3Key = s3Key;
     attachment.contentType = contentType;
     attachment.sizeBytes = sizeBytes;
-    attachment.extractStatus = ExtractStatus.PENDING;
+    attachment.extractStatus = initialStatus;
     return attachment;
   }
 }
