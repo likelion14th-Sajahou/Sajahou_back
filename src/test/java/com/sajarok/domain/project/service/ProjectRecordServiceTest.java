@@ -479,4 +479,15 @@ class ProjectRecordServiceTest {
     verifyNoInteractions(storyCardService, aiQuestionService);
     verify(projectRecordRepository, never()).deleteById(anyLong());
   }
+
+  @Test
+  @DisplayName("deleteChildren(29·44번 공통): 카드 → AI 질문 순서로 지우고, 기록 행은 지우지 않는다")
+  void deleteChildren_deletesCardThenQuestions() {
+    projectRecordService.deleteChildren(77L);
+
+    InOrder order = inOrder(storyCardService, aiQuestionService);
+    order.verify(storyCardService).deleteByRecord(77L);
+    order.verify(aiQuestionService).deleteAll(QuestionOwner.projectRecord(77L));
+    verify(projectRecordRepository, never()).deleteById(anyLong());
+  }
 }

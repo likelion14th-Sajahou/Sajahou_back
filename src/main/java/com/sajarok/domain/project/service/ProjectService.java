@@ -16,6 +16,8 @@ import com.sajarok.domain.project.repository.ProjectName;
 import com.sajarok.domain.project.repository.ProjectRecordRepository;
 import com.sajarok.domain.project.repository.ProjectRepository;
 import com.sajarok.domain.project.repository.RecordStats;
+import com.sajarok.domain.question.entity.QuestionOwner;
+import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.domain.storycard.dto.RecordCardInfo;
 import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
@@ -38,6 +40,8 @@ public class ProjectService {
   private final ProjectRepository projectRepository;
   private final ProjectRecordRepository projectRecordRepository;
   private final StoryCardService storyCardService;
+  private final ProjectRecordService projectRecordService;
+  private final AiQuestionService aiQuestionService;
 
   /** 25번: 프로젝트를 만든다. 같은 역할을 여러 번 보내면 하나로 줄인다. 상태는 진행 중(IN_PROGRESS)으로 시작한다. */
   @Transactional
@@ -96,6 +100,31 @@ public class ProjectService {
               .collect(Collectors.toMap(RecordCardInfo::recordId, RecordCardInfo::cardId));
     }
     return ProjectDetailResponse.of(project, records, cardIds);
+  }
+
+  /**
+   * 44번: 프로젝트 삭제. 기록(DRAFT 포함)·프로젝트 카드·마치기 질문·포트폴리오·첨부를 모두 지운다 (H-25). 남의 프로젝트거나 없으면 NOT_FOUND.
+   *
+   * <p>한 트랜잭션에서 자식부터 지운다(FK에 막히지 않게): 기록별 카드·AI 질문 → 마치기 질문 → 기록 행 → 프로젝트. 카드 삭제는 인터페이스에 기록 단위 메서드만
+   * 있어서 기록마다 부른다.
+   */
+  @Transactional
+  public void delete(Long userId, Long projectId) {
+    Project project =
+        projectRepository
+            .findByIdAndUserId(projectId, userId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+
+    projectRecordRepository
+        .findIdsByProjectId(projectId)
+        .forEach(projectRecordService::deleteChildren);
+    aiQuestionService.deleteAll(QuestionOwner.project(projectId));
+
+    // TODO(첨부 담당): 프로젝트 산출물 첨부를 지운다. S3 파일까지.
+    // attachmentService.deleteAll(owner);
+
+    projectRecordRepository.deleteAllByProjectId(projectId);
+    projectRepository.delete(project);
   }
 
   /** 홈(4번)용 프로젝트 타일. 홈 담당이 부른다. */
