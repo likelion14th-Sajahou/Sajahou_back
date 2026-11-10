@@ -9,6 +9,28 @@ import java.util.List;
  */
 public record AnswerDraft(List<Segment> segments, List<Source> sources) {
 
+  private static final String TEXT = "text";
+
+  /** 초안 글자 수. 문장(text) 조각만 세고 빈칸(blank)은 세지 않는다. */
+  public int charCount() {
+    if (segments == null) {
+      return 0;
+    }
+    return segments.stream()
+        .filter(segment -> TEXT.equals(segment.type()))
+        .mapToInt(segment -> countChars(segment.text()))
+        .sum();
+  }
+
+  /**
+   * 자소서 글자 수 기준. 공백·줄바꿈을 포함하고, 이모지 등도 눈에 보이는 1글자로 센다 (FE도 같은 기준).
+   *
+   * <p>String.length()는 이모지를 2로 세므로 코드 포인트 수를 쓴다.
+   */
+  public static int countChars(String text) {
+    return text == null ? 0 : text.codePointCount(0, text.length());
+  }
+
   /**
    * 초안 조각 하나.
    *
