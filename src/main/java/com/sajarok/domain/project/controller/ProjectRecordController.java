@@ -3,6 +3,7 @@ package com.sajarok.domain.project.controller;
 import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
 import com.sajarok.domain.project.dto.ProjectRecordResponse;
 import com.sajarok.domain.project.dto.ProjectRecordUpdateRequest;
+import com.sajarok.domain.project.dto.RecordOrganizeResponse;
 import com.sajarok.domain.project.service.ProjectRecordService;
 import com.sajarok.global.auth.CurrentUserProvider;
 import com.sajarok.global.response.ApiResponse;
@@ -54,5 +55,11 @@ public class ProjectRecordController {
   public ResponseEntity<Void> delete(@PathVariable Long recordId) {
     projectRecordService.delete(currentUserProvider.getUserId(), recordId);
     return ResponseEntity.noContent().build();
+  }
+
+  /** 31번: 기록 AI 정리 (AI 호출, 최대 50초). 제안만 주고 저장하지 않음. */
+  @PostMapping("/project-records/{recordId}/organize")
+  public ApiResponse<RecordOrganizeResponse> organize(@PathVariable Long recordId) {
+    return ApiResponse.ok(projectRecordService.organize(currentUserProvider.getUserId(), recordId));
   }
 }
