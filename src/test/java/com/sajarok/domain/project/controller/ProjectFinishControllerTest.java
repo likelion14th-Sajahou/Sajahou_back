@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.sajarok.domain.project.dto.FinishQuestionsResponse;
+import com.sajarok.domain.project.dto.PortfolioDraftResponse;
 import com.sajarok.domain.project.dto.PortfolioSaveResponse;
 import com.sajarok.domain.project.dto.ProjectDetailResponse.Portfolio;
 import com.sajarok.domain.project.entity.ProjectStatus;
@@ -35,7 +36,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * 컨트롤러 테스트: 32·34번 응답 JSON이 API 명세(필드 이름, 날짜 형식, 상태 코드, 에러 형식)와 같은지 확인한다.
+ * 컨트롤러 테스트: 32·33·34번 응답 JSON이 API 명세(필드 이름, 날짜 형식, 상태 코드, 에러 형식)와 같은지 확인한다.
  *
  * <p>보안 설정은 인증 담당 몫이라 테스트에서만 보안 필터를 끈다 (addFilters = false).
  */
@@ -194,6 +195,66 @@ class ProjectFinishControllerTest {
         .andExpect(jsonPath("$.error.code").value("AI_FAILED"));
     mockMvc
         .perform(post(QUESTIONS_URL).contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().isGatewayTimeout())
+        .andExpect(jsonPath("$.error.code").value("AI_TIMEOUT"));
+  }
+
+  private static final String DRAFT_URL = "/api/v1/projects/3/finish/draft";
+
+  @Test
+  @DisplayName("33번: 200과 명세 필드(markdown, blanks 배열)를 준다")
+  void draft_returns200WithSpecFields() throws Exception {
+    when(projectFinishService.createPortfolioDraft(1L, 3L, List.of(71L, 74L, 77L)))
+        .thenReturn(
+            new PortfolioDraftResponse(
+                "# 사자록 · 멋사 회고 서비스\n\n## 내 역할\n(내 역할을 한 문장으로 더해 주세요)\n",
+                List.of("role", "artifact")));
+
+    mockMvc
+        .perform(
+            post(DRAFT_URL)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"recordIds\": [71, 74, 77]}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(
+            jsonPath("$.data.markdown")
+                .value("# 사자록 · 멋사 회고 서비스\n\n## 내 역할\n(내 역할을 한 문장으로 더해 주세요)\n"))
+        .andExpect(jsonPath("$.data.blanks[0]").value("role"))
+        .andExpect(jsonPath("$.data.blanks[1]").value("artifact"));
+  }
+
+  @Test
+  @DisplayName("33번: recordIds가 비면 400 VALIDATION_ERROR와 recordIds 칸의 이유를 주고, 서비스를 부르지 않는다")
+  void draft_emptyRecordIds_returns400() throws Exception {
+    mockMvc
+        .perform(
+            post(DRAFT_URL).contentType(MediaType.APPLICATION_JSON).content("{\"recordIds\": []}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+        .andExpect(jsonPath("$.error.fields[0].field").value("recordIds"));
+    verifyNoInteractions(projectFinishService);
+  }
+
+  @Test
+  @DisplayName("33번: 남의 프로젝트·기록이면 404 NOT_FOUND, AI 실패는 502 AI_FAILED, 시간 초과는 504 AI_TIMEOUT")
+  void draft_errors_mapToSpecStatuses() throws Exception {
+    when(projectFinishService.createPortfolioDraft(anyLong(), anyLong(), anyList()))
+        .thenThrow(new BusinessException(ErrorCode.NOT_FOUND))
+        .thenThrow(new BusinessException(ErrorCode.AI_FAILED))
+        .thenThrow(new BusinessException(ErrorCode.AI_TIMEOUT));
+    String body = "{\"recordIds\": [71]}";
+
+    mockMvc
+        .perform(post(DRAFT_URL).contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+    mockMvc
+        .perform(post(DRAFT_URL).contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().isBadGateway())
+        .andExpect(jsonPath("$.error.code").value("AI_FAILED"));
+    mockMvc
+        .perform(post(DRAFT_URL).contentType(MediaType.APPLICATION_JSON).content(body))
         .andExpect(status().isGatewayTimeout())
         .andExpect(jsonPath("$.error.code").value("AI_TIMEOUT"));
   }

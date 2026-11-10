@@ -1,6 +1,7 @@
 package com.sajarok.domain.project.service;
 
 import com.sajarok.domain.project.dto.FinishQuestionsResponse;
+import com.sajarok.domain.project.dto.PortfolioDraftResponse;
 import com.sajarok.domain.project.dto.PortfolioSaveResponse;
 import com.sajarok.domain.project.dto.ProjectDetailResponse.Portfolio;
 import com.sajarok.domain.project.entity.Project;
@@ -11,6 +12,7 @@ import com.sajarok.domain.project.repository.ProjectRepository;
 import com.sajarok.domain.question.dto.NewQuestion;
 import com.sajarok.domain.question.dto.QuestionView;
 import com.sajarok.domain.question.entity.QuestionOwner;
+import com.sajarok.domain.question.entity.QuestionStatus;
 import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
@@ -18,6 +20,7 @@ import com.sajarok.global.time.KstTime;
 import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -32,6 +35,7 @@ public class ProjectFinishService {
   private final AiQuestionService aiQuestionService;
   private final ProjectRecordRepository projectRecordRepository;
   private final FinishQuestionGenerator finishQuestionGenerator;
+  private final PortfolioDrafter portfolioDrafter;
 
   /** 32번 결과. created가 true면 새로 만듦(201), false면 진행 중이던 질문을 그대로 돌려줌(200). */
   public record FinishQuestions(boolean created, FinishQuestionsResponse response) {}
@@ -57,6 +61,39 @@ public class ProjectFinishService {
       return new FinishQuestions(false, FinishQuestionsResponse.from(existing));
     }
 
+    List<ProjectRecord> records = selectedRecords(projectId, recordIds);
+    List<NewQuestion> questions = finishQuestionGenerator.generate(project, records);
+    return new FinishQuestions(
+        true, FinishQuestionsResponse.from(aiQuestionService.replace(owner, questions)));
+  }
+
+  /**
+   * 33번: 포트폴리오 초안. 고른 기록과 답한(ANSWERED) 마치기 질문으로 만든다. 저장하지 않는다(저장은 34번).
+   *
+   * <p>DB에 쓰는 것이 없어서 AI가 실패해도 지울 것이 없다. 마치기 답을 고치고 다시 부르면 고친 답으로 다시 만든다(H-18). AI는 항목별 본문만 주고,
+   * 제목·기간·역할 줄·항목 제목·빈칸 문구·blanks는 PortfolioMarkdown이 붙인다.
+   *
+   * <p>남의 프로젝트거나 없으면 NOT_FOUND. 고른 기록 중 이 프로젝트의 SAVED 기록이 아닌 것이 있어도 NOT_FOUND.
+   */
+  public PortfolioDraftResponse createPortfolioDraft(
+      Long userId, Long projectId, List<Long> recordIds) {
+    // TODO(AI 모듈 담당): AiLock이 생기면 프로젝트 단위로 감싼다. 진행 중이면 AI_IN_PROGRESS.
+    Project project =
+        projectRepository
+            .findByIdAndUserId(projectId, userId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+    List<ProjectRecord> records = selectedRecords(projectId, recordIds);
+    List<QuestionView> answered =
+        aiQuestionService.findAll(QuestionOwner.project(projectId)).stream()
+            .filter(q -> q.status() == QuestionStatus.ANSWERED)
+            .toList();
+
+    Map<String, String> bodies = portfolioDrafter.draft(project, records, answered);
+    return PortfolioMarkdown.build(project, bodies);
+  }
+
+  /** 고른 기록(중복은 합침)을 만든 순서로. 이 프로젝트의 SAVED 기록이 아닌 ID가 있으면 NOT_FOUND. 32·33번이 같이 쓴다. */
+  private List<ProjectRecord> selectedRecords(Long projectId, List<Long> recordIds) {
     Set<Long> ids = new LinkedHashSet<>(recordIds);
     List<ProjectRecord> records =
         projectRecordRepository.findAllByProjectIdAndStatusAndIdInOrderByCreatedAtAscIdAsc(
@@ -64,10 +101,7 @@ public class ProjectFinishService {
     if (records.size() != ids.size()) {
       throw new BusinessException(ErrorCode.NOT_FOUND);
     }
-
-    List<NewQuestion> questions = finishQuestionGenerator.generate(project, records);
-    return new FinishQuestions(
-        true, FinishQuestionsResponse.from(aiQuestionService.replace(owner, questions)));
+    return records;
   }
 
   /**
