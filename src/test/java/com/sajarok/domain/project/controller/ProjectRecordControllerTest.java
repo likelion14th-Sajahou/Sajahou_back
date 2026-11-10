@@ -17,6 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
 import com.sajarok.domain.project.dto.ProjectRecordResponse;
 import com.sajarok.domain.project.dto.ProjectRecordUpdateRequest;
+import com.sajarok.domain.project.dto.RecordOrganizeResponse;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
 import com.sajarok.domain.project.service.ProjectRecordService;
 import com.sajarok.global.auth.CurrentUserProvider;
@@ -217,5 +218,62 @@ class ProjectRecordControllerTest {
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
     verifyNoInteractions(projectRecordService);
+  }
+
+  private static final String ORGANIZE_URL = "/api/v1/project-records/77/organize";
+
+  @Test
+  @DisplayName(
+      "31번: 200과 명세 필드(did·concern·decision·result·nextStep, 빈 칸은 null로 나옴, blanks 배열)를 준다")
+  void organize_returns200WithSpecFields() throws Exception {
+    when(projectRecordService.organize(1L, 77L))
+        .thenReturn(
+            new RecordOrganizeResponse(
+                "시안 2개를 준비해 비교 발표했다.",
+                "개발자와 홈 화면 구성 의견이 달랐다.",
+                null,
+                "물어본 3명 모두 두 번째 시안이 '할 일이 바로 보인다'고 했다.",
+                null,
+                List.of("decision", "nextStep")));
+
+    mockMvc
+        .perform(post(ORGANIZE_URL))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.did").value("시안 2개를 준비해 비교 발표했다."))
+        .andExpect(jsonPath("$.data.concern").value("개발자와 홈 화면 구성 의견이 달랐다."))
+        .andExpect(jsonPath("$.data.decision").value(nullValue()))
+        .andExpect(jsonPath("$.data.result").value("물어본 3명 모두 두 번째 시안이 '할 일이 바로 보인다'고 했다."))
+        .andExpect(jsonPath("$.data.nextStep").value(nullValue()))
+        .andExpect(jsonPath("$.data.blanks[0]").value("decision"))
+        .andExpect(jsonPath("$.data.blanks[1]").value("nextStep"));
+  }
+
+  @Test
+  @DisplayName(
+      "31번: 자료 없음 400 EMPTY_MATERIAL, 남의 기록 404 NOT_FOUND, AI 실패 502 AI_FAILED, 시간 초과 504 AI_TIMEOUT")
+  void organize_errors_mapToSpecStatuses() throws Exception {
+    when(projectRecordService.organize(1L, 77L))
+        .thenThrow(new BusinessException(ErrorCode.EMPTY_MATERIAL))
+        .thenThrow(new BusinessException(ErrorCode.NOT_FOUND))
+        .thenThrow(new BusinessException(ErrorCode.AI_FAILED))
+        .thenThrow(new BusinessException(ErrorCode.AI_TIMEOUT));
+
+    mockMvc
+        .perform(post(ORGANIZE_URL))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("EMPTY_MATERIAL"));
+    mockMvc
+        .perform(post(ORGANIZE_URL))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+    mockMvc
+        .perform(post(ORGANIZE_URL))
+        .andExpect(status().isBadGateway())
+        .andExpect(jsonPath("$.error.code").value("AI_FAILED"));
+    mockMvc
+        .perform(post(ORGANIZE_URL))
+        .andExpect(status().isGatewayTimeout())
+        .andExpect(jsonPath("$.error.code").value("AI_TIMEOUT"));
   }
 }
