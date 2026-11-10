@@ -31,6 +31,10 @@ public interface ProjectRecordRepository extends JpaRepository<ProjectRecord, Lo
   List<ProjectRecord> findAllByProjectIdAndStatusOrderByCreatedAtDescIdDesc(
       Long projectId, ProjectRecordStatus status);
 
+  /** 프로젝트의 기록 중 고른 ID만, 만든 순서대로 (32번: 이 프로젝트의 해당 상태 기록이 아닌 ID는 결과에서 빠짐). */
+  List<ProjectRecord> findAllByProjectIdAndStatusAndIdInOrderByCreatedAtAscIdAsc(
+      Long projectId, ProjectRecordStatus status, Collection<Long> ids);
+
   /** 프로젝트의 기록 ID만 읽는다 (DRAFT 포함, 내용은 읽지 않음). 44번 삭제용. */
   @Query("select r.id from ProjectRecord r where r.project.id = :projectId")
   List<Long> findIdsByProjectId(@Param("projectId") Long projectId);
