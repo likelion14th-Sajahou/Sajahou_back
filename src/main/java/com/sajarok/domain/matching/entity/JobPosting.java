@@ -69,4 +69,9 @@ public class JobPosting extends BaseTimeEntity {
     this.preferredQualification = preferredQualification;
     this.companyInfo = companyInfo;
   }
+
+  /** 36번: AI가 찾은(검증한) 역량을 저장한다. 하나도 못 찾았으면 빈 배열(분석 전 NULL과 구분). */
+  public void applyCompetencies(List<PostingCompetency> competencies) {
+    this.competencies = List.copyOf(competencies);
+  }
 }

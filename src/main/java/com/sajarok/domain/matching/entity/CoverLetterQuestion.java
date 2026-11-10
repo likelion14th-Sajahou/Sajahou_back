@@ -62,6 +62,11 @@ public class CoverLetterQuestion extends BaseTimeEntity {
     this.charLimit = charLimit;
   }
 
+  /** 36번: AI가 고른(검증한) 문항별 역량 ID를 저장한다. 없으면 빈 배열(분석 전 NULL과 구분). */
+  public void applyCompetencyIds(List<Long> competencyIds) {
+    this.competencyIds = List.copyOf(competencyIds);
+  }
+
   /** 직접 고친 답을 저장한다. null이면 AI 초안으로 되돌린다. charLimit을 넘어도 막지 않는다. */
   public void editAnswer(String editedAnswer) {
     this.editedAnswer = editedAnswer;
