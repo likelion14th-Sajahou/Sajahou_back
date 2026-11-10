@@ -36,6 +36,7 @@ dependencies {
 	implementation 'com.google.api-client:google-api-client:2.9.2'
 	implementation platform('software.amazon.awssdk:bom:2.57.4')
 	implementation 'software.amazon.awssdk:s3'
+	implementation 'org.apache.pdfbox:pdfbox:3.0.8'
 }
 
 tasks.named('test') {
