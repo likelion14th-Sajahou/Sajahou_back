@@ -54,8 +54,9 @@ public class AttachmentController {
         attachmentService.registerFile(currentUserProvider.getUserId(), file, category);
     String name = attachment.getName().toLowerCase(Locale.ROOT);
     boolean pdf = name.endsWith(".pdf");
+    boolean text = name.endsWith(".txt") || name.endsWith(".md");
 
-    if (pdf || name.endsWith(".txt")) {
+    if (pdf || text) {
       extractionJob.run(attachment.getId(), attachment.getS3Key(), pdf);
     }
 
