@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 
 /** 26번 프로젝트 상세 응답. records는 저장된(SAVED) 기록만, 최신순. */
 public record ProjectDetailResponse(
@@ -45,11 +46,11 @@ public record ProjectDetailResponse(
       // TODO(첨부 담당): 첨부 응답 DTO가 생기면 그 타입으로 바꾼다. 지금은 빈 배열.
       List<Object> attachments) {
 
-    // TODO(카드·역량·첨부 담당): findByRecordIds·names·findAll로 한 번에 가져와 채운다 (기록마다 부르지 않음, N+1 방지).
-    public static RecordItem from(ProjectRecord record) {
+    // TODO(역량·첨부 담당): names·findAll로 한 번에 가져와 채운다 (기록마다 부르지 않음, N+1 방지).
+    public static RecordItem of(ProjectRecord record, Long cardId) {
       return new RecordItem(
           record.getId(),
-          null,
+          cardId,
           toDate(record.getCreatedAt()),
           record.isAiOrganized(),
           record.getMemo(),
@@ -63,8 +64,13 @@ public record ProjectDetailResponse(
     }
   }
 
-  public static ProjectDetailResponse of(Project project, List<ProjectRecord> savedRecords) {
-    List<RecordItem> records = savedRecords.stream().map(RecordItem::from).toList();
+  /**
+   * @param cardIds 기록 ID → 카드 ID (카드 담당 findByRecordIds로 한 번에 가져온 것). 없으면 cardId는 null.
+   */
+  public static ProjectDetailResponse of(
+      Project project, List<ProjectRecord> savedRecords, Map<Long, Long> cardIds) {
+    List<RecordItem> records =
+        savedRecords.stream().map(r -> RecordItem.of(r, cardIds.get(r.getId()))).toList();
     return new ProjectDetailResponse(
         project.getId(),
         project.getName(),

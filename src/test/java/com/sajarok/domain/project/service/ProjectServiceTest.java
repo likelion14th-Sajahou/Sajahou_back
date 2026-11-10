@@ -2,6 +2,7 @@ package com.sajarok.domain.project.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.groups.Tuple.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.never;
@@ -25,6 +26,8 @@ import com.sajarok.domain.project.repository.ProjectName;
 import com.sajarok.domain.project.repository.ProjectRecordRepository;
 import com.sajarok.domain.project.repository.ProjectRepository;
 import com.sajarok.domain.project.repository.RecordStats;
+import com.sajarok.domain.storycard.dto.RecordCardInfo;
+import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.time.LocalDate;
@@ -33,6 +36,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -47,6 +51,7 @@ class ProjectServiceTest {
 
   @Mock private ProjectRepository projectRepository;
   @Mock private ProjectRecordRepository projectRecordRepository;
+  @Mock private StoryCardService storyCardService;
 
   @InjectMocks private ProjectService projectService;
 
@@ -237,5 +242,31 @@ class ProjectServiceTest {
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(ErrorCode.NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("26번: 카드 ID를 기록 ID 전체로 한 번만 묻고(N+1 방지), 기록마다 맞는 cardId를 넣는다")
+  void getDetail_fetchesCardIdsOnce() {
+    Project project = detailProject(null, null);
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(project));
+    when(projectRecordRepository.findAllByProjectIdAndStatusOrderByCreatedAtDescIdDesc(
+            3L, ProjectRecordStatus.SAVED))
+        .thenReturn(
+            List.of(
+                savedRecord(project, 78L, LocalDateTime.of(2026, 11, 4, 9, 0)),
+                savedRecord(project, 77L, LocalDateTime.of(2026, 11, 1, 9, 0))));
+    when(storyCardService.findByRecordIds(List.of(78L, 77L)))
+        .thenReturn(
+            Map.of(
+                78L, new RecordCardInfo(78L, 413L, Set.of()),
+                77L, new RecordCardInfo(77L, 412L, Set.of())));
+
+    ProjectDetailResponse response = projectService.getDetail(1L, 3L);
+
+    verify(storyCardService).findByRecordIds(List.of(78L, 77L));
+    assertThat(response.records())
+        .extracting(
+            ProjectDetailResponse.RecordItem::recordId, ProjectDetailResponse.RecordItem::cardId)
+        .containsExactly(tuple(78L, 413L), tuple(77L, 412L));
   }
 }

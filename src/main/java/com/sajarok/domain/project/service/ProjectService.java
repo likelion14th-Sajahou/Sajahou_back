@@ -9,12 +9,15 @@ import com.sajarok.domain.project.dto.ProjectDetailResponse;
 import com.sajarok.domain.project.dto.ProjectListResponse;
 import com.sajarok.domain.project.dto.ProjectListResponse.ProjectSummary;
 import com.sajarok.domain.project.entity.Project;
+import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
 import com.sajarok.domain.project.entity.ProjectStatus;
 import com.sajarok.domain.project.repository.ProjectName;
 import com.sajarok.domain.project.repository.ProjectRecordRepository;
 import com.sajarok.domain.project.repository.ProjectRepository;
 import com.sajarok.domain.project.repository.RecordStats;
+import com.sajarok.domain.storycard.dto.RecordCardInfo;
+import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.time.LocalDate;
@@ -34,6 +37,7 @@ public class ProjectService {
 
   private final ProjectRepository projectRepository;
   private final ProjectRecordRepository projectRecordRepository;
+  private final StoryCardService storyCardService;
 
   /** 25번: 프로젝트를 만든다. 같은 역할을 여러 번 보내면 하나로 줄인다. 상태는 진행 중(IN_PROGRESS)으로 시작한다. */
   @Transactional
@@ -76,10 +80,22 @@ public class ProjectService {
         projectRepository
             .findByIdAndUserId(projectId, userId)
             .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-    return ProjectDetailResponse.of(
-        project,
+    List<ProjectRecord> records =
         projectRecordRepository.findAllByProjectIdAndStatusOrderByCreatedAtDescIdDesc(
-            projectId, ProjectRecordStatus.SAVED));
+            projectId, ProjectRecordStatus.SAVED);
+
+    // 카드 ID를 기록마다 따로 묻지 않고 한 번에 가져온다 (N+1 방지).
+    Map<Long, Long> cardIds = Map.of();
+    if (!records.isEmpty()) {
+      cardIds =
+          storyCardService
+              .findByRecordIds(records.stream().map(ProjectRecord::getId).toList())
+              .values()
+              .stream()
+              .filter(card -> card.cardId() != null)
+              .collect(Collectors.toMap(RecordCardInfo::recordId, RecordCardInfo::cardId));
+    }
+    return ProjectDetailResponse.of(project, records, cardIds);
   }
 
   /** 홈(4번)용 프로젝트 타일. 홈 담당이 부른다. */

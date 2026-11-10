@@ -5,8 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
@@ -19,6 +23,11 @@ import com.sajarok.domain.project.entity.ProjectRole;
 import com.sajarok.domain.project.repository.ProjectRecordRepository;
 import com.sajarok.domain.project.repository.ProjectRepository;
 import com.sajarok.domain.project.repository.RecordDate;
+import com.sajarok.domain.question.entity.QuestionOwner;
+import com.sajarok.domain.question.service.AiQuestionService;
+import com.sajarok.domain.storycard.dto.RecordCardInfo;
+import com.sajarok.domain.storycard.dto.RecordCardSource;
+import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.time.LocalDate;
@@ -26,18 +35,24 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class ProjectRecordServiceTest {
 
   @Mock private ProjectRecordRepository projectRecordRepository;
   @Mock private ProjectRepository projectRepository;
+  @Mock private StoryCardService storyCardService;
+  @Mock private AiQuestionService aiQuestionService;
 
   @InjectMocks private ProjectRecordService projectRecordService;
 
@@ -368,5 +383,100 @@ class ProjectRecordServiceTest {
   void findDates_emptyInput_returnsEmptyWithoutQuery() {
     assertThat(projectRecordService.findDates(List.of())).isEmpty();
     verify(projectRecordRepository, never()).findDatesByIdIn(anyCollection());
+  }
+
+  // ---- 카드·AI 질문 연결 (PR #7) ----
+
+  @Test
+  @DisplayName("27번 SAVED: 기록 내용과 역량 Set으로 카드를 만들고, 받은 cardId를 응답에 넣는다")
+  void create_saved_createsCardWithSourceAndCompetencies() {
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
+    when(projectRecordRepository.save(any(ProjectRecord.class))).thenAnswer(i -> i.getArgument(0));
+    when(storyCardService.createFromRecord(any(), any())).thenReturn(412L);
+
+    ProjectRecordResponse response =
+        projectRecordService.create(
+            1L, 3L, savedRequest("메모", "API 명세 확정", null, List.of(3L, 21L, 3L)));
+
+    ArgumentCaptor<RecordCardSource> source = ArgumentCaptor.forClass(RecordCardSource.class);
+    verify(storyCardService).createFromRecord(source.capture(), eq(Set.of(3L, 21L)));
+    assertThat(source.getValue().userId()).isEqualTo(1L);
+    assertThat(source.getValue().memo()).isEqualTo("메모");
+    assertThat(source.getValue().did()).isEqualTo("API 명세 확정");
+    assertThat(response.cardId()).isEqualTo(412L);
+  }
+
+  @Test
+  @DisplayName("27번 DRAFT·28번 DRAFT(역량 없음): 카드 서비스를 부르지 않는다")
+  void draftPaths_doNotTouchCards() {
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
+    when(projectRecordRepository.save(any(ProjectRecord.class))).thenAnswer(i -> i.getArgument(0));
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L))
+        .thenReturn(Optional.of(record(ProjectRecordStatus.DRAFT)));
+
+    projectRecordService.create(1L, 3L, draftRequest("메모", null));
+    projectRecordService.update(1L, 77L, update(null, "한 일", null, null, null));
+
+    verifyNoInteractions(storyCardService);
+  }
+
+  @Test
+  @DisplayName("28번 DRAFT→SAVED: 카드를 만들고 받은 cardId를 응답에 넣는다")
+  void update_draftToSaved_createsCard() {
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L))
+        .thenReturn(Optional.of(record(ProjectRecordStatus.DRAFT)));
+    when(storyCardService.createFromRecord(any(), eq(Set.of(3L)))).thenReturn(412L);
+
+    ProjectRecordResponse response =
+        projectRecordService.update(1L, 77L, update(null, null, null, null, List.of(3L)));
+
+    assertThat(response.cardId()).isEqualTo(412L);
+    verify(storyCardService, never()).syncFromRecord(any(), any());
+  }
+
+  @Test
+  @DisplayName("28번 SAVED: 바뀐 memo를 담아 카드에 반영하고, 역량을 안 보내면 null(태그 유지)로 넘긴다")
+  void update_saved_syncsCardWithMemoAndNullCompetencies() {
+    ProjectRecord record = record(ProjectRecordStatus.SAVED);
+    ReflectionTestUtils.setField(record, "id", 77L);
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+    when(storyCardService.findByRecordIds(List.of(77L)))
+        .thenReturn(Map.of(77L, new RecordCardInfo(77L, 412L, Set.of(3L))));
+
+    ProjectRecordResponse response =
+        projectRecordService.update(1L, 77L, update("새 메모", null, null, null, null));
+
+    ArgumentCaptor<RecordCardSource> source = ArgumentCaptor.forClass(RecordCardSource.class);
+    verify(storyCardService).syncFromRecord(source.capture(), isNull());
+    assertThat(source.getValue().memo()).isEqualTo("새 메모");
+    assertThat(source.getValue().did()).isEqualTo("원래 한 일");
+    assertThat(response.cardId()).isEqualTo(412L);
+    verify(storyCardService, never()).createFromRecord(any(), any());
+  }
+
+  @Test
+  @DisplayName("29번: 카드 → AI 질문 → 기록 순서로 지운다 (자식부터, FK에 막히지 않게)")
+  void delete_deletesChildrenFirst() {
+    when(projectRecordRepository.findUserIdById(77L)).thenReturn(Optional.of(1L));
+
+    projectRecordService.delete(1L, 77L);
+
+    InOrder order = inOrder(storyCardService, aiQuestionService, projectRecordRepository);
+    order.verify(storyCardService).deleteByRecord(77L);
+    order.verify(aiQuestionService).deleteAll(QuestionOwner.projectRecord(77L));
+    order.verify(projectRecordRepository).deleteById(77L);
+  }
+
+  @Test
+  @DisplayName("29번: 남의 기록이면 카드·AI 질문·기록 모두 지우지 않는다")
+  void delete_notMine_deletesNothing() {
+    when(projectRecordRepository.findUserIdById(77L)).thenReturn(Optional.of(2L));
+
+    assertThatThrownBy(() -> projectRecordService.delete(1L, 77L))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verifyNoInteractions(storyCardService, aiQuestionService);
+    verify(projectRecordRepository, never()).deleteById(anyLong());
   }
 }

@@ -9,12 +9,19 @@ import com.sajarok.domain.project.entity.ProjectRecordStatus;
 import com.sajarok.domain.project.repository.ProjectRecordRepository;
 import com.sajarok.domain.project.repository.ProjectRepository;
 import com.sajarok.domain.project.repository.RecordDate;
+import com.sajarok.domain.question.entity.QuestionOwner;
+import com.sajarok.domain.question.service.AiQuestionService;
+import com.sajarok.domain.storycard.dto.RecordCardInfo;
+import com.sajarok.domain.storycard.dto.RecordCardSource;
+import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.time.LocalDate;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -27,6 +34,8 @@ public class ProjectRecordService {
 
   private final ProjectRecordRepository projectRecordRepository;
   private final ProjectRepository projectRepository;
+  private final StoryCardService storyCardService;
+  private final AiQuestionService aiQuestionService;
 
   /**
    * 27번: 기록 추가. 마친(DONE) 프로젝트에도 추가할 수 있다 (H-11·H-21: 완료해도 잠기지 않음).
@@ -67,7 +76,7 @@ public class ProjectRecordService {
             .aiOrganized(false)
             .build();
     checkSavedMaterial(record, request.hasAttachments());
-    List<Long> competencyIds = validateCompetencyCount(request.competencyIds());
+    Set<Long> competencyIds = validateCompetencyCount(request.competencyIds());
     // TODO(역량 담당): CompetencyService가 생기면 위 개수 확인을 지우고 이 호출로 바꾼다 (1~3·내 파트 확인).
     // competencyService.validate(userId, competencyIds, true);
 
@@ -76,12 +85,10 @@ public class ProjectRecordService {
     // TODO(첨부 담당): AttachmentService가 생기면 호출한다. 내 첨부인지 확인도 여기서 된다.
     // attachmentService.connect(userId, request.attachmentIds(), owner);
 
-    // TODO(카드 담당): StoryCardService가 생기면(PR #7) 호출하고 cardId를 응답에 넣는다.
-    // Long cardId = storyCardService.createFromRecord(
-    //     new RecordCardSource(userId, project.getId(), saved.getId(), ...), competencyIds);
+    Long cardId = storyCardService.createFromRecord(toCardSource(userId, saved), competencyIds);
 
     // TODO(역량 담당): competencyService.names(competencyIds)로 태그 이름을 채운다.
-    return ProjectRecordResponse.of(saved, null, List.of(), List.of());
+    return ProjectRecordResponse.of(saved, cardId, List.of(), List.of());
   }
 
   /**
@@ -120,25 +127,25 @@ public class ProjectRecordService {
         return ProjectRecordResponse.of(record, null, List.of(), List.of());
       }
       checkSavedMaterial(record, mayHaveAttachments);
-      List<Long> competencyIds = validateCompetencyCount(request.competencyIds());
+      Set<Long> competencyIds = validateCompetencyCount(request.competencyIds());
       // TODO(역량 담당): competencyService.validate(userId, competencyIds, true);
       record.markSaved();
-      // TODO(카드 담당): PR #7이 머지되면 카드를 만들고 cardId를 응답에 넣는다.
-      // Long cardId = storyCardService.createFromRecord(toCardSource(userId, record),
-      // competencyIds);
-      return ProjectRecordResponse.of(record, null, List.of(), List.of());
+      Long cardId = storyCardService.createFromRecord(toCardSource(userId, record), competencyIds);
+      // TODO(역량 담당): competencyService.names(competencyIds)로 태그 이름을 채운다.
+      return ProjectRecordResponse.of(record, cardId, List.of(), List.of());
     }
 
     checkSavedMaterial(record, mayHaveAttachments);
-    List<Long> competencyIds =
+    Set<Long> competencyIds =
         request.competencyIds() == null ? null : validateCompetencyCount(request.competencyIds());
     // TODO(역량 담당): competencyIds가 있으면 competencyService.validate(userId, competencyIds, true);
-    // TODO(카드 담당): PR #7이 머지되면 카드에 반영한다. memo도 source에 담겨 카드 전문에 반영된다.
-    //   competencyIds가 null이면 태그는 그대로.
-    // storyCardService.syncFromRecord(toCardSource(userId, record), competencyIds);
-    // TODO(카드·역량 담당): cardId(storyCardService.findByRecordIds), 태그 이름(competencyService.names)을
-    // 채운다.
-    return ProjectRecordResponse.of(record, null, List.of(), List.of());
+
+    // memo도 source에 담겨 카드 전문에 반영된다. competencyIds가 null이면 카드 태그는 그대로.
+    storyCardService.syncFromRecord(toCardSource(userId, record), competencyIds);
+    RecordCardInfo card = storyCardService.findByRecordIds(List.of(recordId)).get(recordId);
+    // TODO(역량 담당): card.competencyIds()로 competencyService.names를 불러 태그 이름을 채운다.
+    return ProjectRecordResponse.of(
+        record, card == null ? null : card.cardId(), List.of(), List.of());
   }
 
   /**
@@ -157,13 +164,32 @@ public class ProjectRecordService {
    *
    * <p>CompetencyService.validate가 생기기 전까지 쓰는 임시 확인이다. 한 규칙이 두 곳에 있으면 어긋나므로, 생기면 지운다.
    */
-  private List<Long> validateCompetencyCount(List<Long> competencyIds) {
-    List<Long> distinct =
-        competencyIds == null ? List.of() : competencyIds.stream().distinct().toList();
+  private Set<Long> validateCompetencyCount(List<Long> competencyIds) {
+    Set<Long> distinct = competencyIds == null ? Set.of() : new LinkedHashSet<>(competencyIds);
     if (distinct.isEmpty() || distinct.size() > 3) {
       throw new BusinessException(ErrorCode.COMPETENCY_LIMIT);
     }
     return distinct;
+  }
+
+  /**
+   * 카드 담당에게 넘기는 기록 내용. 27·28번이 같이 쓴다.
+   *
+   * <p>TODO(첨부 담당): attachmentCount는 첨부 수를 셀 수 있게 되면 채운다. 지금은 0.
+   */
+  private RecordCardSource toCardSource(Long userId, ProjectRecord record) {
+    return new RecordCardSource(
+        userId,
+        record.getProject().getId(),
+        record.getId(),
+        record.getCreatedAt() == null ? null : record.getCreatedAt().toLocalDate(),
+        record.getMemo(),
+        record.getDid(),
+        record.getConcern(),
+        record.getDecision(),
+        record.getResult(),
+        record.getNextStep(),
+        0);
   }
 
   /**
@@ -217,14 +243,12 @@ public class ProjectRecordService {
       throw new BusinessException(ErrorCode.NOT_FOUND);
     }
 
-    // TODO(카드 담당): StoryCardService가 생기면 호출한다.
-    // storyCardService.deleteByRecord(recordId);
+    // 자식부터 지운다: 카드 → AI 질문 → 첨부 → 기록
+    storyCardService.deleteByRecord(recordId);
+    aiQuestionService.deleteAll(QuestionOwner.projectRecord(recordId));
 
-    // TODO(첨부 담당): AttachmentService가 생기면 호출한다. owner 형태는 아직 정해지지 않았다. S3 파일까지 지운다.
+    // TODO(첨부 담당): AttachmentService가 생기면 호출한다. S3 파일까지 지운다.
     // attachmentService.deleteAll(owner);
-
-    // TODO(회고 담당): AiQuestionService가 생기면 호출한다. owner 형태는 아직 정해지지 않았다.
-    // aiQuestionService.deleteAll(owner);
 
     projectRecordRepository.deleteById(recordId);
   }
