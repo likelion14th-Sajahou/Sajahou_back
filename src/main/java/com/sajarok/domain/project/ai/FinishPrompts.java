@@ -2,13 +2,14 @@ package com.sajarok.domain.project.ai;
 
 import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
+import com.sajarok.domain.question.dto.QuestionView;
 import java.util.List;
 
 /**
- * 프로젝트 마치기(32번) 프롬프트를 한곳에 모은다 (프롬프트를 서비스 로직에 흩어 두지 않음).
+ * 프로젝트 마치기(32·33번) 프롬프트를 한곳에 모은다 (프롬프트를 서비스 로직에 흩어 두지 않음).
  *
  * <p>호출은 AI 모듈(infra/ai)의 AiClient.call(system, user, 결과 record)로 한다. TODO(AI 모듈 담당): AiClient가 생기면
- * FinishQuestionGenerator에서 이 문자열로 부른다 (트랜잭션 밖에서).
+ * FinishQuestionGenerator·PortfolioDrafter에서 이 문자열로 부른다 (트랜잭션 밖에서).
  */
 public final class FinishPrompts {
 
@@ -69,12 +70,101 @@ public final class FinishPrompts {
   public static String questionsUser(Project project, List<ProjectRecord> records) {
     StringBuilder sb = new StringBuilder();
     sb.append("[태그 목록]\n").append(String.join(" / ", FinishQuestionResult.TAGS)).append("\n\n");
+    appendProject(sb, project);
+    appendRecords(sb, records);
+    appendAttachments(sb);
+    return sb.toString();
+  }
+
+  // ---- 33번: 포트폴리오 초안 ----
+
+  /**
+   * 33번 system 프롬프트 초안 (역할·번호 규칙·좋은 예·나쁜 예·애매할 때·출력 형식 순서). 항목과 빈칸 기준은 명세 33번·H-18 프로토타입.
+   *
+   * <p>TODO(AI 모듈 연결 후): 실제 응답을 보면서 다듬는다.
+   */
+  public static final String PORTFOLIO_DRAFT_SYSTEM =
+      """
+      너는 프로젝트를 마친 아기사자의 기록과 마치기 답으로 포트폴리오 초안을 쓰는 도우미다.
+
+      [규칙]
+      1. [기록]과 [마치기 답]에 있는 사실만 쓴다. 없는 기능·숫자·성과·반응을 지어내지 않는다.
+      2. 항목은 [항목 목록]의 6개이고 key를 그대로 쓴다:
+         role(내 역할) / contribution(주요 기여) / problem(문제와 해결) / result(결과) / artifact(산출물) / learned(배운 점)
+      3. 항목의 근거가 기록과 답에 없으면 body를 null로 둔다. 비슷한 내용으로 채우지 않는다.
+      4. 마치기 답은 같은 항목에 먼저 쓴다:
+         내 역할 → role, 최종 결과 → result, 근거와 숫자 → result에 "숫자로 보면: …" 한 줄로,
+         산출물 요청 → artifact, 배운 점 → learned.
+      5. 주요 기여(contribution)는 기록마다 "- MM/DD 한 일" 형식의 목록으로 쓴다 (예: "- 11/03 팀 API 연동을 맡았습니다.").
+         문제와 해결(problem)도 "- " 목록으로 2 ~ 4줄.
+      6. body에는 본문만 쓴다. 제목(# / ##), 기간·역할 줄은 쓰지 않는다(서버가 붙인다).
+      7. 1인칭 "~했습니다" 문체. 팀이 한 일과 내가 한 일을 구분해서, 내가 한 일만 내 기여로 쓴다.
+
+      [좋은 예]
+      입력:
+        [프로젝트] 사자록 · 멋사 회고 서비스 / 역할: PM, BACKEND
+        [기록] (1) 2026-11-03 한 일: 팀 API 연동을 맡았다 / 고민·해결: 응답 형식을 프론트와 미리 맞췄다
+               (2) 2026-11-05 한 일: 회고 화면 API를 만들었다
+        [마치기 답] 근거와 숫자: 2주 동안 API 12개를 만들었다 / 배운 점: 명세를 먼저 맞추면 연동이 빨라진다
+        [첨부] 없음
+      출력:
+      {"sections":[
+        {"key":"role","body":null},
+        {"key":"contribution","body":"- 11/03 팀 API 연동을 맡았습니다.\\n- 11/05 회고 화면 API를 만들었습니다."},
+        {"key":"problem","body":"- 연동 전에 프론트와 응답 형식을 미리 맞췄습니다."},
+        {"key":"result","body":"숫자로 보면: 2주 동안 API 12개를 만들었습니다."},
+        {"key":"artifact","body":null},
+        {"key":"learned","body":"명세를 먼저 맞추면 연동이 빨라진다는 것을 배웠습니다."}
+      ]}
+
+      [나쁜 예]
+      {"key":"result","body":"서비스 사용자 200명을 모았습니다."}
+      → 기록과 답에 "200명"이 없으면 지어낸 결과다. 근거가 없으면 null로 둔다.
+
+      [애매할 때]
+      - 기록마다 역할이 흩어져 있어 한 문장으로 정리하기 어려우면 role은 null로 둔다(마치기 답이 있으면 그 답을 쓴다).
+      - 첨부가 있으면 artifact에 첨부 이름을 목록으로 쓰고, 첨부도 답도 없으면 null로 둔다.
+      - 최종 결과는 없고 숫자만 있으면 result에 "숫자로 보면: …" 한 줄만 쓴다.
+
+      [출력 형식]
+      아래 JSON으로만 답한다. 다른 글은 쓰지 않는다. 6개 key를 모두, 위 순서대로 쓴다.
+      {"sections":[{"key":"role","body":"..."},{"key":"contribution","body":"..."},{"key":"problem","body":null},{"key":"result","body":"..."},{"key":"artifact","body":null},{"key":"learned","body":"..."}]}
+      """;
+
+  /**
+   * @param records 고른 기록 (만든 순서)
+   * @param answered 답한(ANSWERED) 마치기 질문
+   */
+  public static String portfolioUser(
+      Project project, List<ProjectRecord> records, List<QuestionView> answered) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("[항목 목록]\n").append(String.join(" / ", PortfolioDraftResult.KEYS)).append("\n\n");
+    appendProject(sb, project);
+    appendRecords(sb, records);
+    sb.append("\n[마치기 답]\n");
+    if (answered.isEmpty()) {
+      sb.append("없음\n");
+    }
+    answered.forEach(
+        q -> {
+          sb.append("- ").append(q.tag()).append('\n');
+          line(sb, "질문", q.content());
+          line(sb, "답", q.answer());
+        });
+    appendAttachments(sb);
+    return sb.toString();
+  }
+
+  private static void appendProject(StringBuilder sb, Project project) {
     sb.append("[프로젝트]\n");
     line(sb, "이름", project.getName());
     line(sb, "부제", project.getSubtitle());
     if (project.getRoles() != null && !project.getRoles().isEmpty()) {
       line(sb, "역할", String.join(", ", project.getRoles().stream().map(Enum::name).toList()));
     }
+  }
+
+  private static void appendRecords(StringBuilder sb, List<ProjectRecord> records) {
     sb.append("\n[기록]\n");
     for (int i = 0; i < records.size(); i++) {
       ProjectRecord r = records.get(i);
@@ -87,9 +177,11 @@ public final class FinishPrompts {
       line(sb, "결과·반응", r.getResult());
       line(sb, "다음", r.getNextStep());
     }
+  }
+
+  private static void appendAttachments(StringBuilder sb) {
     // TODO(첨부 담당): 기록·프로젝트 첨부의 종류(category)와 이름을 [첨부]로 붙인다 (attachmentService.findAll).
     sb.append("\n[첨부]\n없음\n");
-    return sb.toString();
   }
 
   private static void line(StringBuilder sb, String label, String value) {
