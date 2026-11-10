@@ -2,6 +2,7 @@ package com.sajarok.domain.project.controller;
 
 import com.sajarok.domain.project.dto.ProjectCreateRequest;
 import com.sajarok.domain.project.dto.ProjectCreateResponse;
+import com.sajarok.domain.project.dto.ProjectDetailResponse;
 import com.sajarok.domain.project.dto.ProjectListResponse;
 import com.sajarok.domain.project.service.ProjectService;
 import com.sajarok.global.auth.CurrentUserProvider;
@@ -11,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -37,5 +39,11 @@ public class ProjectController {
   @GetMapping
   public ApiResponse<ProjectListResponse> getMyProjects() {
     return ApiResponse.ok(projectService.getMyProjects(currentUserProvider.getUserId()));
+  }
+
+  /** 26번: 프로젝트 상세 */
+  @GetMapping("/{projectId}")
+  public ApiResponse<ProjectDetailResponse> getDetail(@PathVariable Long projectId) {
+    return ApiResponse.ok(projectService.getDetail(currentUserProvider.getUserId(), projectId));
   }
 }

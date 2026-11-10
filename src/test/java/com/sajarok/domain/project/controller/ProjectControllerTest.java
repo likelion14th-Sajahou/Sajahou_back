@@ -12,13 +12,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.sajarok.domain.project.dto.ProjectCreateRequest;
 import com.sajarok.domain.project.dto.ProjectCreateResponse;
+import com.sajarok.domain.project.dto.ProjectDetailResponse;
 import com.sajarok.domain.project.dto.ProjectListResponse;
 import com.sajarok.domain.project.dto.ProjectListResponse.ProjectSummary;
 import com.sajarok.domain.project.entity.ProjectRole;
 import com.sajarok.domain.project.entity.ProjectStatus;
 import com.sajarok.domain.project.service.ProjectService;
 import com.sajarok.global.auth.CurrentUserProvider;
+import com.sajarok.global.exception.BusinessException;
+import com.sajarok.global.exception.ErrorCode;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -151,5 +155,85 @@ class ProjectControllerTest {
         .andExpect(jsonPath("$.data.doneProjects[0].projectId").value(1))
         .andExpect(jsonPath("$.data.doneProjects[0].recordCount").value(0))
         .andExpect(jsonPath("$.data.doneProjects[0].lastRecordDate").value(nullValue()));
+  }
+
+  @Test
+  @DisplayName("26번: 상세는 200과 명세 필드(startedOn·date 날짜 형식, savedAt +09:00, cardId)를 준다")
+  void getDetail_returns200WithSpecFields() throws Exception {
+    when(projectService.getDetail(1L, 3L))
+        .thenReturn(
+            new ProjectDetailResponse(
+                3L,
+                "사자록",
+                "멋사 회고 서비스",
+                List.of(ProjectRole.PM, ProjectRole.BACKEND),
+                ProjectStatus.DONE,
+                LocalDate.of(2026, 10, 20),
+                1,
+                LocalDate.of(2026, 11, 4),
+                new ProjectDetailResponse.Portfolio(
+                    "# 사자록", OffsetDateTime.parse("2026-11-18T21:00:00+09:00")),
+                List.of(
+                    new ProjectDetailResponse.RecordItem(
+                        77L,
+                        null,
+                        LocalDate.of(2026, 11, 4),
+                        true,
+                        "메모",
+                        "한 일",
+                        null,
+                        null,
+                        null,
+                        null,
+                        List.of(),
+                        List.of()))));
+
+    mockMvc
+        .perform(get("/api/v1/projects/3"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.projectId").value(3))
+        .andExpect(jsonPath("$.data.roles[0]").value("PM"))
+        .andExpect(jsonPath("$.data.status").value("DONE"))
+        .andExpect(jsonPath("$.data.startedOn").value("2026-10-20"))
+        .andExpect(jsonPath("$.data.recordCount").value(1))
+        .andExpect(jsonPath("$.data.lastRecordDate").value("2026-11-04"))
+        .andExpect(jsonPath("$.data.portfolio.markdown").value("# 사자록"))
+        .andExpect(jsonPath("$.data.portfolio.savedAt").value("2026-11-18T21:00:00+09:00"))
+        .andExpect(jsonPath("$.data.records[0].recordId").value(77))
+        .andExpect(jsonPath("$.data.records[0].cardId").value(nullValue()))
+        .andExpect(jsonPath("$.data.records[0].date").value("2026-11-04"))
+        .andExpect(jsonPath("$.data.records[0].isAiOrganized").value(true))
+        .andExpect(jsonPath("$.data.records[0].competencies.length()").value(0))
+        .andExpect(jsonPath("$.data.records[0].attachments.length()").value(0));
+  }
+
+  @Test
+  @DisplayName("26번: 포트폴리오가 없으면 portfolio는 null, 남의 프로젝트면 404 NOT_FOUND")
+  void getDetail_nullPortfolio_and404() throws Exception {
+    when(projectService.getDetail(1L, 3L))
+        .thenReturn(
+            new ProjectDetailResponse(
+                3L,
+                "사자록",
+                null,
+                List.of(ProjectRole.BACKEND),
+                ProjectStatus.IN_PROGRESS,
+                LocalDate.of(2026, 10, 20),
+                0,
+                null,
+                null,
+                List.of()));
+    when(projectService.getDetail(1L, 999L)).thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
+    mockMvc
+        .perform(get("/api/v1/projects/3"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.portfolio").value(nullValue()))
+        .andExpect(jsonPath("$.data.lastRecordDate").value(nullValue()))
+        .andExpect(jsonPath("$.data.records.length()").value(0));
+    mockMvc
+        .perform(get("/api/v1/projects/999"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
   }
 }

@@ -13,9 +13,11 @@ import com.sajarok.domain.project.dto.HomeProjectTiles.DoneTile;
 import com.sajarok.domain.project.dto.HomeProjectTiles.InProgressTile;
 import com.sajarok.domain.project.dto.ProjectCreateRequest;
 import com.sajarok.domain.project.dto.ProjectCreateResponse;
+import com.sajarok.domain.project.dto.ProjectDetailResponse;
 import com.sajarok.domain.project.dto.ProjectListResponse;
 import com.sajarok.domain.project.dto.ProjectListResponse.ProjectSummary;
 import com.sajarok.domain.project.entity.Project;
+import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
 import com.sajarok.domain.project.entity.ProjectRole;
 import com.sajarok.domain.project.entity.ProjectStatus;
@@ -27,6 +29,7 @@ import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -152,5 +155,87 @@ class ProjectServiceTest {
     ReflectionTestUtils.setField(project, "id", id);
     ReflectionTestUtils.setField(project, "status", status);
     return project;
+  }
+
+  // ---- 26번 프로젝트 상세 ----
+
+  private Project detailProject(String portfolioMarkdown, LocalDateTime savedAt) {
+    Project project =
+        Project.builder()
+            .userId(1L)
+            .name("사자록")
+            .subtitle("멋사 회고 서비스")
+            .roles(List.of(ProjectRole.BACKEND))
+            .build();
+    ReflectionTestUtils.setField(project, "id", 3L);
+    ReflectionTestUtils.setField(project, "createdAt", LocalDateTime.of(2026, 10, 20, 10, 0));
+    ReflectionTestUtils.setField(project, "portfolioMarkdown", portfolioMarkdown);
+    ReflectionTestUtils.setField(project, "portfolioSavedAt", savedAt);
+    return project;
+  }
+
+  private ProjectRecord savedRecord(Project project, long id, LocalDateTime createdAt) {
+    ProjectRecord record =
+        ProjectRecord.builder()
+            .project(project)
+            .status(ProjectRecordStatus.SAVED)
+            .did("한 일 " + id)
+            .build();
+    ReflectionTestUtils.setField(record, "id", id);
+    ReflectionTestUtils.setField(record, "createdAt", createdAt);
+    return record;
+  }
+
+  @Test
+  @DisplayName("26번: SAVED 기록만 최신순으로 주고, 기록 수·마지막 날짜를 그 목록에서 계산한다")
+  void getDetail_returnsSavedRecordsAndStats() {
+    Project project = detailProject(null, null);
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(project));
+    when(projectRecordRepository.findAllByProjectIdAndStatusOrderByCreatedAtDescIdDesc(
+            3L, ProjectRecordStatus.SAVED))
+        .thenReturn(
+            List.of(
+                savedRecord(project, 78L, LocalDateTime.of(2026, 11, 4, 9, 0)),
+                savedRecord(project, 77L, LocalDateTime.of(2026, 11, 1, 9, 0))));
+
+    ProjectDetailResponse response = projectService.getDetail(1L, 3L);
+
+    assertThat(response.projectId()).isEqualTo(3L);
+    assertThat(response.startedOn()).isEqualTo(LocalDate.of(2026, 10, 20));
+    assertThat(response.recordCount()).isEqualTo(2);
+    assertThat(response.lastRecordDate()).isEqualTo(LocalDate.of(2026, 11, 4));
+    assertThat(response.records())
+        .extracting(ProjectDetailResponse.RecordItem::recordId)
+        .containsExactly(78L, 77L);
+    assertThat(response.portfolio()).isNull();
+  }
+
+  @Test
+  @DisplayName("26번: 기록이 없으면 기록 수 0·마지막 날짜 null, 포트폴리오가 있으면 +09:00 시각으로 준다")
+  void getDetail_noRecords_withPortfolio() {
+    Project project = detailProject("# 사자록", LocalDateTime.of(2026, 11, 18, 21, 0));
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(project));
+    when(projectRecordRepository.findAllByProjectIdAndStatusOrderByCreatedAtDescIdDesc(
+            3L, ProjectRecordStatus.SAVED))
+        .thenReturn(List.of());
+
+    ProjectDetailResponse response = projectService.getDetail(1L, 3L);
+
+    assertThat(response.recordCount()).isZero();
+    assertThat(response.lastRecordDate()).isNull();
+    assertThat(response.portfolio().markdown()).isEqualTo("# 사자록");
+    assertThat(response.portfolio().savedAt())
+        .isEqualTo(OffsetDateTime.parse("2026-11-18T21:00:00+09:00"));
+  }
+
+  @Test
+  @DisplayName("26번: 남의 프로젝트거나 없으면 NOT_FOUND")
+  void getDetail_notMine_throwsNotFound() {
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> projectService.getDetail(1L, 3L))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
   }
 }

@@ -5,6 +5,7 @@ import com.sajarok.domain.project.dto.HomeProjectTiles.DoneTile;
 import com.sajarok.domain.project.dto.HomeProjectTiles.InProgressTile;
 import com.sajarok.domain.project.dto.ProjectCreateRequest;
 import com.sajarok.domain.project.dto.ProjectCreateResponse;
+import com.sajarok.domain.project.dto.ProjectDetailResponse;
 import com.sajarok.domain.project.dto.ProjectListResponse;
 import com.sajarok.domain.project.dto.ProjectListResponse.ProjectSummary;
 import com.sajarok.domain.project.entity.Project;
@@ -63,6 +64,22 @@ public class ProjectService {
     return new ProjectListResponse(
         filter(projects, ProjectStatus.IN_PROGRESS).stream().map(toSummary).toList(),
         filter(projects, ProjectStatus.DONE).stream().map(toSummary).toList());
+  }
+
+  /**
+   * 26번: 프로젝트 상세. 남의 프로젝트거나 없으면 NOT_FOUND.
+   *
+   * <p>저장된(SAVED) 기록을 쿼리 한 번으로 읽고, 기록 수·마지막 날짜는 그 목록에서 계산한다(통계 쿼리를 따로 부르지 않음).
+   */
+  public ProjectDetailResponse getDetail(Long userId, Long projectId) {
+    Project project =
+        projectRepository
+            .findByIdAndUserId(projectId, userId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+    return ProjectDetailResponse.of(
+        project,
+        projectRecordRepository.findAllByProjectIdAndStatusOrderByCreatedAtDescIdDesc(
+            projectId, ProjectRecordStatus.SAVED));
   }
 
   /** 홈(4번)용 프로젝트 타일. 홈 담당이 부른다. */
