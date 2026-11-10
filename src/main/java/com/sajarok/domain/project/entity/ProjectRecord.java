@@ -78,4 +78,9 @@ public class ProjectRecord extends BaseTimeEntity {
     this.nextStep = nextStep;
     this.aiOrganized = aiOrganized != null && aiOrganized;
   }
+
+  /** 메모에 공백 말고 글자가 있는지. */
+  public boolean hasMemo() {
+    return memo != null && !memo.isBlank();
+  }
 }

@@ -1,24 +1,34 @@
 package com.sajarok.domain.project.controller;
 
+import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
+import com.sajarok.domain.project.dto.ProjectRecordResponse;
+import com.sajarok.domain.project.entity.ProjectRecordStatus;
 import com.sajarok.domain.project.service.ProjectRecordService;
 import com.sajarok.global.auth.CurrentUserProvider;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import java.time.LocalDate;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -39,6 +49,73 @@ class ProjectRecordControllerTest {
   @BeforeEach
   void setUp() {
     when(currentUserProvider.getUserId()).thenReturn(1L);
+  }
+
+  @Test
+  @DisplayName("27번: DRAFT로 만들면 201과 명세 필드(isAiOrganized 이름, date 형식, cardId null, 빈 배열)를 준다")
+  void create_draft_returns201WithSpecFields() throws Exception {
+    when(projectRecordService.create(eq(1L), eq(3L), any(ProjectRecordCreateRequest.class)))
+        .thenReturn(
+            new ProjectRecordResponse(
+                77L,
+                ProjectRecordStatus.DRAFT,
+                null,
+                LocalDate.of(2026, 11, 5),
+                false,
+                "회의에서 API 명세 확정",
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of(),
+                List.of()));
+
+    mockMvc
+        .perform(
+            post("/api/v1/projects/3/records")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"aiOrganize\": true, \"memo\": \"회의에서 API 명세 확정\"}"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.recordId").value(77))
+        .andExpect(jsonPath("$.data.status").value("DRAFT"))
+        .andExpect(jsonPath("$.data.cardId").value(nullValue()))
+        .andExpect(jsonPath("$.data.date").value("2026-11-05"))
+        .andExpect(jsonPath("$.data.isAiOrganized").value(false))
+        .andExpect(jsonPath("$.data.memo").value("회의에서 API 명세 확정"))
+        .andExpect(jsonPath("$.data.nextStep").value(nullValue()))
+        .andExpect(jsonPath("$.data.competencies.length()").value(0))
+        .andExpect(jsonPath("$.data.attachments.length()").value(0));
+  }
+
+  @Test
+  @DisplayName("27번: 메모·첨부가 다 없으면 400 EMPTY_MATERIAL")
+  void create_emptyMaterial_returns400() throws Exception {
+    when(projectRecordService.create(eq(1L), eq(3L), any(ProjectRecordCreateRequest.class)))
+        .thenThrow(new BusinessException(ErrorCode.EMPTY_MATERIAL));
+
+    mockMvc
+        .perform(
+            post("/api/v1/projects/3/records")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"aiOrganize\": true}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("EMPTY_MATERIAL"));
+  }
+
+  @Test
+  @DisplayName("27번: aiOrganize가 없으면 400 VALIDATION_ERROR와 aiOrganize 칸의 이유(fields)를 준다")
+  void create_missingAiOrganize_returns400WithFields() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/projects/3/records")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"memo\": \"메모\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+        .andExpect(jsonPath("$.error.fields[0].field").value("aiOrganize"));
+    verifyNoInteractions(projectRecordService);
   }
 
   @Test

@@ -13,6 +13,9 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
   /** 내 프로젝트를 만든 순서 최신순으로. */
   List<Project> findAllByUserIdOrderByCreatedAtDescIdDesc(Long userId);
 
+  /** 내 프로젝트만 찾는다. 없거나 남의 프로젝트면 비어 있다 (둘 다 NOT_FOUND로 처리). */
+  Optional<Project> findByIdAndUserId(Long id, Long userId);
+
   /** 프로젝트 주인 회원 ID만 읽는다. */
   @Query("select p.userId from Project p where p.id = :projectId")
   Optional<Long> findUserIdById(@Param("projectId") Long projectId);

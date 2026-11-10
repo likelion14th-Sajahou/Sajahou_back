@@ -1,11 +1,18 @@
 package com.sajarok.domain.project.service;
 
+import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
+import com.sajarok.domain.project.dto.ProjectRecordResponse;
+import com.sajarok.domain.project.entity.Project;
+import com.sajarok.domain.project.entity.ProjectRecord;
+import com.sajarok.domain.project.entity.ProjectRecordStatus;
 import com.sajarok.domain.project.repository.ProjectRecordRepository;
+import com.sajarok.domain.project.repository.ProjectRepository;
 import com.sajarok.domain.project.repository.RecordDate;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.time.LocalDate;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +25,56 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProjectRecordService {
 
   private final ProjectRecordRepository projectRecordRepository;
+  private final ProjectRepository projectRepository;
+
+  /**
+   * 27번: 기록 추가. 마친(DONE) 프로젝트에도 추가할 수 있다 (H-11·H-21: 완료해도 잠기지 않음).
+   *
+   * <p>남의 프로젝트거나 없으면 NOT_FOUND.
+   */
+  @Transactional
+  public ProjectRecordResponse create(
+      Long userId, Long projectId, ProjectRecordCreateRequest request) {
+    Project project =
+        projectRepository
+            .findByIdAndUserId(projectId, userId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+
+    if (!request.aiOrganize()) {
+      // TODO(27번 2차 커밋): '이대로 저장'(SAVED + 카드 생성) 경로. 이 브랜치에서 PR 전에 채운다.
+      throw new BusinessException(ErrorCode.INVALID_STATE);
+    }
+    return createDraft(project, request);
+  }
+
+  /**
+   * 'AI와 정리하기': DRAFT 기록만 만들고 카드는 만들지 않는다. 메모나 첨부가 있어야 한다(없으면 EMPTY_MATERIAL).
+   *
+   * <p>isAiOrganized는 31번(AI 정리) 뒤에 true가 되므로 여기서는 false. competencyIds는 무시한다.
+   */
+  private ProjectRecordResponse createDraft(Project project, ProjectRecordCreateRequest request) {
+    ProjectRecord record =
+        ProjectRecord.builder()
+            .project(project)
+            .status(ProjectRecordStatus.DRAFT)
+            .memo(request.memo())
+            .did(request.did())
+            .concern(request.concern())
+            .decision(request.decision())
+            .result(request.result())
+            .nextStep(request.nextStep())
+            .aiOrganized(false)
+            .build();
+    if (!record.hasMemo() && !request.hasAttachments()) {
+      throw new BusinessException(ErrorCode.EMPTY_MATERIAL);
+    }
+    ProjectRecord saved = projectRecordRepository.save(record);
+
+    // TODO(첨부 담당): AttachmentService가 생기면 호출한다. 내 첨부인지 확인도 여기서 된다.
+    // attachmentService.connect(userId, request.attachmentIds(), owner);
+
+    return ProjectRecordResponse.of(saved, null, List.of(), List.of());
+  }
 
   /** 기록 주인 회원 ID. 다른 도메인이 소유 확인에 쓴다. 없으면 NOT_FOUND. */
   public Long getOwnerId(Long recordId) {
