@@ -1,14 +1,20 @@
 package com.sajarok.domain.matching.controller;
 
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.sajarok.domain.matching.dto.AnswerResponse;
 import com.sajarok.domain.matching.dto.AnswerResponse.CardRef;
 import com.sajarok.domain.matching.dto.AnswerResponse.MissingCompetency;
+import com.sajarok.domain.matching.dto.JobPostingCreateResponse;
 import com.sajarok.domain.matching.dto.JobPostingDetailResponse;
 import com.sajarok.domain.matching.dto.JobPostingDetailResponse.PostingCompetencyItem;
 import com.sajarok.domain.matching.dto.JobPostingDetailResponse.QuestionItem;
@@ -26,11 +32,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * 컨트롤러 테스트: 39번 응답 JSON이 API 명세(필드 이름, 상태 코드, 에러 형식)와 같은지 확인한다.
+ * 컨트롤러 테스트: 36·39번 응답 JSON이 API 명세(필드 이름, 상태 코드, 에러 형식)와 같은지 확인한다.
  *
  * <p>보안 설정은 인증 담당 몫이라 테스트에서만 보안 필터를 끈다 (addFilters = false).
  */
@@ -127,5 +134,116 @@ class JobPostingControllerTest {
         .perform(get("/api/v1/job-postings/21"))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+  }
+
+  private static final String VALID_BODY =
+      """
+      {"company": "카카오", "department": "백엔드", "postingText": null,
+       "jd": "대규모 트래픽 API 개발", "attachmentIds": [701],
+       "questions": [{"content": "협업 경험을 써 주세요", "charLimit": 700}]}
+      """;
+
+  @Test
+  @DisplayName("36번: 201과 명세 필드(jobPostingId·competencies·noCompetencyFound·questions)를 준다")
+  void create_returns201WithSpecFields() throws Exception {
+    when(jobPostingService.create(eq(1L), any()))
+        .thenReturn(
+            new JobPostingCreateResponse(
+                21L,
+                List.of(new PostingCompetencyItem(3L, "협업", "다양한 직군과 협업한 경험", 2L)),
+                false,
+                List.of(
+                    new JobPostingCreateResponse.QuestionItem(
+                        55L, 1, "협업 경험을 써 주세요", 700, List.of(3L, 4L)))));
+
+    mockMvc
+        .perform(
+            post("/api/v1/job-postings")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.jobPostingId").value(21))
+        .andExpect(jsonPath("$.data.competencies[0].competencyId").value(3))
+        .andExpect(jsonPath("$.data.competencies[0].name").value("협업"))
+        .andExpect(jsonPath("$.data.competencies[0].evidenceQuote").value("다양한 직군과 협업한 경험"))
+        .andExpect(jsonPath("$.data.competencies[0].cardCount").value(2))
+        .andExpect(jsonPath("$.data.noCompetencyFound").value(false))
+        .andExpect(jsonPath("$.data.questions[0].questionId").value(55))
+        .andExpect(jsonPath("$.data.questions[0].seq").value(1))
+        .andExpect(jsonPath("$.data.questions[0].content").value("협업 경험을 써 주세요"))
+        .andExpect(jsonPath("$.data.questions[0].charLimit").value(700))
+        .andExpect(jsonPath("$.data.questions[0].competencyIds[1]").value(4));
+  }
+
+  @Test
+  @DisplayName("36번: 문항이 0개면 400 VALIDATION_ERROR와 questions 칸의 이유를 주고, 서비스를 부르지 않는다")
+  void create_noQuestions_returns400() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/job-postings")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"jd\": \"대규모 트래픽\", \"questions\": []}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+        .andExpect(jsonPath("$.error.fields[0].field").value("questions"))
+        .andExpect(jsonPath("$.error.fields[0].reason").exists());
+    verifyNoInteractions(jobPostingService);
+  }
+
+  @Test
+  @DisplayName("36번: 문항 내용이 비었거나 글자 수 제한이 0이면 400과 그 문항 칸(questions[0].…)의 이유를 준다")
+  void create_blankQuestion_returns400WithFieldPath() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/job-postings")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    "{\"jd\": \"대규모 트래픽\", \"questions\": [{\"content\": \" \", \"charLimit\": 0}]}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+        .andExpect(
+            jsonPath("$.error.fields[*].field")
+                .value(containsInAnyOrder("questions[0].content", "questions[0].charLimit")));
+    verifyNoInteractions(jobPostingService);
+  }
+
+  @Test
+  @DisplayName("36번: 자료가 모두 비면(서비스의 EMPTY_MATERIAL) 400 EMPTY_MATERIAL을 준다")
+  void create_emptyMaterial_returns400() throws Exception {
+    when(jobPostingService.create(eq(1L), any()))
+        .thenThrow(new BusinessException(ErrorCode.EMPTY_MATERIAL));
+
+    mockMvc
+        .perform(
+            post("/api/v1/job-postings")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value("EMPTY_MATERIAL"));
+  }
+
+  @Test
+  @DisplayName("36번: AI 실패는 502 AI_FAILED, 시간 초과는 504 AI_TIMEOUT으로 준다")
+  void create_aiErrors_mapToGatewayStatuses() throws Exception {
+    when(jobPostingService.create(eq(1L), any()))
+        .thenThrow(new BusinessException(ErrorCode.AI_FAILED))
+        .thenThrow(new BusinessException(ErrorCode.AI_TIMEOUT));
+
+    mockMvc
+        .perform(
+            post("/api/v1/job-postings")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY))
+        .andExpect(status().isBadGateway())
+        .andExpect(jsonPath("$.error.code").value("AI_FAILED"));
+    mockMvc
+        .perform(
+            post("/api/v1/job-postings")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(VALID_BODY))
+        .andExpect(status().isGatewayTimeout())
+        .andExpect(jsonPath("$.error.code").value("AI_TIMEOUT"));
   }
 }
