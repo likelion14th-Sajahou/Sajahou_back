@@ -61,4 +61,17 @@ public class Project extends BaseTimeEntity {
     this.roles = roles == null ? new ArrayList<>() : new ArrayList<>(roles);
     this.status = ProjectStatus.IN_PROGRESS;
   }
+
+  /**
+   * 34번: 포트폴리오를 저장(덮어쓰기)하고 완료(DONE)로 바꾼다.
+   *
+   * @return 이번에 완료로 바뀌었으면 true(처음 저장), 이미 완료였으면 false(다시 저장)
+   */
+  public boolean completeWithPortfolio(String markdown, LocalDateTime savedAt) {
+    boolean firstCompletion = status == ProjectStatus.IN_PROGRESS;
+    this.portfolioMarkdown = markdown;
+    this.portfolioSavedAt = savedAt;
+    this.status = ProjectStatus.DONE;
+    return firstCompletion;
+  }
 }
