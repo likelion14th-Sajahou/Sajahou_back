@@ -38,7 +38,8 @@ class CoverLetterQuestionServiceTest {
     ReflectionTestUtils.setField(
         question,
         "answerDraft",
-        new AnswerDraft(List.of(new Segment("text", "초안 문장.", 1, null, null)), List.of()));
+        new AnswerDraft(
+            List.of(new Segment("text", "초안 문장.", 1, null, null)), List.of(), List.of(), false));
     return question;
   }
 

@@ -28,7 +28,9 @@ class AnswerDraftTest {
                 new Segment("text", "API를 맡았다.", 1, null, null),
                 new Segment("blank", null, null, "result", "결과를 채워 주세요"),
                 new Segment("text", " 배포했다.", 2, null, null)),
-            List.of());
+            List.of(),
+            List.of(),
+            false);
 
     assertThat(draft.charCount()).isEqualTo(9 + 6);
   }

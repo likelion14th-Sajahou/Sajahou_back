@@ -1,6 +1,7 @@
 package com.sajarok.domain.matching.repository;
 
 import com.sajarok.domain.matching.entity.CoverLetterQuestion;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -14,4 +15,7 @@ public interface CoverLetterQuestionRepository extends JpaRepository<CoverLetter
           + " where q.id = :questionId and q.jobPosting.userId = :userId")
   Optional<CoverLetterQuestion> findByIdAndUserId(
       @Param("questionId") Long questionId, @Param("userId") Long userId);
+
+  /** 공고의 문항을 순서대로. */
+  List<CoverLetterQuestion> findAllByJobPostingIdOrderBySeqAsc(Long jobPostingId);
 }
