@@ -1,15 +1,33 @@
 package com.sajarok.domain.matching.entity;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
 
 /**
  * AI 답 초안. cover_letter_question.answer_draft JSON에 저장한다.
  *
- * <p>charCount·blankCount는 segments로 계산할 수 있어서 저장하지 않는다.
+ * <p>charCount·blankCount는 segments로 계산할 수 있어서 저장하지 않는다. missingCompetencyIds·noMatchingCard는 초안을
+ * 만들 때의 값을 그대로 저장한다(새 카드가 생겨도 기존 초안은 그대로, 37번을 다시 부르면 반영).
+ *
+ * @param missingCompetencyIds 문항 역량 중 맞는 카드가 없던 것 (M-13)
+ * @param noMatchingCard 맞는 카드가 하나도 없었는지
  */
-public record AnswerDraft(List<Segment> segments, List<Source> sources) {
+public record AnswerDraft(
+    List<Segment> segments,
+    List<Source> sources,
+    List<Long> missingCompetencyIds,
+    boolean noMatchingCard) {
 
   private static final String TEXT = "text";
+  private static final String BLANK = "blank";
+
+  /** 빈칸(blank) 조각 수. */
+  public int blankCount() {
+    if (segments == null) {
+      return 0;
+    }
+    return (int) segments.stream().filter(segment -> BLANK.equals(segment.type())).count();
+  }
 
   /** 초안 글자 수. 문장(text) 조각만 세고 빈칸(blank)은 세지 않는다. */
   public int charCount() {
@@ -40,7 +58,14 @@ public record AnswerDraft(List<Segment> segments, List<Source> sources) {
    * @param slot 빈칸 종류 (blank일 때, 예: result)
    * @param hint 빈칸 안내 문구 (blank일 때)
    */
-  public record Segment(String type, String text, Integer source, String slot, String hint) {}
+  @JsonInclude(JsonInclude.Include.NON_NULL)
+  public record Segment(String type, String text, Integer source, String slot, String hint) {
+
+    /** 출처가 지워진 카드면 글은 남기고 source만 비운다. */
+    public Segment withoutSource() {
+      return new Segment(type, text, null, slot, hint);
+    }
+  }
 
   /**
    * 출처 하나.
