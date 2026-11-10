@@ -1,5 +1,6 @@
 package com.sajarok.domain.storycard.entity;
 
+import com.sajarok.domain.storycard.dto.RecordCardSource;
 import com.sajarok.global.entity.BaseTimeEntity;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
@@ -86,5 +87,79 @@ public class StoryCard extends BaseTimeEntity {
       throw new BusinessException(ErrorCode.COMPETENCY_LIMIT);
     }
     this.status = StoryCardStatus.PUBLISHED;
+  }
+
+  public static StoryCard fromRecord(RecordCardSource src, Set<Long> competencyIds) {
+    StoryCard c = new StoryCard();
+    c.userId = src.userId();
+    c.type = StoryCardType.PROJECT;
+    c.projectId = src.projectId();
+    c.projectRecordId = src.recordId();
+    c.status = StoryCardStatus.PUBLISHED;
+    c.title = titleOf(src);
+    c.applyRecord(src);
+    c.replaceCompetencies(competencyIds, true);
+    return c;
+  }
+
+  public void syncFromRecord(RecordCardSource src, Set<Long> competencyIds) {
+    applyRecord(src);
+    if (competencyIds != null) {
+      replaceCompetencies(competencyIds, true);
+    }
+  }
+
+  private void applyRecord(RecordCardSource src) {
+    this.situation = blankToNull(src.concern());
+    this.action = blankToNull(src.did());
+    this.reason = blankToNull(src.decision());
+    this.result = blankToNull(src.result());
+    this.fullMarkdown = markdownOf(this.title, src);
+  }
+
+  private static String titleOf(RecordCardSource src) {
+    String title = firstLine(src.did());
+    if (title == null) {
+      title = firstLine(src.memo());
+    }
+    if (title == null) {
+      title = src.date() + " 기록";
+    }
+    return title.length() <= 200 ? title : title.substring(0, 200);
+  }
+
+  private static String firstLine(String text) {
+    if (text == null) {
+      return null;
+    }
+    for (String line : text.split("\\R")) {
+      if (!line.isBlank()) {
+        return line.strip();
+      }
+    }
+    return null;
+  }
+
+  private static String blankToNull(String s) {
+    return (s == null || s.isBlank()) ? null : s;
+  }
+
+  private static String markdownOf(String title, RecordCardSource src) {
+    StringBuilder md = new StringBuilder("# ").append(title).append("\n\n");
+    md.append(src.date()).append(" 기록\n");
+    section(md, "한 일", src.did());
+    section(md, "고민·해결", src.concern());
+    section(md, "선택과 이유", src.decision());
+    section(md, "결과·반응", src.result());
+    section(md, "다음", src.nextStep());
+    section(md, "메모", src.memo());
+    return md.toString();
+  }
+
+  private static void section(StringBuilder md, String heading, String body) {
+    if (blankToNull(body) == null) {
+      return;
+    }
+    md.append("\n## ").append(heading).append("\n\n").append(body.strip()).append("\n");
   }
 }

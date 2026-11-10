@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface StoryCardRepository extends JpaRepository<StoryCard, Long> {
 
@@ -28,4 +30,14 @@ public interface StoryCardRepository extends JpaRepository<StoryCard, Long> {
 
   List<StoryCard> findTop3ByUserIdAndStatusAndTypeNotOrderByCreatedAtDesc(
       Long userId, StoryCardStatus status, StoryCardType type);
+
+  @Query(
+      """
+    select new com.sajarok.domain.storycard.repository.CompetencyCount(c, count(s))
+    from StoryCard s join s.competencyIds c
+    where s.userId = :userId and s.status = :status
+    group by c
+    """)
+  List<CompetencyCount> countByCompetency(
+      @Param("userId") Long userId, @Param("status") StoryCardStatus status);
 }

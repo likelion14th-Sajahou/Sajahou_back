@@ -54,6 +54,5 @@ public class AiQuestionService {
       case PROJECT_RECORD -> aiQuestionRepository.deleteAllByProjectRecordId(owner.id());
       case PROJECT -> aiQuestionRepository.deleteAllByProjectId(owner.id());
     }
-    ;
   }
 }
