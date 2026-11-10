@@ -6,9 +6,11 @@ import com.sajarok.domain.attachment.dto.AttachmentLinkResponse;
 import com.sajarok.domain.attachment.dto.AttachmentStatusResponse;
 import com.sajarok.domain.attachment.entity.AttachmentCategory;
 import com.sajarok.domain.attachment.service.AttachmentService;
+import com.sajarok.domain.attachment.service.TxtAttachmentExtractionJob;
 import com.sajarok.global.auth.CurrentUserProvider;
 import com.sajarok.global.response.ApiResponse;
 import jakarta.validation.Valid;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -23,6 +25,7 @@ public class AttachmentController {
 
   private final AttachmentService attachmentService;
   private final CurrentUserProvider currentUserProvider;
+  private final TxtAttachmentExtractionJob txtExtractionJob;
 
   @PostMapping("/links")
   public ResponseEntity<ApiResponse<AttachmentLinkResponse>> registerLink(
@@ -49,6 +52,9 @@ public class AttachmentController {
       @RequestParam("category") AttachmentCategory category) {
     var attachment =
         attachmentService.registerFile(currentUserProvider.getUserId(), file, category);
+    if (attachment.getName().toLowerCase(Locale.ROOT).endsWith(".txt")) {
+      txtExtractionJob.run(attachment.getId(), attachment.getS3Key());
+    }
 
     return ResponseEntity.status(HttpStatus.CREATED)
         .body(ApiResponse.ok(AttachmentFileResponse.from(attachment)));
