@@ -5,8 +5,8 @@ import com.sajarok.domain.attachment.dto.AttachmentLinkRequest;
 import com.sajarok.domain.attachment.dto.AttachmentLinkResponse;
 import com.sajarok.domain.attachment.dto.AttachmentStatusResponse;
 import com.sajarok.domain.attachment.entity.AttachmentCategory;
+import com.sajarok.domain.attachment.service.AttachmentExtractionJob;
 import com.sajarok.domain.attachment.service.AttachmentService;
-import com.sajarok.domain.attachment.service.TxtAttachmentExtractionJob;
 import com.sajarok.global.auth.CurrentUserProvider;
 import com.sajarok.global.response.ApiResponse;
 import jakarta.validation.Valid;
@@ -25,7 +25,7 @@ public class AttachmentController {
 
   private final AttachmentService attachmentService;
   private final CurrentUserProvider currentUserProvider;
-  private final TxtAttachmentExtractionJob txtExtractionJob;
+  private final AttachmentExtractionJob extractionJob;
 
   @PostMapping("/links")
   public ResponseEntity<ApiResponse<AttachmentLinkResponse>> registerLink(
@@ -52,8 +52,11 @@ public class AttachmentController {
       @RequestParam("category") AttachmentCategory category) {
     var attachment =
         attachmentService.registerFile(currentUserProvider.getUserId(), file, category);
-    if (attachment.getName().toLowerCase(Locale.ROOT).endsWith(".txt")) {
-      txtExtractionJob.run(attachment.getId(), attachment.getS3Key());
+    String name = attachment.getName().toLowerCase(Locale.ROOT);
+    boolean pdf = name.endsWith(".pdf");
+
+    if (pdf || name.endsWith(".txt")) {
+      extractionJob.run(attachment.getId(), attachment.getS3Key(), pdf);
     }
 
     return ResponseEntity.status(HttpStatus.CREATED)
