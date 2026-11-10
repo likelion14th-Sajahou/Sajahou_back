@@ -71,12 +71,12 @@ public class ProjectRecord extends BaseTimeEntity {
       Boolean aiOrganized) {
     this.project = project;
     this.status = status == null ? ProjectRecordStatus.DRAFT : status;
-    this.memo = memo;
-    this.did = did;
-    this.concern = concern;
-    this.decision = decision;
-    this.result = result;
-    this.nextStep = nextStep;
+    this.memo = blankToNull(memo);
+    this.did = blankToNull(did);
+    this.concern = blankToNull(concern);
+    this.decision = blankToNull(decision);
+    this.result = blankToNull(result);
+    this.nextStep = blankToNull(nextStep);
     this.aiOrganized = aiOrganized != null && aiOrganized;
   }
 
@@ -89,5 +89,46 @@ public class ProjectRecord extends BaseTimeEntity {
   public boolean hasFiveFields() {
     return Stream.of(did, concern, decision, result, nextStep)
         .anyMatch(v -> v != null && !v.isBlank());
+  }
+
+  /**
+   * 28번: 보낸 칸만 바꾼다. null이면 그대로 두고, ""(공백만 있어도)이면 비운다(null로 저장).
+   *
+   * <p>record DTO에서는 "안 보냄"과 null이 구분되지 않아서, 비우기는 ""로 받기로 했다.
+   */
+  public void edit(
+      String memo,
+      String did,
+      String concern,
+      String decision,
+      String result,
+      String nextStep,
+      Boolean aiOrganized) {
+    this.memo = apply(this.memo, memo);
+    this.did = apply(this.did, did);
+    this.concern = apply(this.concern, concern);
+    this.decision = apply(this.decision, decision);
+    this.result = apply(this.result, result);
+    this.nextStep = apply(this.nextStep, nextStep);
+    if (aiOrganized != null) {
+      this.aiOrganized = aiOrganized;
+    }
+  }
+
+  /** '기록 저장'(H-14): DRAFT → SAVED. */
+  public void markSaved() {
+    this.status = ProjectRecordStatus.SAVED;
+  }
+
+  public boolean isDraft() {
+    return status == ProjectRecordStatus.DRAFT;
+  }
+
+  private static String apply(String current, String incoming) {
+    return incoming == null ? current : blankToNull(incoming);
+  }
+
+  private static String blankToNull(String value) {
+    return value == null || value.isBlank() ? null : value;
   }
 }

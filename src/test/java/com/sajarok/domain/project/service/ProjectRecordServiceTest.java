@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
 import com.sajarok.domain.project.dto.ProjectRecordResponse;
+import com.sajarok.domain.project.dto.ProjectRecordUpdateRequest;
 import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
@@ -148,6 +149,146 @@ class ProjectRecordServiceTest {
           .isEqualTo(ErrorCode.COMPETENCY_LIMIT);
     }
     verify(projectRecordRepository, never()).save(any());
+  }
+
+  private ProjectRecord record(ProjectRecordStatus status) {
+    return ProjectRecord.builder()
+        .project(myProject())
+        .status(status)
+        .memo("원래 메모")
+        .did("원래 한 일")
+        .concern("원래 고민")
+        .build();
+  }
+
+  private static ProjectRecordUpdateRequest update(
+      String memo, String did, String concern, List<Long> attachmentIds, List<Long> competencyIds) {
+    return new ProjectRecordUpdateRequest(
+        memo, did, concern, null, null, null, null, attachmentIds, competencyIds);
+  }
+
+  @Test
+  @DisplayName("28번: memo만 보내면 memo만 바뀌고 나머지 칸·상태는 그대로다")
+  void update_memoOnly_changesMemoOnly() {
+    ProjectRecord record = record(ProjectRecordStatus.SAVED);
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+
+    ProjectRecordResponse response =
+        projectRecordService.update(1L, 77L, update("새 메모", null, null, null, null));
+
+    assertThat(response.memo()).isEqualTo("새 메모");
+    assertThat(response.did()).isEqualTo("원래 한 일");
+    assertThat(response.concern()).isEqualTo("원래 고민");
+    assertThat(response.status()).isEqualTo(ProjectRecordStatus.SAVED);
+  }
+
+  @Test
+  @DisplayName("28번: \"\"(공백 포함)을 보내면 그 칸을 비우고(null), null인 칸은 그대로 둔다")
+  void update_emptyString_clearsField() {
+    ProjectRecord record = record(ProjectRecordStatus.SAVED);
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+
+    ProjectRecordResponse response =
+        projectRecordService.update(1L, 77L, update(" ", null, "", null, null));
+
+    assertThat(response.memo()).isNull();
+    assertThat(response.concern()).isNull();
+    assertThat(response.did()).isEqualTo("원래 한 일");
+  }
+
+  @Test
+  @DisplayName("28번 DRAFT: 역량 없이 보내면 칸만 바뀌고 DRAFT로 남는다 (AI와 정리 중)")
+  void update_draftWithoutCompetencies_staysDraft() {
+    ProjectRecord record = record(ProjectRecordStatus.DRAFT);
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+
+    ProjectRecordResponse response =
+        projectRecordService.update(1L, 77L, update(null, "정리된 한 일", null, null, null));
+
+    assertThat(response.status()).isEqualTo(ProjectRecordStatus.DRAFT);
+    assertThat(response.did()).isEqualTo("정리된 한 일");
+  }
+
+  @Test
+  @DisplayName("28번 DRAFT: 역량을 함께 보내면 '기록 저장'으로 SAVED가 된다 (H-14)")
+  void update_draftWithCompetencies_becomesSaved() {
+    ProjectRecord record = record(ProjectRecordStatus.DRAFT);
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+
+    ProjectRecordResponse response =
+        projectRecordService.update(1L, 77L, update(null, null, null, null, List.of(3L, 21L)));
+
+    assertThat(response.status()).isEqualTo(ProjectRecordStatus.SAVED);
+  }
+
+  @Test
+  @DisplayName("28번 DRAFT: 저장하려는데 5칸·첨부가 모두 비면 EMPTY_MATERIAL이고 DRAFT로 남는다 (memo는 세지 않음)")
+  void update_draftSaveWithoutMaterial_throwsEmptyMaterial() {
+    ProjectRecord record = record(ProjectRecordStatus.DRAFT);
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+
+    assertThatThrownBy(
+            () ->
+                projectRecordService.update(
+                    1L, 77L, update("메모는 있음", "", "", List.of(), List.of(3L))))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.EMPTY_MATERIAL);
+    assertThat(record.getStatus()).isEqualTo(ProjectRecordStatus.DRAFT);
+  }
+
+  @Test
+  @DisplayName("28번 DRAFT: 역량이 4개면 COMPETENCY_LIMIT이고 DRAFT로 남는다")
+  void update_draftSaveWithFourCompetencies_throwsCompetencyLimit() {
+    ProjectRecord record = record(ProjectRecordStatus.DRAFT);
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+
+    assertThatThrownBy(
+            () ->
+                projectRecordService.update(
+                    1L, 77L, update(null, null, null, null, List.of(1L, 2L, 3L, 4L))))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.COMPETENCY_LIMIT);
+    assertThat(record.getStatus()).isEqualTo(ProjectRecordStatus.DRAFT);
+  }
+
+  @Test
+  @DisplayName("28번 SAVED: competencyIds를 빈 배열로 보내면 COMPETENCY_LIMIT")
+  void update_savedWithEmptyCompetencies_throwsCompetencyLimit() {
+    ProjectRecord record = record(ProjectRecordStatus.SAVED);
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+
+    assertThatThrownBy(
+            () -> projectRecordService.update(1L, 77L, update(null, null, null, null, List.of())))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.COMPETENCY_LIMIT);
+  }
+
+  @Test
+  @DisplayName("28번 SAVED: 고쳐서 5칸이 모두 비고 첨부도 빈 배열이면 EMPTY_MATERIAL")
+  void update_savedClearingAllFields_throwsEmptyMaterial() {
+    ProjectRecord record = record(ProjectRecordStatus.SAVED);
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+
+    assertThatThrownBy(
+            () -> projectRecordService.update(1L, 77L, update(null, "", "", List.of(), null)))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.EMPTY_MATERIAL);
+  }
+
+  @Test
+  @DisplayName("28번: 남의 기록이거나 없으면 NOT_FOUND")
+  void update_notMine_throwsNotFound() {
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(
+            () -> projectRecordService.update(1L, 77L, update("메모", null, null, null, null)))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
   }
 
   @Test

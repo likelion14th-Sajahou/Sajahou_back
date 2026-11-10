@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -15,6 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
 import com.sajarok.domain.project.dto.ProjectRecordResponse;
+import com.sajarok.domain.project.dto.ProjectRecordUpdateRequest;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
 import com.sajarok.domain.project.service.ProjectRecordService;
 import com.sajarok.global.auth.CurrentUserProvider;
@@ -132,6 +134,57 @@ class ProjectRecordControllerTest {
         .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
         .andExpect(jsonPath("$.error.fields[0].field").value("aiOrganize"));
     verifyNoInteractions(projectRecordService);
+  }
+
+  @Test
+  @DisplayName("28번: 고치면 200과 명세 필드(status, isAiOrganized, memo 등)를 주고, 요청의 isAiOrganized를 읽는다")
+  void update_returns200WithSpecFields() throws Exception {
+    when(projectRecordService.update(eq(1L), eq(77L), any(ProjectRecordUpdateRequest.class)))
+        .thenAnswer(
+            i -> {
+              ProjectRecordUpdateRequest req = i.getArgument(2);
+              return new ProjectRecordResponse(
+                  77L,
+                  ProjectRecordStatus.SAVED,
+                  null,
+                  LocalDate.of(2026, 11, 5),
+                  req.isAiOrganized(),
+                  req.memo(),
+                  "API 명세 확정",
+                  null,
+                  null,
+                  null,
+                  null,
+                  List.of(),
+                  List.of());
+            });
+
+    mockMvc
+        .perform(
+            patch("/api/v1/project-records/77")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"memo\": \"새 메모\", \"isAiOrganized\": true}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.recordId").value(77))
+        .andExpect(jsonPath("$.data.status").value("SAVED"))
+        .andExpect(jsonPath("$.data.date").value("2026-11-05"))
+        .andExpect(jsonPath("$.data.isAiOrganized").value(true))
+        .andExpect(jsonPath("$.data.memo").value("새 메모"));
+  }
+
+  @Test
+  @DisplayName("28번: 남의 기록이거나 없으면 404 NOT_FOUND")
+  void update_notMine_returns404() throws Exception {
+    when(projectRecordService.update(eq(1L), eq(77L), any(ProjectRecordUpdateRequest.class)))
+        .thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
+    mockMvc
+        .perform(
+            patch("/api/v1/project-records/77")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"memo\": \"새 메모\"}"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
   }
 
   @Test

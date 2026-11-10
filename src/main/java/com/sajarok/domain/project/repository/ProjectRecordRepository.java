@@ -24,6 +24,11 @@ public interface ProjectRecordRepository extends JpaRepository<ProjectRecord, Lo
       @Param("projectIds") Collection<Long> projectIds,
       @Param("status") ProjectRecordStatus status);
 
+  /** 내 기록만 찾는다. 없거나 남의 기록이면 비어 있다 (둘 다 NOT_FOUND로 처리). */
+  @Query("select r from ProjectRecord r where r.id = :recordId and r.project.userId = :userId")
+  Optional<ProjectRecord> findByIdAndUserId(
+      @Param("recordId") Long recordId, @Param("userId") Long userId);
+
   /** 기록 주인 회원 ID(= 기록이 속한 프로젝트의 회원)만 읽는다. */
   @Query("select r.project.userId from ProjectRecord r where r.id = :recordId")
   Optional<Long> findUserIdById(@Param("recordId") Long recordId);

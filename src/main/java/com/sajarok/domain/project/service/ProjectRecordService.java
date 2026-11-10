@@ -2,6 +2,7 @@ package com.sajarok.domain.project.service;
 
 import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
 import com.sajarok.domain.project.dto.ProjectRecordResponse;
+import com.sajarok.domain.project.dto.ProjectRecordUpdateRequest;
 import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
@@ -65,10 +66,7 @@ public class ProjectRecordService {
             .nextStep(request.nextStep())
             .aiOrganized(false)
             .build();
-    // H-14: 5칸과 첨부가 모두 비어 있으면 저장하지 않음 (메모는 조건에 없음)
-    if (!record.hasFiveFields() && !request.hasAttachments()) {
-      throw new BusinessException(ErrorCode.EMPTY_MATERIAL);
-    }
+    checkSavedMaterial(record, request.hasAttachments());
     List<Long> competencyIds = validateCompetencyCount(request.competencyIds());
     // TODO(역량 담당): CompetencyService가 생기면 위 개수 확인을 지우고 이 호출로 바꾼다 (1~3·내 파트 확인).
     // competencyService.validate(userId, competencyIds, true);
@@ -84,6 +82,74 @@ public class ProjectRecordService {
 
     // TODO(역량 담당): competencyService.names(competencyIds)로 태그 이름을 채운다.
     return ProjectRecordResponse.of(saved, null, List.of(), List.of());
+  }
+
+  /**
+   * 28번: 기록 수정. 보낸 필드만 바꾼다(저장은 변경 감지). 남의 기록이거나 없으면 NOT_FOUND.
+   *
+   * <p>DRAFT + competencyIds = '기록 저장'(SAVED로 바꾸고 카드 생성). DRAFT + competencyIds 없음 = 칸만 바꿈(AI와 정리
+   * 중). SAVED = 칸을 바꾸고 카드에도 반영(memo는 카드 전문에 반영, 제목·배운 점은 카드 쪽에서 유지, H-15).
+   */
+  @Transactional
+  public ProjectRecordResponse update(
+      Long userId, Long recordId, ProjectRecordUpdateRequest request) {
+    ProjectRecord record =
+        projectRecordRepository
+            .findByIdAndUserId(recordId, userId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+
+    record.edit(
+        request.memo(),
+        request.did(),
+        request.concern(),
+        request.decision(),
+        request.result(),
+        request.nextStep(),
+        request.isAiOrganized());
+
+    // TODO(첨부 담당): attachmentIds를 보냈으면 연결을 통째로 바꾼다.
+    // if (request.attachmentIds() != null) attachmentService.connect(userId,
+    // request.attachmentIds(), owner);
+
+    // attachmentIds를 안 보냈으면 기존 첨부가 있을 수 있다. 기존 첨부 수는 첨부 담당 코드가 생기면 확인한다(TODO).
+    boolean mayHaveAttachments =
+        request.attachmentIds() == null || !request.attachmentIds().isEmpty();
+
+    if (record.isDraft()) {
+      if (request.competencyIds() == null) {
+        return ProjectRecordResponse.of(record, null, List.of(), List.of());
+      }
+      checkSavedMaterial(record, mayHaveAttachments);
+      List<Long> competencyIds = validateCompetencyCount(request.competencyIds());
+      // TODO(역량 담당): competencyService.validate(userId, competencyIds, true);
+      record.markSaved();
+      // TODO(카드 담당): PR #7이 머지되면 카드를 만들고 cardId를 응답에 넣는다.
+      // Long cardId = storyCardService.createFromRecord(toCardSource(userId, record),
+      // competencyIds);
+      return ProjectRecordResponse.of(record, null, List.of(), List.of());
+    }
+
+    checkSavedMaterial(record, mayHaveAttachments);
+    List<Long> competencyIds =
+        request.competencyIds() == null ? null : validateCompetencyCount(request.competencyIds());
+    // TODO(역량 담당): competencyIds가 있으면 competencyService.validate(userId, competencyIds, true);
+    // TODO(카드 담당): PR #7이 머지되면 카드에 반영한다. memo도 source에 담겨 카드 전문에 반영된다.
+    //   competencyIds가 null이면 태그는 그대로.
+    // storyCardService.syncFromRecord(toCardSource(userId, record), competencyIds);
+    // TODO(카드·역량 담당): cardId(storyCardService.findByRecordIds), 태그 이름(competencyService.names)을
+    // 채운다.
+    return ProjectRecordResponse.of(record, null, List.of(), List.of());
+  }
+
+  /**
+   * SAVED 기록의 자료 확인. H-14: 5칸과 첨부가 모두 비어 있으면 저장하지 않음 (메모는 조건에 없음). 아니면 EMPTY_MATERIAL.
+   *
+   * <p>27·28번이 같이 쓴다.
+   */
+  private void checkSavedMaterial(ProjectRecord record, boolean hasAttachments) {
+    if (!record.hasFiveFields() && !hasAttachments) {
+      throw new BusinessException(ErrorCode.EMPTY_MATERIAL);
+    }
   }
 
   /**
