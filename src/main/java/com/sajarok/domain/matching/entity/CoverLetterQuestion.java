@@ -67,6 +67,12 @@ public class CoverLetterQuestion extends BaseTimeEntity {
     this.editedAnswer = editedAnswer;
   }
 
+  /** 37번: 새 초안을 저장한다. 다시 만들면 직접 고친 답은 비운다(명세). */
+  public void applyDraft(AnswerDraft answerDraft) {
+    this.answerDraft = answerDraft;
+    this.editedAnswer = null;
+  }
+
   /** 지금 보이는 답의 글자 수. 고친 답이 있으면 그 글자 수, 없으면 초안 글자 수. */
   public int charCount() {
     if (editedAnswer != null) {
