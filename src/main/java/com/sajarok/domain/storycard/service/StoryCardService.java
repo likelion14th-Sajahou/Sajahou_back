@@ -4,10 +4,18 @@ import com.sajarok.domain.storycard.dto.CardSnapshot;
 import com.sajarok.domain.storycard.dto.RecentCard;
 import com.sajarok.domain.storycard.dto.RecordCardInfo;
 import com.sajarok.domain.storycard.dto.RecordCardSource;
+import com.sajarok.domain.storycard.entity.StoryCard;
+import com.sajarok.domain.storycard.entity.StoryCardStatus;
+import com.sajarok.domain.storycard.entity.StoryCardType;
+import com.sajarok.domain.storycard.repository.CompetencyCount;
+import com.sajarok.domain.storycard.repository.StoryCardRepository;
+import com.sajarok.global.exception.BusinessException;
+import com.sajarok.global.exception.ErrorCode;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,30 +25,64 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class StoryCardService {
 
+  private final StoryCardRepository storyCardRepository;
+
   @Transactional
   public Long createFromRecord(RecordCardSource src, Set<Long> competencyIds) {
-    return 0L;
+
+    if (storyCardRepository.existsByProjectRecordId(src.recordId())) {
+      throw new BusinessException(ErrorCode.INVALID_STATE);
+    }
+
+    StoryCard card = StoryCard.fromRecord(src, competencyIds);
+
+    return storyCardRepository.save(card).getId();
   }
 
   @Transactional
-  public void syncFromRecord(RecordCardSource src, Set<Long> competencyIds) {}
+  public void syncFromRecord(RecordCardSource src, Set<Long> competencyIds) {
+    StoryCard card =
+        storyCardRepository
+            .findByProjectRecordId(src.recordId())
+            .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+    card.syncFromRecord(src, competencyIds);
+  }
 
   @Transactional
-  public void deleteByRecord(Long recordId) {}
+  public void deleteByRecord(Long recordId) {
+    storyCardRepository.findByProjectRecordId(recordId).ifPresent(storyCardRepository::delete);
+  }
 
   public Map<Long, RecordCardInfo> findByRecordIds(Collection<Long> recordIds) {
-    return Map.of();
+    if (recordIds.isEmpty()) {
+      return Map.of();
+    }
+    return storyCardRepository.findAllByProjectRecordIdIn(recordIds).stream()
+        .map(
+            card ->
+                new RecordCardInfo(
+                    card.getProjectRecordId(), card.getId(), Set.copyOf(card.getCompetencyIds())))
+        .collect(Collectors.toMap(RecordCardInfo::recordId, info -> info));
   }
 
+  // StoryCardService
   public List<CardSnapshot> findPublished(Long userId) {
-    return List.of();
+    return storyCardRepository.findAllByUserIdAndStatus(userId, StoryCardStatus.PUBLISHED).stream()
+        .map(CardSnapshot::from)
+        .toList();
   }
 
   public Map<Long, Long> countByCompetency(Long userId) {
-    return Map.of();
+    return storyCardRepository.countByCompetency(userId, StoryCardStatus.PUBLISHED).stream()
+        .collect(Collectors.toMap(CompetencyCount::competencyId, CompetencyCount::cardCount));
   }
 
   public List<RecentCard> findRecentRetrospectiveCards(Long userId) {
-    return List.of();
+    return storyCardRepository
+        .findTop3ByUserIdAndStatusAndTypeNotOrderByCreatedAtDesc(
+            userId, StoryCardStatus.PUBLISHED, StoryCardType.PROJECT)
+        .stream()
+        .map(RecentCard::from)
+        .toList();
   }
 }
