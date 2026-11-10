@@ -3,13 +3,16 @@ package com.sajarok.domain.project.service;
 import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
 import com.sajarok.domain.project.dto.ProjectRecordResponse;
 import com.sajarok.domain.project.dto.ProjectRecordUpdateRequest;
+import com.sajarok.domain.project.dto.RecordOrganizeResponse;
 import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
 import com.sajarok.domain.project.repository.ProjectRecordRepository;
 import com.sajarok.domain.project.repository.ProjectRepository;
 import com.sajarok.domain.project.repository.RecordDate;
+import com.sajarok.domain.question.dto.QuestionView;
 import com.sajarok.domain.question.entity.QuestionOwner;
+import com.sajarok.domain.question.entity.QuestionStatus;
 import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.domain.storycard.dto.RecordCardInfo;
 import com.sajarok.domain.storycard.dto.RecordCardSource;
@@ -17,6 +20,7 @@ import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -24,7 +28,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -36,6 +42,7 @@ public class ProjectRecordService {
   private final ProjectRepository projectRepository;
   private final StoryCardService storyCardService;
   private final AiQuestionService aiQuestionService;
+  private final RecordOrganizer recordOrganizer;
 
   /**
    * 27번: 기록 추가. 마친(DONE) 프로젝트에도 추가할 수 있다 (H-11·H-21: 완료해도 잠기지 않음).
@@ -243,14 +250,75 @@ public class ProjectRecordService {
       throw new BusinessException(ErrorCode.NOT_FOUND);
     }
 
-    // 자식부터 지운다: 카드 → AI 질문 → 첨부 → 기록
+    deleteChildren(recordId);
+    projectRecordRepository.deleteById(recordId);
+  }
+
+  /**
+   * 기록에 딸린 것을 지운다: 카드 → AI 질문 → 첨부 순서. 기록 행은 지우지 않는다(부르는 쪽이 지움). 29·44번이 같이 쓴다.
+   *
+   * <p>소유 확인을 하지 않는다. 부르는 쪽(29번 delete, 44번 ProjectService.delete)이 먼저 확인한다.
+   */
+  @Transactional
+  public void deleteChildren(Long recordId) {
     storyCardService.deleteByRecord(recordId);
     aiQuestionService.deleteAll(QuestionOwner.projectRecord(recordId));
 
     // TODO(첨부 담당): AttachmentService가 생기면 호출한다. S3 파일까지 지운다.
     // attachmentService.deleteAll(owner);
+  }
 
-    projectRecordRepository.deleteById(recordId);
+  /** cutoff보다 먼저 만든 DRAFT 기록 ID를 오래된 순으로 최대 limit개 (DRAFT 정리 스케줄러용). */
+  public List<Long> findExpiredDraftIds(LocalDateTime cutoff, int limit) {
+    return projectRecordRepository.findIdsByStatusAndCreatedAtBefore(
+        ProjectRecordStatus.DRAFT, cutoff, PageRequest.of(0, limit));
+  }
+
+  /**
+   * 오래된 DRAFT 기록 하나를 딸린 것과 함께 지운다 (DRAFT 정리 스케줄러용). 지웠으면 true.
+   *
+   * <p>목록을 읽은 뒤 사용자가 저장(SAVED)했거나 이미 지웠을 수 있어서, 트랜잭션 안에서 다시 읽어 아직 DRAFT이고 cutoff보다 오래됐을 때만 지운다.
+   * 기록마다 따로 트랜잭션이라 하나가 실패해도 다른 기록 삭제는 되돌리지 않는다.
+   */
+  @Transactional
+  public boolean deleteExpiredDraft(Long recordId, LocalDateTime cutoff) {
+    ProjectRecord record = projectRecordRepository.findById(recordId).orElse(null);
+    if (record == null || !record.isDraft() || !record.getCreatedAt().isBefore(cutoff)) {
+      return false;
+    }
+    deleteChildren(recordId);
+    projectRecordRepository.delete(record);
+    return true;
+  }
+
+  /**
+   * 31번: 기록 AI 정리. 메모·5칸·첨부(DONE)·30번 답(ANSWERED)으로 5칸을 제안한다. 저장하지 않는다(28번이 저장).
+   *
+   * <p>AI가 최대 50초 걸려서 트랜잭션 없이 돈다. DRAFT·SAVED 모두 부를 수 있다(H-14 'AI 제안'). 자료가 모두 비면 EMPTY_MATERIAL.
+   */
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
+  public RecordOrganizeResponse organize(Long userId, Long recordId) {
+    // TODO(AI 모듈 담당): AiLock이 생기면 기록 단위로 감싼다. 진행 중이면 AI_IN_PROGRESS.
+    ProjectRecord record =
+        projectRecordRepository
+            .findByIdAndUserId(recordId, userId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+    List<QuestionView> answered =
+        aiQuestionService.findAll(QuestionOwner.projectRecord(recordId)).stream()
+            .filter(q -> q.status() == QuestionStatus.ANSWERED)
+            .toList();
+    // TODO(첨부 담당): attachmentService.readTexts(기록)에서 추출 DONE인 텍스트만 쓴다(FAILED·SKIPPED 건너뜀).
+    //   그 전까지는 첨부만 있는 기록도 EMPTY_MATERIAL이 된다.
+    List<String> attachmentTexts = List.of();
+
+    if (!record.hasMemo()
+        && !record.hasFiveFields()
+        && attachmentTexts.isEmpty()
+        && answered.isEmpty()) {
+      throw new BusinessException(ErrorCode.EMPTY_MATERIAL);
+    }
+    return RecordOrganizeResponse.of(
+        record, recordOrganizer.organize(record, answered, attachmentTexts));
   }
 
   /** 기록 ID → 기록 날짜(만든 날). 없는 ID는 결과에서 빠진다. */

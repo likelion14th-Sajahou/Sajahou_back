@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -45,5 +46,12 @@ public class ProjectController {
   @GetMapping("/{projectId}")
   public ApiResponse<ProjectDetailResponse> getDetail(@PathVariable Long projectId) {
     return ApiResponse.ok(projectService.getDetail(currentUserProvider.getUserId(), projectId));
+  }
+
+  /** 44번: 프로젝트 삭제. 성공하면 204 (본문 없음). */
+  @DeleteMapping("/{projectId}")
+  public ResponseEntity<Void> delete(@PathVariable Long projectId) {
+    projectService.delete(currentUserProvider.getUserId(), projectId);
+    return ResponseEntity.noContent().build();
   }
 }

@@ -5,8 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.groups.Tuple.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.sajarok.domain.project.dto.HomeProjectTiles;
@@ -26,6 +29,8 @@ import com.sajarok.domain.project.repository.ProjectName;
 import com.sajarok.domain.project.repository.ProjectRecordRepository;
 import com.sajarok.domain.project.repository.ProjectRepository;
 import com.sajarok.domain.project.repository.RecordStats;
+import com.sajarok.domain.question.entity.QuestionOwner;
+import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.domain.storycard.dto.RecordCardInfo;
 import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
@@ -41,6 +46,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -52,6 +58,8 @@ class ProjectServiceTest {
   @Mock private ProjectRepository projectRepository;
   @Mock private ProjectRecordRepository projectRecordRepository;
   @Mock private StoryCardService storyCardService;
+  @Mock private ProjectRecordService projectRecordService;
+  @Mock private AiQuestionService aiQuestionService;
 
   @InjectMocks private ProjectService projectService;
 
@@ -268,5 +276,54 @@ class ProjectServiceTest {
         .extracting(
             ProjectDetailResponse.RecordItem::recordId, ProjectDetailResponse.RecordItem::cardId)
         .containsExactly(tuple(78L, 413L), tuple(77L, 412L));
+  }
+
+  // ---- 44번 프로젝트 삭제 ----
+
+  @Test
+  @DisplayName("44번: 기록마다(DRAFT 포함) 딸린 것 정리 → 마치기 질문 → 기록 행 → 프로젝트 순서로 지운다")
+  void delete_deletesChildrenFirst() {
+    Project project = detailProject(null, null);
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(project));
+    when(projectRecordRepository.findIdsByProjectId(3L)).thenReturn(List.of(77L, 78L));
+
+    projectService.delete(1L, 3L);
+
+    InOrder order =
+        inOrder(
+            projectRecordService, aiQuestionService, projectRecordRepository, projectRepository);
+    order.verify(projectRecordService).deleteChildren(77L);
+    order.verify(projectRecordService).deleteChildren(78L);
+    order.verify(aiQuestionService).deleteAll(QuestionOwner.project(3L));
+    order.verify(projectRecordRepository).deleteAllByProjectId(3L);
+    order.verify(projectRepository).delete(project);
+  }
+
+  @Test
+  @DisplayName("44번: 기록이 없는 프로젝트도 마치기 질문과 프로젝트를 지운다")
+  void delete_noRecords_stillDeletesProject() {
+    Project project = detailProject(null, null);
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(project));
+    when(projectRecordRepository.findIdsByProjectId(3L)).thenReturn(List.of());
+
+    projectService.delete(1L, 3L);
+
+    verifyNoInteractions(projectRecordService);
+    verify(aiQuestionService).deleteAll(QuestionOwner.project(3L));
+    verify(projectRepository).delete(project);
+  }
+
+  @Test
+  @DisplayName("44번: 남의 프로젝트거나 없으면 NOT_FOUND이고 아무것도 지우지 않는다")
+  void delete_notMine_deletesNothing() {
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> projectService.delete(1L, 3L))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verifyNoInteractions(projectRecordService, aiQuestionService);
+    verify(projectRecordRepository, never()).deleteAllByProjectId(anyLong());
+    verify(projectRepository, never()).delete(any());
   }
 }

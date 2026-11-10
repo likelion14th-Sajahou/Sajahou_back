@@ -2,7 +2,9 @@ package com.sajarok.domain.user.controller;
 
 import com.sajarok.domain.user.dto.GoogleLoginRequest;
 import com.sajarok.domain.user.dto.GoogleLoginResponse;
+import com.sajarok.domain.user.dto.GoogleLoginResponse.UserSummary;
 import com.sajarok.domain.user.dto.SignupRequest;
+import com.sajarok.domain.user.service.DemoLoginService;
 import com.sajarok.domain.user.service.GoogleLoginService;
 import com.sajarok.domain.user.service.SignupService;
 import com.sajarok.domain.user.service.SignupTokenService;
@@ -30,6 +32,7 @@ public class GoogleLoginController {
   private final LoginSessionService loginSessionService;
   private final SignupTokenService signupTokenService;
   private final SignupService signupService;
+  private final DemoLoginService demoLoginService;
 
   @PostMapping("/google")
   public ApiResponse<GoogleLoginResponse> login(
@@ -68,4 +71,14 @@ public class GoogleLoginController {
   }
 
   public record SignupResponse(GoogleLoginResponse.UserSummary user) {}
+
+  @PostMapping("/demo")
+  public ApiResponse<DemoLoginResponse> demo(
+      HttpServletRequest request, HttpServletResponse response) {
+    UserSummary user = demoLoginService.getDemoUser();
+    loginSessionService.login(user.id(), request, response);
+    return ApiResponse.ok(new DemoLoginResponse(user));
+  }
+
+  public record DemoLoginResponse(UserSummary user) {}
 }
