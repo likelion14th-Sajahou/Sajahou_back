@@ -48,4 +48,25 @@ public class User extends BaseTimeEntity {
 
   @Column(name = "privacy_agreed_at", nullable = false)
   private LocalDateTime privacyAgreedAt;
+
+  public static User register(
+      String providerId,
+      String email,
+      String name,
+      String studentNo,
+      String department,
+      int cohort,
+      Part part,
+      LocalDateTime privacyAgreedAt) {
+    User user = new User();
+    user.providerId = providerId;
+    user.email = email;
+    user.name = name;
+    user.studentNo = studentNo;
+    user.department = department;
+    user.cohort = cohort;
+    user.part = part;
+    user.privacyAgreedAt = privacyAgreedAt;
+    return user;
+  }
 }

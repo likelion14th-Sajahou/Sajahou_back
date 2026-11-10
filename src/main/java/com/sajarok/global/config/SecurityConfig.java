@@ -23,7 +23,7 @@ public class SecurityConfig {
             auth ->
                 auth.requestMatchers(HttpMethod.GET, "/api/v1/auth/csrf")
                     .permitAll()
-                    .requestMatchers(HttpMethod.POST, "/api/v1/auth/google")
+                    .requestMatchers(HttpMethod.POST, "/api/v1/auth/google", "/api/v1/auth/signup")
                     .permitAll()
                     .anyRequest()
                     .authenticated())

@@ -1,6 +1,8 @@
 package com.sajarok.domain.user.service;
 
 import com.sajarok.domain.user.service.GoogleTokenVerifier.GoogleIdentity;
+import com.sajarok.global.exception.BusinessException;
+import com.sajarok.global.exception.ErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.time.Instant;
@@ -22,4 +24,25 @@ public class SignupTokenService {
   }
 
   private record PendingSignup(String token, GoogleIdentity identity, Instant expiresAt) {}
+
+  public GoogleIdentity verify(String token, HttpServletRequest request) {
+    var session = request.getSession(false);
+
+    if (session == null
+        || !(session.getAttribute(SESSION_KEY) instanceof PendingSignup pending)
+        || !pending.token().equals(token)
+        || !Instant.now().isBefore(pending.expiresAt())) {
+      throw new BusinessException(
+          ErrorCode.UNAUTHORIZED, "가입 정보가 만료됐거나 유효하지 않습니다. 구글 로그인을 다시 해 주세요.");
+    }
+
+    return pending.identity();
+  }
+
+  public void clear(HttpServletRequest request) {
+    var session = request.getSession(false);
+    if (session != null) {
+      session.removeAttribute(SESSION_KEY);
+    }
+  }
 }
