@@ -66,4 +66,10 @@ public class AttachmentController {
     return ResponseEntity.status(HttpStatus.CREATED)
         .body(ApiResponse.ok(AttachmentFileResponse.from(attachment)));
   }
+
+  @DeleteMapping("/{attachmentId}")
+  public ResponseEntity<Void> delete(@PathVariable Long attachmentId) {
+    attachmentService.delete(currentUserProvider.getUserId(), attachmentId);
+    return ResponseEntity.noContent().build();
+  }
 }

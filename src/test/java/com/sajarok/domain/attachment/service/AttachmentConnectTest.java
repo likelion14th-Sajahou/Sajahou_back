@@ -131,4 +131,25 @@ class AttachmentConnectTest {
     entityManager.flush();
     entityManager.clear();
   }
+
+  @Test
+  void deleteAll_deletesOnlyAttachmentsOfTheSelectedRecord() {
+    Long attachmentA = registerLink(userId);
+    Long attachmentB = registerLink(userId);
+    attachmentService.connect(userId, List.of(attachmentA), recordA);
+    attachmentService.connect(userId, List.of(attachmentB), recordB);
+    flushAndClear();
+
+    attachmentService.deleteAll(recordA);
+    flushAndClear();
+
+    assertThat(attachmentService.findAll(recordA)).isEmpty();
+    assertThatThrownBy(() -> attachmentService.getOwnedAttachment(userId, attachmentA))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    assertThat(attachmentService.findAll(recordB))
+        .extracting(AttachmentView::attachmentId)
+        .containsExactly(attachmentB);
+  }
 }

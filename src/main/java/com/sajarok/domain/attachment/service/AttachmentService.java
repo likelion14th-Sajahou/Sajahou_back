@@ -28,6 +28,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 @Slf4j
@@ -261,5 +263,43 @@ public class AttachmentService {
       originalError.addSuppressed(cleanupError);
       log.warn("업로드 실패 후 S3 파일 정리 실패 key={}", key, cleanupError);
     }
+  }
+
+  @Transactional
+  public void delete(Long userId, Long attachmentId) {
+    deleteAttachments(List.of(getOwnedAttachment(userId, attachmentId)));
+  }
+
+  @Transactional
+  public void deleteAll(AttachmentOwner owner) {
+    deleteAttachments(findAttachments(owner.kind(), List.of(owner.id())));
+  }
+
+  private void deleteAttachments(List<Attachment> attachments) {
+    List<String> s3Keys =
+        attachments.stream()
+            .map(Attachment::getS3Key)
+            .filter(key -> key != null && !key.isBlank())
+            .toList();
+
+    attachmentRepository.deleteAll(attachments);
+
+    if (s3Keys.isEmpty()) {
+      return;
+    }
+
+    TransactionSynchronizationManager.registerSynchronization(
+        new TransactionSynchronization() {
+          @Override
+          public void afterCommit() {
+            for (String key : s3Keys) {
+              try {
+                storage.delete(key);
+              } catch (RuntimeException e) {
+                log.warn("첨부 삭제 후 S3 객체 정리 실패 key={}", key, e);
+              }
+            }
+          }
+        });
   }
 }
