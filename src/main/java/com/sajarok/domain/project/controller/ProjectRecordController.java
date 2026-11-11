@@ -4,7 +4,10 @@ import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
 import com.sajarok.domain.project.dto.ProjectRecordResponse;
 import com.sajarok.domain.project.dto.ProjectRecordUpdateRequest;
 import com.sajarok.domain.project.dto.RecordOrganizeResponse;
+import com.sajarok.domain.project.dto.RecordQuestionsRequest;
+import com.sajarok.domain.project.dto.RecordQuestionsResponse;
 import com.sajarok.domain.project.service.ProjectRecordService;
+import com.sajarok.domain.project.service.ProjectRecordService.RecordQuestions;
 import com.sajarok.global.auth.CurrentUserProvider;
 import com.sajarok.global.response.ApiResponse;
 import jakarta.validation.Valid;
@@ -55,6 +58,17 @@ public class ProjectRecordController {
   public ResponseEntity<Void> delete(@PathVariable Long recordId) {
     projectRecordService.delete(currentUserProvider.getUserId(), recordId);
     return ResponseEntity.noContent().build();
+  }
+
+  /** 30번: 기록 AI 질문 (AI 호출, 최대 50초). 새로 만들면 201, 저장된 질문·자료 부족은 200, 자료가 바뀌었으면 409. */
+  @PostMapping("/project-records/{recordId}/questions")
+  public ResponseEntity<ApiResponse<RecordQuestionsResponse>> createQuestions(
+      @PathVariable Long recordId, @RequestBody(required = false) RecordQuestionsRequest request) {
+    RecordQuestions result =
+        projectRecordService.createQuestions(
+            currentUserProvider.getUserId(), recordId, request == null ? null : request.mode());
+    return ResponseEntity.status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
+        .body(ApiResponse.ok(result.response()));
   }
 
   /** 31번: 기록 AI 정리 (AI 호출, 최대 50초). 제안만 주고 저장하지 않음. */
