@@ -6,18 +6,32 @@ import com.sajarok.domain.attachment.entity.LinkType;
 import com.sajarok.domain.attachment.repository.AttachmentRepository;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import com.sajarok.infra.storage.S3AttachmentStorage;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class AttachmentService {
 
   private final AttachmentRepository attachmentRepository;
+  private static final long MAX_FILE_SIZE = 20L * 1024 * 1024;
+  private static final Set<String> ALLOWED_EXTENSIONS =
+      Set.of("pdf", "png", "jpg", "zip", "md", "txt");
+
+  private final S3AttachmentStorage storage;
 
   @Transactional
   public Attachment registerLink(Long userId, String url, AttachmentCategory category) {
@@ -64,5 +78,60 @@ public class AttachmentService {
 
   private static boolean matchesDomain(String host, String domain) {
     return host.equals(domain) || host.endsWith("." + domain);
+  }
+
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
+  public Attachment registerFile(Long userId, MultipartFile file, AttachmentCategory category) {
+    String name = file.getOriginalFilename();
+    if (file.isEmpty()) {
+      throw new BusinessException(ErrorCode.VALIDATION_ERROR, "빈 파일은 올릴 수 없어요.");
+    }
+    if (file.getSize() > MAX_FILE_SIZE) {
+      throw new BusinessException(ErrorCode.FILE_TOO_LARGE);
+    }
+    if (name == null || name.isBlank() || name.length() > 255) {
+      throw new BusinessException(ErrorCode.VALIDATION_ERROR, "파일 이름을 확인해 주세요.");
+    }
+
+    int dot = name.lastIndexOf('.');
+    if (dot < 0 || !ALLOWED_EXTENSIONS.contains(name.substring(dot + 1).toLowerCase(Locale.ROOT))) {
+      throw new BusinessException(ErrorCode.UNSUPPORTED_FILE);
+    }
+
+    String key = "attachments/" + UUID.randomUUID();
+    String contentType = file.getContentType();
+    if (contentType == null || contentType.isBlank() || contentType.length() > 100) {
+      contentType = "application/octet-stream";
+    }
+
+    Attachment attachment =
+        Attachment.createFile(userId, category, name, key, contentType, file.getSize());
+
+    boolean uploaded = false;
+    try (var input = file.getInputStream()) {
+      storage.upload(key, input, file.getSize(), contentType);
+      uploaded = true;
+    } catch (IOException e) {
+      if (uploaded) {
+        deleteAfterFailure(key, e);
+      }
+      throw new UncheckedIOException("첨부 파일을 처리하지 못했습니다.", e);
+    }
+
+    try {
+      return attachmentRepository.save(attachment);
+    } catch (RuntimeException e) {
+      deleteAfterFailure(key, e);
+      throw e;
+    }
+  }
+
+  private void deleteAfterFailure(String key, Exception originalError) {
+    try {
+      storage.delete(key);
+    } catch (RuntimeException cleanupError) {
+      originalError.addSuppressed(cleanupError);
+      log.warn("업로드 실패 후 S3 파일 정리 실패 key={}", key, cleanupError);
+    }
   }
 }

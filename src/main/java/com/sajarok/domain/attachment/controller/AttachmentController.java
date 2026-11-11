@@ -1,21 +1,20 @@
 package com.sajarok.domain.attachment.controller;
 
+import com.sajarok.domain.attachment.dto.AttachmentFileResponse;
 import com.sajarok.domain.attachment.dto.AttachmentLinkRequest;
 import com.sajarok.domain.attachment.dto.AttachmentLinkResponse;
 import com.sajarok.domain.attachment.dto.AttachmentStatusResponse;
+import com.sajarok.domain.attachment.entity.AttachmentCategory;
 import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.global.auth.CurrentUserProvider;
 import com.sajarok.global.response.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/v1/attachments")
@@ -42,5 +41,16 @@ public class AttachmentController {
         attachmentService.getOwnedAttachment(currentUserProvider.getUserId(), attachmentId);
 
     return ApiResponse.ok(AttachmentStatusResponse.from(attachment));
+  }
+
+  @PostMapping(path = "/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  public ResponseEntity<ApiResponse<AttachmentFileResponse>> registerFile(
+      @RequestParam("file") MultipartFile file,
+      @RequestParam("category") AttachmentCategory category) {
+    var attachment =
+        attachmentService.registerFile(currentUserProvider.getUserId(), file, category);
+
+    return ResponseEntity.status(HttpStatus.CREATED)
+        .body(ApiResponse.ok(AttachmentFileResponse.from(attachment)));
   }
 }

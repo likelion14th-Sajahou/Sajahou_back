@@ -84,4 +84,23 @@ public class Attachment extends BaseTimeEntity {
         linkType == LinkType.FIGMA ? ExtractStatus.SKIPPED : ExtractStatus.PENDING;
     return attachment;
   }
+
+  public static Attachment createFile(
+      Long userId,
+      AttachmentCategory category,
+      String name,
+      String s3Key,
+      String contentType,
+      long sizeBytes) {
+    Attachment attachment = new Attachment();
+    attachment.userId = userId;
+    attachment.type = AttachmentType.FILE;
+    attachment.category = category;
+    attachment.name = name;
+    attachment.s3Key = s3Key;
+    attachment.contentType = contentType;
+    attachment.sizeBytes = sizeBytes;
+    attachment.extractStatus = ExtractStatus.PENDING;
+    return attachment;
+  }
 }
