@@ -8,8 +8,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.question.dto.QuestionView;
 import com.sajarok.domain.question.entity.QuestionOwner;
+import com.sajarok.domain.question.entity.QuestionStatus;
 import com.sajarok.domain.question.service.AiQuestionService;
+import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartRequest;
@@ -19,9 +22,13 @@ import com.sajarok.domain.retrospective.entity.Retrospective;
 import com.sajarok.domain.retrospective.entity.RetrospectiveType;
 import com.sajarok.domain.retrospective.repository.RetrospectiveRepository;
 import com.sajarok.domain.retrospective.service.RetrospectiveService.StartResult;
+import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
+import com.sajarok.domain.storycard.entity.StoryCardStatus;
+import com.sajarok.domain.storycard.entity.StoryCardType;
 import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,7 +39,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
- * 서비스 테스트: 12번 회고 시작(이미 있으면 그대로, 휴회, 과제 회고 조건), 15번 휴회 표시·해제, 16번 처음부터 규칙을 확인한다.
+ * 서비스 테스트: 12번 회고 시작(이미 있으면 그대로, 휴회, 과제 회고 조건), 13번 상세, 15번 휴회 표시·해제, 16번 처음부터 규칙을 확인한다.
  *
  * <p>DB 없이 레포지토리와 AI 질문·카드 서비스를 가짜(@Mock)로 바꾼다. 주차 확인은 주차 모듈이 생기면 더한다.
  */
@@ -297,6 +304,81 @@ class RetrospectiveServiceTest {
     when(retrospectiveRepository.findByIdAndUserId(999L, ME)).thenReturn(Optional.empty());
 
     assertThatThrownBy(() -> retrospectiveService.reset(ME, 999L))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verifyNoInteractions(aiQuestionService, storyCardService);
+  }
+
+  /** 13번 준비: 회고 101의 첫 질문 */
+  private static QuestionView firstQuestion() {
+    return new QuestionView(
+        901L, 1, "근거와 숫자", null, null, "쿼리 수가 실제로 얼마나 줄었나요?", null, QuestionStatus.PENDING);
+  }
+
+  /** 13번 준비: 회고 101의 카드 초안 (필요한 칸만) */
+  private static StoryCardDetailResponse draftCard() {
+    return new StoryCardDetailResponse(
+        301L,
+        StoryCardType.SESSION,
+        StoryCardStatus.DRAFT,
+        null,
+        null,
+        null,
+        "N+1 해결",
+        null,
+        null,
+        null,
+        null,
+        null,
+        List.of(),
+        List.of(),
+        null,
+        null,
+        List.of(),
+        null);
+  }
+
+  @Test
+  @DisplayName("13번: 상세는 회고 자료와 이 회고의 질문·카드를 한 번에 모아 준다 (주차는 null, 첨부는 빈 목록)")
+  void detail_collectsQuestionsAndCard() {
+    mySessionAtStep3();
+    when(aiQuestionService.findAll(QuestionOwner.retrospective(101L)))
+        .thenReturn(List.of(firstQuestion()));
+    when(storyCardService.findDetailByRetrospective(101L)).thenReturn(Optional.of(draftCard()));
+
+    RetrospectiveDetailResponse response = retrospectiveService.getDetail(ME, 101L);
+
+    assertThat(response.id()).isEqualTo(101L);
+    assertThat(response.state()).isEqualTo(RetrospectiveState.IN_PROGRESS);
+    assertThat(response.isRested()).isFalse();
+    assertThat(response.currentStep()).isEqualTo(3);
+    assertThat(response.materials().memo()).isEqualTo("이번 주 고민");
+    assertThat(response.questions()).extracting(QuestionView::questionId).containsExactly(901L);
+    assertThat(response.card().cardId()).isEqualTo(301L);
+    assertThat(response.week()).isNull();
+    assertThat(response.attachments()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("13번: 4단계 전이라 카드가 없으면 card는 null이다")
+  void detail_noCard() {
+    mySessionAtStep3();
+    when(aiQuestionService.findAll(QuestionOwner.retrospective(101L))).thenReturn(List.of());
+    when(storyCardService.findDetailByRetrospective(101L)).thenReturn(Optional.empty());
+
+    RetrospectiveDetailResponse response = retrospectiveService.getDetail(ME, 101L);
+
+    assertThat(response.card()).isNull();
+    assertThat(response.questions()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("13번: 없거나 남의 회고면 NOT_FOUND이고, 질문·카드는 찾지 않는다")
+  void detail_notMine_notFound() {
+    when(retrospectiveRepository.findByIdAndUserId(999L, ME)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> retrospectiveService.getDetail(ME, 999L))
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(ErrorCode.NOT_FOUND);

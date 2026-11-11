@@ -1,8 +1,10 @@
 package com.sajarok.domain.retrospective.service;
 
+import com.sajarok.domain.question.dto.QuestionView;
 import com.sajarok.domain.question.entity.QuestionOwner;
 import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.domain.retrospective.dto.HomeRetroSummary;
+import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartRequest;
@@ -13,6 +15,7 @@ import com.sajarok.domain.retrospective.entity.AssignmentMode;
 import com.sajarok.domain.retrospective.entity.Retrospective;
 import com.sajarok.domain.retrospective.entity.RetrospectiveType;
 import com.sajarok.domain.retrospective.repository.RetrospectiveRepository;
+import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
 import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
@@ -98,5 +101,15 @@ public class RetrospectiveService {
     // 파일까지
 
     return RetrospectiveProgressResponse.from(retrospective);
+  }
+
+  /** 13번: 회고 상세 */
+  public RetrospectiveDetailResponse getDetail(Long userId, Long retrospectiveId) {
+    Retrospective retrospective = findMine(userId, retrospectiveId);
+    List<QuestionView> questions =
+        aiQuestionService.findAll(QuestionOwner.retrospective(retrospectiveId));
+    StoryCardDetailResponse card =
+        storyCardService.findDetailByRetrospective(retrospectiveId).orElse(null);
+    return RetrospectiveDetailResponse.of(retrospective, questions, card);
   }
 }

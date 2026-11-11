@@ -4,6 +4,7 @@ import com.sajarok.domain.storycard.dto.CardSnapshot;
 import com.sajarok.domain.storycard.dto.RecentCard;
 import com.sajarok.domain.storycard.dto.RecordCardInfo;
 import com.sajarok.domain.storycard.dto.RecordCardSource;
+import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
 import com.sajarok.domain.storycard.entity.StoryCard;
 import com.sajarok.domain.storycard.entity.StoryCardStatus;
 import com.sajarok.domain.storycard.entity.StoryCardType;
@@ -14,6 +15,7 @@ import com.sajarok.global.exception.ErrorCode;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -92,5 +94,12 @@ public class StoryCardService {
         .stream()
         .map(RecentCard::from)
         .toList();
+  }
+
+  /** 13번 회고 상세용: 회고의 카드를 22번과 같은 모양으로. 4단계 전이면 비어 있다 */
+  public Optional<StoryCardDetailResponse> findDetailByRetrospective(Long retrospectiveId) {
+    return storyCardRepository
+        .findByRetrospectiveId(retrospectiveId)
+        .map(card -> StoryCardDetailResponse.of(card, null, null));
   }
 }

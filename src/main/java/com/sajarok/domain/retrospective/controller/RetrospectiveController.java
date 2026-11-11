@@ -1,5 +1,6 @@
 package com.sajarok.domain.retrospective.controller;
 
+import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestResponse;
@@ -12,6 +13,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -51,5 +53,12 @@ public class RetrospectiveController {
   public ApiResponse<RetrospectiveProgressResponse> reset(@PathVariable Long retrospectiveId) {
     return ApiResponse.ok(
         retrospectiveService.reset(currentUserProvider.getUserId(), retrospectiveId));
+  }
+
+  /** 13번: 회고 상세 */
+  @GetMapping("/{retrospectiveId}")
+  public ApiResponse<RetrospectiveDetailResponse> getDetail(@PathVariable Long retrospectiveId) {
+    return ApiResponse.ok(
+        retrospectiveService.getDetail(currentUserProvider.getUserId(), retrospectiveId));
   }
 }

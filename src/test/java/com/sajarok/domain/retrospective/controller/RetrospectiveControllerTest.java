@@ -5,22 +5,30 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.sajarok.domain.question.dto.QuestionView;
+import com.sajarok.domain.question.entity.QuestionStatus;
+import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
+import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse.Materials;
 import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveState;
+import com.sajarok.domain.retrospective.entity.AssignmentMode;
 import com.sajarok.domain.retrospective.entity.RetrospectiveType;
 import com.sajarok.domain.retrospective.service.RetrospectiveService;
 import com.sajarok.domain.retrospective.service.RetrospectiveService.StartResult;
 import com.sajarok.global.auth.CurrentUserProvider;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -189,5 +197,62 @@ class RetrospectiveControllerTest {
         .perform(post("/api/v1/retrospectives/101/reset"))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.error.code").value("INVALID_STATE"));
+  }
+
+  @Test
+  @DisplayName(
+      "13번: 상세는 200과 명세 모양(isRested, materials, questions, 빈 attachments, week·card null)을 준다")
+  void detail_returns200() throws Exception {
+    when(retrospectiveService.getDetail(1L, 101L))
+        .thenReturn(
+            new RetrospectiveDetailResponse(
+                101L,
+                RetrospectiveType.SESSION,
+                RetrospectiveState.IN_PROGRESS,
+                false,
+                3,
+                LocalDateTime.of(2026, 11, 5, 22, 40),
+                null,
+                null,
+                new Materials(true, "실습 내용", AssignmentMode.RECORD, "과제 내용", null, "메모"),
+                List.of(),
+                List.of(
+                    new QuestionView(
+                        901L,
+                        1,
+                        "근거와 숫자",
+                        null,
+                        null,
+                        "쿼리 수가 실제로 얼마나 줄었나요?",
+                        null,
+                        QuestionStatus.PENDING)),
+                null));
+
+    mockMvc
+        .perform(get("/api/v1/retrospectives/101"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.id").value(101))
+        .andExpect(jsonPath("$.data.state").value("IN_PROGRESS"))
+        .andExpect(jsonPath("$.data.isRested").value(false))
+        .andExpect(jsonPath("$.data.currentStep").value(3))
+        .andExpect(jsonPath("$.data.week").value(nullValue()))
+        .andExpect(jsonPath("$.data.materials.assignmentMode").value("RECORD"))
+        .andExpect(jsonPath("$.data.materials.memo").value("메모"))
+        .andExpect(jsonPath("$.data.attachments.length()").value(0))
+        .andExpect(jsonPath("$.data.questions[0].questionId").value(901))
+        .andExpect(jsonPath("$.data.questions[0].status").value("PENDING"))
+        .andExpect(jsonPath("$.data.card").value(nullValue()));
+  }
+
+  @Test
+  @DisplayName("13번: 없거나 남의 회고면 404 NOT_FOUND를 준다")
+  void detail_notMine_returns404() throws Exception {
+    when(retrospectiveService.getDetail(1L, 999L))
+        .thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
+    mockMvc
+        .perform(get("/api/v1/retrospectives/999"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
   }
 }
