@@ -123,9 +123,7 @@ public class ProjectService {
         .findIdsByProjectId(projectId)
         .forEach(projectRecordService::deleteChildren);
     aiQuestionService.deleteAll(QuestionOwner.project(projectId));
-
-    // TODO(첨부 담당): 프로젝트 산출물 첨부를 지운다. S3 파일까지.
-    // attachmentService.deleteAll(owner);
+    attachmentService.deleteAll(AttachmentOwner.project(projectId));
 
     projectRecordRepository.deleteAllByProjectId(projectId);
     projectRepository.delete(project);

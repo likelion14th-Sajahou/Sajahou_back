@@ -313,10 +313,15 @@ class ProjectServiceTest {
 
     InOrder order =
         inOrder(
-            projectRecordService, aiQuestionService, projectRecordRepository, projectRepository);
+            projectRecordService,
+            aiQuestionService,
+            attachmentService,
+            projectRecordRepository,
+            projectRepository);
     order.verify(projectRecordService).deleteChildren(77L);
     order.verify(projectRecordService).deleteChildren(78L);
     order.verify(aiQuestionService).deleteAll(QuestionOwner.project(3L));
+    order.verify(attachmentService).deleteAll(AttachmentOwner.project(3L));
     order.verify(projectRecordRepository).deleteAllByProjectId(3L);
     order.verify(projectRepository).delete(project);
   }

@@ -6,6 +6,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.sajarok.domain.attachment.entity.Attachment;
@@ -16,6 +19,8 @@ import com.sajarok.domain.attachment.repository.AttachmentRepository;
 import com.sajarok.infra.storage.S3AttachmentStorage;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -25,6 +30,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @ExtendWith(MockitoExtension.class)
 class AttachmentServiceTest {
@@ -90,5 +97,33 @@ class AttachmentServiceTest {
     Attachment saved = attachmentService.registerFile(2L, file, AttachmentCategory.DESIGN);
 
     assertThat(saved.getExtractStatus()).isEqualTo(ExtractStatus.SKIPPED);
+  }
+
+  @Test
+  void delete_callsS3OnlyAfterCommitCallback() {
+    Long userId = 2L;
+    Long attachmentId = 501L;
+    String s3Key = "attachments/delete-test";
+    Attachment attachment = mock(Attachment.class);
+
+    when(attachment.getS3Key()).thenReturn(s3Key);
+    when(attachmentRepository.findByIdAndUserId(attachmentId, userId))
+        .thenReturn(Optional.of(attachment));
+
+    TransactionSynchronizationManager.initSynchronization();
+    try {
+      attachmentService.delete(userId, attachmentId);
+
+      verify(attachmentRepository).deleteAll(List.of(attachment));
+      verifyNoInteractions(storage);
+
+      var callbacks = TransactionSynchronizationManager.getSynchronizations();
+      assertThat(callbacks).hasSize(1);
+      callbacks.forEach(TransactionSynchronization::afterCommit);
+
+      verify(storage).delete(s3Key);
+    } finally {
+      TransactionSynchronizationManager.clearSynchronization();
+    }
   }
 }

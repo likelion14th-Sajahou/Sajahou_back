@@ -282,9 +282,7 @@ public class ProjectRecordService {
   public void deleteChildren(Long recordId) {
     storyCardService.deleteByRecord(recordId);
     aiQuestionService.deleteAll(QuestionOwner.projectRecord(recordId));
-
-    // TODO(첨부 담당): AttachmentService가 생기면 호출한다. S3 파일까지 지운다.
-    // attachmentService.deleteAll(owner);
+    attachmentService.deleteAll(AttachmentOwner.projectRecord(recordId));
   }
 
   /** cutoff보다 먼저 만든 DRAFT 기록 ID를 오래된 순으로 최대 limit개 (DRAFT 정리 스케줄러용). */
