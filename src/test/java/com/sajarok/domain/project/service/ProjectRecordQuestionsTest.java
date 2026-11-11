@@ -11,6 +11,15 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.dto.AttachmentView;
+import com.sajarok.domain.attachment.entity.Attachment;
+import com.sajarok.domain.attachment.entity.AttachmentCategory;
+import com.sajarok.domain.attachment.entity.AttachmentType;
+import com.sajarok.domain.attachment.entity.ExtractStatus;
+import com.sajarok.domain.attachment.entity.LinkType;
+import com.sajarok.domain.attachment.service.AttachmentService;
+import com.sajarok.domain.project.ai.RecordAttachment;
 import com.sajarok.domain.project.ai.RecordQuestionResult.Validated;
 import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
@@ -38,6 +47,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /** 30번 기록 AI 질문 서비스 테스트: mode × (질문 없음 / 자료 그대로 / 자료 바뀜), 자료 부족, AI 실패. */
 @ExtendWith(MockitoExtension.class)
@@ -52,6 +62,7 @@ class ProjectRecordQuestionsTest {
   @Mock private RecordOrganizer recordOrganizer;
   @Mock private RecordQuestionGenerator recordQuestionGenerator;
   @Mock private RecordQuestionWriter recordQuestionWriter;
+  @Mock private AttachmentService attachmentService;
 
   @InjectMocks private ProjectRecordService projectRecordService;
 
@@ -238,5 +249,48 @@ class ProjectRecordQuestionsTest {
         .extracting("errorCode")
         .isEqualTo(code);
     verify(recordQuestionWriter, never()).replace(anyLong(), anyList(), anyString());
+  }
+
+  private static AttachmentView view(Long id, ExtractStatus status) {
+    return new AttachmentView(
+        id,
+        AttachmentType.LINK,
+        AttachmentCategory.MEETING_NOTE,
+        null,
+        "https://notion.so/a",
+        LinkType.NOTION,
+        null,
+        null,
+        status);
+  }
+
+  @Test
+  @DisplayName("30번 첨부: readTexts로 읽기가 끝나길 기다린 뒤, DONE 첨부만 ID마다 읽어 AI에 넘기고(FAILED 건너뜀) 자료 해시에도 넣는다")
+  void attachments_readsDoneByIdAndHashesThem() {
+    ProjectRecord record = record("11/3 기획 회의");
+    given(record, List.of());
+    AttachmentOwner owner = AttachmentOwner.projectRecord(77L);
+    when(attachmentService.findAll(owner))
+        .thenReturn(List.of(view(601L, ExtractStatus.DONE), view(602L, ExtractStatus.FAILED)));
+    Attachment done =
+        Attachment.createLink(
+            1L, AttachmentCategory.MEETING_NOTE, "https://notion.so/a", LinkType.NOTION);
+    ReflectionTestUtils.setField(done, "id", 601L);
+    ReflectionTestUtils.setField(done, "extractStatus", ExtractStatus.DONE);
+    ReflectionTestUtils.setField(done, "extractedText", "홈 화면 시안 A, B 비교");
+    when(attachmentService.getOwnedAttachment(1L, 601L)).thenReturn(done);
+    List<RecordAttachment> expected =
+        List.of(
+            new RecordAttachment(
+                601L, "LINK", "MEETING_NOTE", "https://notion.so/a", "홈 화면 시안 A, B 비교"));
+    when(recordQuestionGenerator.generate(record, expected)).thenReturn(new Validated(false, NEW));
+    when(recordQuestionWriter.replace(77L, NEW, MaterialHash.of(record, expected)))
+        .thenReturn(List.of(question(QuestionStatus.PENDING)));
+
+    RecordQuestions result = projectRecordService.createQuestions(1L, 77L, RecordQuestionMode.AUTO);
+
+    assertThat(result.created()).isTrue();
+    verify(attachmentService).readTexts(owner);
+    verify(attachmentService, never()).getOwnedAttachment(1L, 602L);
   }
 }

@@ -19,8 +19,12 @@ import org.springframework.stereotype.Component;
 public class PostingAnalyzer {
 
   public PostingAnalysisResult analyze(
-      PostingText posting, List<CompetencyOption> competencies, List<String> questions) {
-    String user = MatchingPrompts.postingAnalysisUser(posting, competencies, questions);
+      PostingText posting,
+      List<String> attachmentTexts,
+      List<CompetencyOption> competencies,
+      List<String> questions) {
+    String user =
+        MatchingPrompts.postingAnalysisUser(posting, attachmentTexts, competencies, questions);
 
     // TODO(AI 모듈 담당): AiClient가 생기면 아래 빈 결과 대신 호출한다.
     // PostingAnalysisResult raw =

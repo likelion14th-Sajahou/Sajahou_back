@@ -45,15 +45,20 @@ public final class MatchingPrompts {
               PostingAnalysisResult.MAX_QUESTION_COMPETENCIES);
 
   /**
+   * @param attachmentTexts 공고 첨부에서 추출한 글자. 공고 원문의 일부라서 [공고] 안에 넣는다(evidenceQuote도 여기서 옮길 수 있게).
    * @param questions 문항 내용 (순서대로, 번호는 1부터)
    */
   public static String postingAnalysisUser(
-      PostingText posting, List<CompetencyOption> competencies, List<String> questions) {
+      PostingText posting,
+      List<String> attachmentTexts,
+      List<CompetencyOption> competencies,
+      List<String> questions) {
     StringBuilder sb = new StringBuilder();
     sb.append("[역량 목록]\n");
     competencies.forEach(
         c -> sb.append("- id ").append(c.id()).append(": ").append(c.name()).append('\n'));
     sb.append("\n[공고]\n").append(postingBody(posting));
+    attachmentTexts.forEach(text -> line(sb, "공고 첨부", text));
     sb.append("\n[문항]\n");
     for (int i = 0; i < questions.size(); i++) {
       sb.append(i + 1).append(". ").append(questions.get(i)).append('\n');
@@ -169,7 +174,6 @@ public final class MatchingPrompts {
     line(sb, "주요 업무·자격 요건", p.jd());
     line(sb, "우대사항", p.preferredQualification());
     line(sb, "기업 정보·인재상", p.companyInfo());
-    // TODO(첨부 담당): 공고 첨부 텍스트(attachmentService.readTexts)도 붙인다.
     return sb.toString();
   }
 

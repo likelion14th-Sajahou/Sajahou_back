@@ -1,5 +1,6 @@
 package com.sajarok.domain.matching.dto;
 
+import com.sajarok.domain.attachment.dto.AttachmentView;
 import java.util.List;
 
 /** 39번 매칭 결과(공고 상세) 응답. */
@@ -11,8 +12,7 @@ public record JobPostingDetailResponse(
     String jd,
     String preferredQualification,
     String companyInfo,
-    // TODO(첨부 담당): 첨부 응답 DTO가 생기면 그 타입으로 바꾼다. 지금은 빈 배열.
-    List<Object> attachments,
+    List<AttachmentView> attachments,
     List<PostingCompetencyItem> competencies,
     List<QuestionItem> questions) {
 

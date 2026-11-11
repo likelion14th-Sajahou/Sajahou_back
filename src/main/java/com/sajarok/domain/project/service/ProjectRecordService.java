@@ -1,5 +1,10 @@
 package com.sajarok.domain.project.service;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.dto.AttachmentView;
+import com.sajarok.domain.attachment.entity.Attachment;
+import com.sajarok.domain.attachment.entity.ExtractStatus;
+import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.project.ai.RecordAttachment;
 import com.sajarok.domain.project.ai.RecordQuestionResult.Validated;
 import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
@@ -49,6 +54,7 @@ public class ProjectRecordService {
   private final RecordOrganizer recordOrganizer;
   private final RecordQuestionGenerator recordQuestionGenerator;
   private final RecordQuestionWriter recordQuestionWriter;
+  private final AttachmentService attachmentService;
 
   /** 30번 결과. created면 201(새로 만듦), 아니면 200. */
   public record RecordQuestions(boolean created, RecordQuestionsResponse response) {}
@@ -69,7 +75,7 @@ public class ProjectRecordService {
     if (!request.aiOrganize()) {
       return createSaved(userId, project, request);
     }
-    return createDraft(project, request);
+    return createDraft(userId, project, request);
   }
 
   /**
@@ -97,14 +103,16 @@ public class ProjectRecordService {
     // competencyService.validate(userId, competencyIds, true);
 
     ProjectRecord saved = projectRecordRepository.save(record);
+    // 남의 첨부거나 없는 ID면 NOT_FOUND가 나고, 같은 트랜잭션이라 기록 저장도 되돌아간다.
+    List<AttachmentView> attachments =
+        connectAttachments(userId, saved.getId(), request.attachmentIds());
 
-    // TODO(첨부 담당): AttachmentService가 생기면 호출한다. 내 첨부인지 확인도 여기서 된다.
-    // attachmentService.connect(userId, request.attachmentIds(), owner);
-
-    Long cardId = storyCardService.createFromRecord(toCardSource(userId, saved), competencyIds);
+    Long cardId =
+        storyCardService.createFromRecord(
+            toCardSource(userId, saved, attachments.size()), competencyIds);
 
     // TODO(역량 담당): competencyService.names(competencyIds)로 태그 이름을 채운다.
-    return ProjectRecordResponse.of(saved, cardId, List.of(), List.of());
+    return ProjectRecordResponse.of(saved, cardId, List.of(), attachments);
   }
 
   /**
@@ -130,38 +138,48 @@ public class ProjectRecordService {
         request.nextStep(),
         request.isAiOrganized());
 
-    // TODO(첨부 담당): attachmentIds를 보냈으면 연결을 통째로 바꾼다.
-    // if (request.attachmentIds() != null) attachmentService.connect(userId,
-    // request.attachmentIds(), owner);
-
-    // attachmentIds를 안 보냈으면 기존 첨부가 있을 수 있다. 기존 첨부 수는 첨부 담당 코드가 생기면 확인한다(TODO).
-    boolean mayHaveAttachments =
-        request.attachmentIds() == null || !request.attachmentIds().isEmpty();
+    // TODO(첨부 담당): 끊기 메서드가 생기면 attachmentIds에서 빠진 첨부의 연결을 해제한다. 지금은 새 첨부 연결만 한다.
+    List<AttachmentView> attachments =
+        request.attachmentIds() == null
+            ? attachmentService.findAll(AttachmentOwner.projectRecord(recordId))
+            : connectAttachments(userId, recordId, request.attachmentIds());
+    boolean hasAttachments = !attachments.isEmpty();
 
     if (record.isDraft()) {
       if (request.competencyIds() == null) {
-        return ProjectRecordResponse.of(record, null, List.of(), List.of());
+        return ProjectRecordResponse.of(record, null, List.of(), attachments);
       }
-      checkSavedMaterial(record, mayHaveAttachments);
+      checkSavedMaterial(record, hasAttachments);
       Set<Long> competencyIds = validateCompetencyCount(request.competencyIds());
       // TODO(역량 담당): competencyService.validate(userId, competencyIds, true);
       record.markSaved();
-      Long cardId = storyCardService.createFromRecord(toCardSource(userId, record), competencyIds);
+      Long cardId =
+          storyCardService.createFromRecord(
+              toCardSource(userId, record, attachments.size()), competencyIds);
       // TODO(역량 담당): competencyService.names(competencyIds)로 태그 이름을 채운다.
-      return ProjectRecordResponse.of(record, cardId, List.of(), List.of());
+      return ProjectRecordResponse.of(record, cardId, List.of(), attachments);
     }
 
-    checkSavedMaterial(record, mayHaveAttachments);
+    checkSavedMaterial(record, hasAttachments);
     Set<Long> competencyIds =
         request.competencyIds() == null ? null : validateCompetencyCount(request.competencyIds());
     // TODO(역량 담당): competencyIds가 있으면 competencyService.validate(userId, competencyIds, true);
 
     // memo도 source에 담겨 카드 전문에 반영된다. competencyIds가 null이면 카드 태그는 그대로.
-    storyCardService.syncFromRecord(toCardSource(userId, record), competencyIds);
+    storyCardService.syncFromRecord(
+        toCardSource(userId, record, attachments.size()), competencyIds);
     RecordCardInfo card = storyCardService.findByRecordIds(List.of(recordId)).get(recordId);
     // TODO(역량 담당): card.competencyIds()로 competencyService.names를 불러 태그 이름을 채운다.
     return ProjectRecordResponse.of(
-        record, card == null ? null : card.cardId(), List.of(), List.of());
+        record, card == null ? null : card.cardId(), List.of(), attachments);
+  }
+
+  /** 첨부를 기록에 연결하고, 연결된 첨부 전체를 돌려준다. 기록이 내 것인지는 부르는 쪽이 먼저 확인한다. */
+  private List<AttachmentView> connectAttachments(
+      Long userId, Long recordId, List<Long> attachmentIds) {
+    AttachmentOwner owner = AttachmentOwner.projectRecord(recordId);
+    attachmentService.connect(userId, attachmentIds, owner);
+    return attachmentService.findAll(owner);
   }
 
   /**
@@ -188,12 +206,8 @@ public class ProjectRecordService {
     return distinct;
   }
 
-  /**
-   * 카드 담당에게 넘기는 기록 내용. 27·28번이 같이 쓴다.
-   *
-   * <p>TODO(첨부 담당): attachmentCount는 첨부 수를 셀 수 있게 되면 채운다. 지금은 0.
-   */
-  private RecordCardSource toCardSource(Long userId, ProjectRecord record) {
+  /** 카드 담당에게 넘기는 기록 내용. 27·28번이 같이 쓴다. */
+  private RecordCardSource toCardSource(Long userId, ProjectRecord record, int attachmentCount) {
     return new RecordCardSource(
         userId,
         record.getProject().getId(),
@@ -205,7 +219,7 @@ public class ProjectRecordService {
         record.getDecision(),
         record.getResult(),
         record.getNextStep(),
-        0);
+        attachmentCount);
   }
 
   /**
@@ -213,7 +227,8 @@ public class ProjectRecordService {
    *
    * <p>isAiOrganized는 31번(AI 정리) 뒤에 true가 되므로 여기서는 false. competencyIds는 무시한다.
    */
-  private ProjectRecordResponse createDraft(Project project, ProjectRecordCreateRequest request) {
+  private ProjectRecordResponse createDraft(
+      Long userId, Project project, ProjectRecordCreateRequest request) {
     ProjectRecord record =
         ProjectRecord.builder()
             .project(project)
@@ -227,11 +242,9 @@ public class ProjectRecordService {
             .aiOrganized(false)
             .build();
     ProjectRecord saved = projectRecordRepository.save(record);
-
-    // TODO(첨부 담당): AttachmentService가 생기면 호출한다. 내 첨부인지 확인도 여기서 된다.
-    // attachmentService.connect(userId, request.attachmentIds(), owner);
-
-    return ProjectRecordResponse.of(saved, null, List.of(), List.of());
+    List<AttachmentView> attachments =
+        connectAttachments(userId, saved.getId(), request.attachmentIds());
+    return ProjectRecordResponse.of(saved, null, List.of(), attachments);
   }
 
   /** 기록 주인 회원 ID. 다른 도메인이 소유 확인에 쓴다. 없으면 NOT_FOUND. */
@@ -312,8 +325,7 @@ public class ProjectRecordService {
         projectRecordRepository
             .findByIdAndUserId(recordId, userId)
             .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-    // TODO(첨부 담당): attachmentService.findAll·readTexts(기록)에서 추출 DONE인 첨부만 만든다(FAILED·SKIPPED 건너뜀).
-    List<RecordAttachment> attachments = List.of();
+    List<RecordAttachment> attachments = readDoneAttachments(userId, recordId);
     String hash = MaterialHash.of(record, attachments);
 
     List<QuestionView> existing = aiQuestionService.findAll(QuestionOwner.projectRecord(recordId));
@@ -341,6 +353,32 @@ public class ProjectRecordService {
             recordQuestionWriter.replace(recordId, generated.questions(), hash)));
   }
 
+  /**
+   * 30번 첨부: 읽는 중(PENDING)이 끝나길 기다린 뒤, DONE 첨부를 ID마다 따로 읽는다. 글자 목록과 순서로 짝짓지 않아 ID·글자가 어긋나지 않는다.
+   *
+   * <p>TODO(첨부 담당): ID·종류·이름·글자를 같이 주는 메서드가 생기면 아래 세 단계를 한 번으로 바꾼다.
+   */
+  private List<RecordAttachment> readDoneAttachments(Long userId, Long recordId) {
+    AttachmentOwner owner = AttachmentOwner.projectRecord(recordId);
+    attachmentService.readTexts(owner); // 기다리기만 하고 결과는 쓰지 않는다.
+    return attachmentService.findAll(owner).stream()
+        .filter(view -> view.extractStatus() == ExtractStatus.DONE)
+        .map(
+            view ->
+                toRecordAttachment(
+                    attachmentService.getOwnedAttachment(userId, view.attachmentId())))
+        .toList();
+  }
+
+  private static RecordAttachment toRecordAttachment(Attachment a) {
+    return new RecordAttachment(
+        a.getId(),
+        a.getType().name(),
+        a.getCategory().name(),
+        a.getName() != null ? a.getName() : a.getUrl(),
+        a.getExtractedText());
+  }
+
   private static BusinessException materialChanged(List<QuestionView> existing) {
     long answered = existing.stream().filter(q -> q.status() == QuestionStatus.ANSWERED).count();
     return new BusinessException(
@@ -365,9 +403,9 @@ public class ProjectRecordService {
         aiQuestionService.findAll(QuestionOwner.projectRecord(recordId)).stream()
             .filter(q -> q.status() == QuestionStatus.ANSWERED)
             .toList();
-    // TODO(첨부 담당): attachmentService.readTexts(기록)에서 추출 DONE인 텍스트만 쓴다(FAILED·SKIPPED 건너뜀).
-    //   그 전까지는 첨부만 있는 기록도 EMPTY_MATERIAL이 된다.
-    List<String> attachmentTexts = List.of();
+    // 추출 DONE인 글자만 온다(FAILED·SKIPPED 건너뜀). 읽는 중이면 최대 10초 기다린 뒤 ATTACHMENT_PENDING.
+    List<String> attachmentTexts =
+        attachmentService.readTexts(AttachmentOwner.projectRecord(recordId));
 
     if (!record.hasMemo()
         && !record.hasFiveFields()

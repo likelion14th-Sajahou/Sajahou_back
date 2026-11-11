@@ -1,5 +1,7 @@
 package com.sajarok.domain.matching.service;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.matching.ai.PostingAnalysisResult;
 import com.sajarok.domain.matching.dto.JobPostingCreateRequest;
 import com.sajarok.domain.matching.dto.JobPostingCreateRequest.QuestionRequest;
@@ -31,6 +33,7 @@ public class JobPostingWriter {
 
   private final JobPostingRepository jobPostingRepository;
   private final CoverLetterQuestionRepository coverLetterQuestionRepository;
+  private final AttachmentService attachmentService;
 
   /** 역량을 반영한 공고와 문항(순서대로). */
   public record Applied(JobPosting posting, List<CoverLetterQuestion> questions) {}
@@ -62,18 +65,19 @@ public class JobPostingWriter {
               .build());
     }
     coverLetterQuestionRepository.saveAll(questions);
-
-    // TODO(첨부 담당): 공고 첨부(category JOB_POSTING)를 이 공고에 연결한다.
-    // attachmentService.connect(userId, request.attachmentIds(), owner);
     return posting;
   }
 
   /**
-   * 검증한 AI 결과를 공고·문항에 저장하고, 공고와 문항(순서대로)을 돌려준다. 같은 역량이 두 번 오면 처음 것만 남긴다. AI 결과에 없는 문항은 역량 없음([])으로
-   * 저장한다.
+   * 검증한 AI 결과를 공고·문항에 저장하고, 첨부를 공고에 연결한 뒤 공고와 문항(순서대로)을 돌려준다. 같은 역량이 두 번 오면 처음 것만 남긴다. AI 결과에 없는
+   * 문항은 역량 없음([])으로 저장한다.
+   *
+   * <p>첨부 연결을 AI 성공 뒤에 하는 이유: AI가 실패해 공고를 지울 때 연결된 첨부가 있으면 FK 때문에 삭제가 막힌다. 연결이 실패하면(이미 다른 곳에 연결 등)
+   * 이 트랜잭션이 통째로 되돌아가고, 부르는 쪽이 공고를 지운다.
    */
   @Transactional
-  public Applied applyAnalysis(Long jobPostingId, PostingAnalysisResult result) {
+  public Applied applyAnalysis(
+      Long userId, Long jobPostingId, List<Long> attachmentIds, PostingAnalysisResult result) {
     JobPosting posting =
         jobPostingRepository
             .findById(jobPostingId)
@@ -98,16 +102,16 @@ public class JobPostingWriter {
         q ->
             q.applyCompetencyIds(
                 idsBySeq.getOrDefault(q.getSeq(), List.of()).stream().distinct().toList()));
+    attachmentService.connect(userId, attachmentIds, AttachmentOwner.jobPosting(jobPostingId));
     return new Applied(posting, questions);
   }
 
   /**
    * AI 분석이 실패한 공고를 지운다. FE는 실패 응답에서 공고 ID를 받지 못해 다시 제출하므로, 남겨 두면 쓸 수 없는 공고가 쌓인다. 문항 → 공고 순서로
-   * 지운다(FK).
+   * 지운다(FK). 첨부는 applyAnalysis에서야 연결하므로 여기서 끊을 첨부는 없다.
    */
   @Transactional
   public void discard(Long jobPostingId) {
-    // TODO(첨부 담당): AI 실패 시 첨부는 공고 연결만 해제, 첨부 데이터·S3 파일은 유지 (첨부 담당 의견, PR #19)
     coverLetterQuestionRepository.deleteAllByJobPostingId(jobPostingId);
     jobPostingRepository.deleteById(jobPostingId);
   }

@@ -12,6 +12,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.dto.AttachmentView;
+import com.sajarok.domain.attachment.entity.AttachmentCategory;
+import com.sajarok.domain.attachment.entity.AttachmentType;
+import com.sajarok.domain.attachment.entity.ExtractStatus;
+import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.project.dto.HomeProjectTiles;
 import com.sajarok.domain.project.dto.HomeProjectTiles.DoneTile;
 import com.sajarok.domain.project.dto.HomeProjectTiles.InProgressTile;
@@ -60,6 +66,7 @@ class ProjectServiceTest {
   @Mock private StoryCardService storyCardService;
   @Mock private ProjectRecordService projectRecordService;
   @Mock private AiQuestionService aiQuestionService;
+  @Mock private AttachmentService attachmentService;
 
   @InjectMocks private ProjectService projectService;
 
@@ -253,7 +260,7 @@ class ProjectServiceTest {
   }
 
   @Test
-  @DisplayName("26번: 카드 ID를 기록 ID 전체로 한 번만 묻고(N+1 방지), 기록마다 맞는 cardId를 넣는다")
+  @DisplayName("26번: 카드 ID·첨부를 기록 ID 전체로 한 번씩만 묻고(N+1 방지), 기록마다 맞는 cardId·첨부를 넣는다 (첨부 없으면 빈 배열)")
   void getDetail_fetchesCardIdsOnce() {
     Project project = detailProject(null, null);
     when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(project));
@@ -268,6 +275,19 @@ class ProjectServiceTest {
             Map.of(
                 78L, new RecordCardInfo(78L, 413L, Set.of()),
                 77L, new RecordCardInfo(77L, 412L, Set.of())));
+    AttachmentView meetingNote =
+        new AttachmentView(
+            601L,
+            AttachmentType.FILE,
+            AttachmentCategory.MEETING_NOTE,
+            "회의록.pdf",
+            null,
+            null,
+            "application/pdf",
+            10L,
+            ExtractStatus.DONE);
+    when(attachmentService.findAll(AttachmentOwner.Kind.PROJECT_RECORD, List.of(78L, 77L)))
+        .thenReturn(Map.of(78L, List.of(meetingNote)));
 
     ProjectDetailResponse response = projectService.getDetail(1L, 3L);
 
@@ -276,6 +296,8 @@ class ProjectServiceTest {
         .extracting(
             ProjectDetailResponse.RecordItem::recordId, ProjectDetailResponse.RecordItem::cardId)
         .containsExactly(tuple(78L, 413L), tuple(77L, 412L));
+    assertThat(response.records().get(0).attachments()).containsExactly(meetingNote);
+    assertThat(response.records().get(1).attachments()).isEmpty();
   }
 
   // ---- 44번 프로젝트 삭제 ----
