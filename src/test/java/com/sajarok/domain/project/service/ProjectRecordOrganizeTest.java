@@ -9,6 +9,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.project.dto.RecordOrganizeResponse;
 import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
@@ -45,6 +47,7 @@ class ProjectRecordOrganizeTest {
   @Mock private StoryCardService storyCardService;
   @Mock private AiQuestionService aiQuestionService;
   @Mock private RecordOrganizer recordOrganizer;
+  @Mock private AttachmentService attachmentService;
 
   @InjectMocks private ProjectRecordService projectRecordService;
 
@@ -151,5 +154,18 @@ class ProjectRecordOrganizeTest {
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(code);
+  }
+
+  @Test
+  @DisplayName("31번 첨부: 메모·5칸·답이 없어도 첨부 글자(readTexts)가 있으면 자료로 보고, 그 글자를 AI에 넘긴다")
+  void organize_attachmentTextsOnly_isMaterial() {
+    ProjectRecord record = record(null, null);
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+    when(attachmentService.readTexts(AttachmentOwner.projectRecord(77L)))
+        .thenReturn(List.of("홈 화면 시안 A, B 비교"));
+    when(recordOrganizer.organize(eq(record), anyList(), eq(List.of("홈 화면 시안 A, B 비교"))))
+        .thenReturn(suggestion());
+
+    assertThat(projectRecordService.organize(1L, 77L).did()).isEqualTo("AI가 쓴 한 일");
   }
 }

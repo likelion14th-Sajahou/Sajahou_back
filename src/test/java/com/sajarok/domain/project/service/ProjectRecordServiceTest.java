@@ -13,6 +13,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.dto.AttachmentView;
+import com.sajarok.domain.attachment.entity.AttachmentCategory;
+import com.sajarok.domain.attachment.entity.AttachmentType;
+import com.sajarok.domain.attachment.entity.ExtractStatus;
 import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
 import com.sajarok.domain.project.dto.ProjectRecordResponse;
@@ -556,5 +561,90 @@ class ProjectRecordServiceTest {
 
     assertThat(projectRecordService.deleteExpiredDraft(77L, CUTOFF)).isFalse();
     verifyNoInteractions(storyCardService, aiQuestionService);
+  }
+
+  private static AttachmentView attachmentView(Long id) {
+    return new AttachmentView(
+        id,
+        AttachmentType.FILE,
+        AttachmentCategory.MEETING_NOTE,
+        "회의록.pdf",
+        null,
+        null,
+        "application/pdf",
+        10L,
+        ExtractStatus.DONE);
+  }
+
+  @Test
+  @DisplayName("27번 첨부: 저장한 기록에 첨부를 연결하고, 연결된 첨부를 응답에 넣고, 카드에 첨부 수를 넘긴다")
+  void create_saved_connectsAttachments() {
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
+    when(projectRecordRepository.save(any(ProjectRecord.class)))
+        .thenAnswer(
+            i -> {
+              ProjectRecord saved = i.getArgument(0);
+              ReflectionTestUtils.setField(saved, "id", 90L);
+              return saved;
+            });
+    List<AttachmentView> connected = List.of(attachmentView(601L), attachmentView(602L));
+    when(attachmentService.findAll(AttachmentOwner.projectRecord(90L))).thenReturn(connected);
+
+    ProjectRecordResponse response =
+        projectRecordService.create(
+            1L, 3L, savedRequest(null, "API 명세 확정", List.of(601L, 602L), List.of(3L)));
+
+    verify(attachmentService).connect(1L, List.of(601L, 602L), AttachmentOwner.projectRecord(90L));
+    assertThat(response.attachments()).isEqualTo(connected);
+    ArgumentCaptor<RecordCardSource> source = ArgumentCaptor.forClass(RecordCardSource.class);
+    verify(storyCardService).createFromRecord(source.capture(), any());
+    assertThat(source.getValue().attachmentCount()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("27번 첨부: 남의 첨부라 연결이 NOT_FOUND면 카드를 만들지 않는다 (같은 트랜잭션이라 기록 저장도 되돌아감)")
+  void create_notMyAttachment_throwsWithoutCard() {
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
+    when(projectRecordRepository.save(any(ProjectRecord.class))).thenAnswer(i -> i.getArgument(0));
+    org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.NOT_FOUND))
+        .when(attachmentService)
+        .connect(eq(1L), eq(List.of(999L)), any());
+
+    assertThatThrownBy(
+            () ->
+                projectRecordService.create(
+                    1L, 3L, savedRequest(null, "API 명세 확정", List.of(999L), List.of(3L))))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verifyNoInteractions(storyCardService);
+  }
+
+  @Test
+  @DisplayName("28번 첨부: attachmentIds를 안 보내면 연결은 그대로 두고, 이미 연결된 첨부가 있으면 5칸을 다 비워도 저장한다")
+  void update_noAttachmentIds_keepsExistingAttachments() {
+    ProjectRecord record = record(ProjectRecordStatus.SAVED);
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+    when(attachmentService.findAll(AttachmentOwner.projectRecord(77L)))
+        .thenReturn(List.of(attachmentView(601L)));
+
+    ProjectRecordResponse response =
+        projectRecordService.update(1L, 77L, update(null, "", "", null, null));
+
+    verify(attachmentService, never()).connect(anyLong(), any(), any());
+    assertThat(response.attachments())
+        .extracting(AttachmentView::attachmentId)
+        .containsExactly(601L);
+  }
+
+  @Test
+  @DisplayName("28번 첨부: attachmentIds를 보내면 새 첨부를 이 기록에 연결한다 (빠진 첨부 해제는 끊기 메서드가 생기면)")
+  void update_withAttachmentIds_connects() {
+    ProjectRecord record = record(ProjectRecordStatus.SAVED);
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+
+    projectRecordService.update(1L, 77L, update(null, null, null, List.of(603L), null));
+
+    verify(attachmentService).connect(1L, List.of(603L), AttachmentOwner.projectRecord(77L));
   }
 }

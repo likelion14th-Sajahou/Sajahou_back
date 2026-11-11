@@ -1,5 +1,6 @@
 package com.sajarok.domain.project.service;
 
+import com.sajarok.domain.project.ai.FinishAttachments;
 import com.sajarok.domain.project.ai.FinishPrompts;
 import com.sajarok.domain.project.ai.PortfolioDraftResult;
 import com.sajarok.domain.project.ai.PortfolioDraftResult.Section;
@@ -29,8 +30,11 @@ public class PortfolioDrafter {
    * @return key → 본문(없으면 null)
    */
   public Map<String, String> draft(
-      Project project, List<ProjectRecord> records, List<QuestionView> answered) {
-    String user = FinishPrompts.portfolioUser(project, records, answered);
+      Project project,
+      List<ProjectRecord> records,
+      List<QuestionView> answered,
+      FinishAttachments attachments) {
+    String user = FinishPrompts.portfolioUser(project, records, answered, attachments);
 
     // TODO(AI 모듈 담당): AiClient가 생기면 아래 빈칸 결과 대신 호출한다.
     // PortfolioDraftResult raw =

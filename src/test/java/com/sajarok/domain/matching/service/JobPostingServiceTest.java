@@ -8,6 +8,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.dto.AttachmentView;
+import com.sajarok.domain.attachment.entity.AttachmentCategory;
+import com.sajarok.domain.attachment.entity.AttachmentType;
+import com.sajarok.domain.attachment.entity.ExtractStatus;
+import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.matching.dto.AnswerResponse;
 import com.sajarok.domain.matching.dto.JobPostingDetailResponse;
 import com.sajarok.domain.matching.entity.CoverLetterCardRole;
@@ -42,6 +48,7 @@ class JobPostingServiceTest {
   @Mock private StoryCardService storyCardService;
   @Mock private ProjectService projectService;
   @Mock private AnswerAssembler answerAssembler;
+  @Mock private AttachmentService attachmentService;
 
   @InjectMocks private JobPostingService jobPostingService;
 
@@ -52,7 +59,7 @@ class JobPostingServiceTest {
   }
 
   @Test
-  @DisplayName("39번: 문항 순서대로, 카드 연결은 모든 문항을 한 번에 읽어 문항별 역할을 넘기고, 역량에 카드 수를 붙인다")
+  @DisplayName("39번: 문항 순서대로, 카드 연결은 모든 문항을 한 번에 읽어 문항별 역할을 넘기고, 역량에 카드 수를, 공고 첨부를 붙인다")
   void getDetail_loadsOnceAndAssembles() {
     JobPosting posting = JobPosting.builder().userId(1L).company("카카오").build();
     ReflectionTestUtils.setField(posting, "id", 21L);
@@ -75,9 +82,24 @@ class JobPostingServiceTest {
             eq(q1), eq(Map.of(410L, CoverLetterCardRole.MAIN)), anyMap(), anyMap()))
         .thenReturn(answer);
 
+    AttachmentView postingFile =
+        new AttachmentView(
+            701L,
+            AttachmentType.FILE,
+            AttachmentCategory.JOB_POSTING,
+            "카카오 공고.pdf",
+            null,
+            null,
+            "application/pdf",
+            10L,
+            ExtractStatus.DONE);
+    when(attachmentService.findAll(AttachmentOwner.jobPosting(21L)))
+        .thenReturn(List.of(postingFile));
+
     JobPostingDetailResponse response = jobPostingService.getDetail(1L, 21L);
 
     assertThat(response.company()).isEqualTo("카카오");
+    assertThat(response.attachments()).containsExactly(postingFile);
     assertThat(response.questions())
         .extracting(JobPostingDetailResponse.QuestionItem::questionId)
         .containsExactly(55L, 56L);
@@ -99,6 +121,6 @@ class JobPostingServiceTest {
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(ErrorCode.NOT_FOUND);
-    verifyNoInteractions(coverLetterQuestionRepository, storyCardService);
+    verifyNoInteractions(coverLetterQuestionRepository, storyCardService, attachmentService);
   }
 }

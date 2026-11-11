@@ -1,5 +1,8 @@
 package com.sajarok.domain.project.service;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.service.AttachmentService;
+import com.sajarok.domain.project.ai.FinishAttachments;
 import com.sajarok.domain.project.dto.FinishQuestionsResponse;
 import com.sajarok.domain.project.dto.PortfolioDraftResponse;
 import com.sajarok.domain.project.dto.PortfolioSaveResponse;
@@ -36,6 +39,7 @@ public class ProjectFinishService {
   private final ProjectRecordRepository projectRecordRepository;
   private final FinishQuestionGenerator finishQuestionGenerator;
   private final PortfolioDrafter portfolioDrafter;
+  private final AttachmentService attachmentService;
 
   /** 32번 결과. created가 true면 새로 만듦(201), false면 진행 중이던 질문을 그대로 돌려줌(200). */
   public record FinishQuestions(boolean created, FinishQuestionsResponse response) {}
@@ -62,7 +66,8 @@ public class ProjectFinishService {
     }
 
     List<ProjectRecord> records = selectedRecords(projectId, recordIds);
-    List<NewQuestion> questions = finishQuestionGenerator.generate(project, records);
+    List<NewQuestion> questions =
+        finishQuestionGenerator.generate(project, records, loadAttachments(projectId, records));
     return new FinishQuestions(
         true, FinishQuestionsResponse.from(aiQuestionService.replace(owner, questions)));
   }
@@ -88,8 +93,19 @@ public class ProjectFinishService {
             .filter(q -> q.status() == QuestionStatus.ANSWERED)
             .toList();
 
-    Map<String, String> bodies = portfolioDrafter.draft(project, records, answered);
+    Map<String, String> bodies =
+        portfolioDrafter.draft(project, records, answered, loadAttachments(projectId, records));
     return PortfolioMarkdown.build(project, bodies);
+  }
+
+  /** 프로젝트 산출물과 고른 기록의 첨부. 프로젝트·기록이 내 것인지는 부르는 쪽이 먼저 확인한다. 32·33번이 같이 쓴다. */
+  private FinishAttachments loadAttachments(Long projectId, List<ProjectRecord> records) {
+    List<Long> recordIds = records.stream().map(ProjectRecord::getId).toList();
+    return new FinishAttachments(
+        attachmentService.findAll(AttachmentOwner.project(projectId)),
+        attachmentService.findAll(AttachmentOwner.Kind.PROJECT_RECORD, recordIds).values().stream()
+            .flatMap(List::stream)
+            .toList());
   }
 
   /** 고른 기록(중복은 합침)을 만든 순서로. 이 프로젝트의 SAVED 기록이 아닌 ID가 있으면 NOT_FOUND. 32·33번이 같이 쓴다. */

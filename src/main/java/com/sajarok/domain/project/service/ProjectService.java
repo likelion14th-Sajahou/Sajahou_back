@@ -1,6 +1,7 @@
 package com.sajarok.domain.project.service;
 
 import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.dto.AttachmentView;
 import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.project.dto.HomeProjectTiles;
 import com.sajarok.domain.project.dto.HomeProjectTiles.DoneTile;
@@ -91,18 +92,18 @@ public class ProjectService {
         projectRecordRepository.findAllByProjectIdAndStatusOrderByCreatedAtDescIdDesc(
             projectId, ProjectRecordStatus.SAVED);
 
-    // 카드 ID를 기록마다 따로 묻지 않고 한 번에 가져온다 (N+1 방지).
+    // 카드 ID·첨부를 기록마다 따로 묻지 않고 한 번에 가져온다 (N+1 방지).
     Map<Long, Long> cardIds = Map.of();
+    Map<Long, List<AttachmentView>> attachments = Map.of();
     if (!records.isEmpty()) {
+      List<Long> recordIds = records.stream().map(ProjectRecord::getId).toList();
+      attachments = attachmentService.findAll(AttachmentOwner.Kind.PROJECT_RECORD, recordIds);
       cardIds =
-          storyCardService
-              .findByRecordIds(records.stream().map(ProjectRecord::getId).toList())
-              .values()
-              .stream()
+          storyCardService.findByRecordIds(recordIds).values().stream()
               .filter(card -> card.cardId() != null)
               .collect(Collectors.toMap(RecordCardInfo::recordId, RecordCardInfo::cardId));
     }
-    return ProjectDetailResponse.of(project, records, cardIds);
+    return ProjectDetailResponse.of(project, records, cardIds, attachments);
   }
 
   /**

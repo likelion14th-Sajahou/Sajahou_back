@@ -2,6 +2,7 @@ package com.sajarok.domain.project.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.sajarok.domain.project.ai.FinishAttachments;
 import com.sajarok.domain.project.entity.Project;
 import java.util.List;
 import java.util.Map;
@@ -16,7 +17,11 @@ class PortfolioDrafterTest {
   void draft_beforeAiClient_allBlank() {
     Map<String, String> bodies =
         new PortfolioDrafter()
-            .draft(Project.builder().userId(1L).name("사자록").build(), List.of(), List.of());
+            .draft(
+                Project.builder().userId(1L).name("사자록").build(),
+                List.of(),
+                List.of(),
+                FinishAttachments.none());
 
     assertThat(bodies.keySet())
         .containsExactly("role", "contribution", "problem", "result", "artifact", "learned");

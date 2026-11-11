@@ -84,7 +84,9 @@ class PortfolioDraftResultTest {
             "2주 동안 API 12개",
             QuestionStatus.ANSWERED);
 
-    String user = FinishPrompts.portfolioUser(project, List.of(record), List.of(answered));
+    String user =
+        FinishPrompts.portfolioUser(
+            project, List.of(record), List.of(answered), FinishAttachments.none());
 
     assertThat(user)
         .contains(
@@ -96,7 +98,7 @@ class PortfolioDraftResultTest {
             "[마치기 답]",
             "- 근거와 숫자",
             "답: 2주 동안 API 12개",
-            "[첨부]");
+            "[첨부]\n없음");
     assertThat(FinishPrompts.PORTFOLIO_DRAFT_SYSTEM)
         .contains("숫자로 보면: …", "- MM/DD 한 일", "\"- 11/03 팀 API 연동을 맡았습니다.\\n- 11/05");
   }
