@@ -3,6 +3,7 @@ package com.sajarok.domain.project.ai;
 import com.sajarok.domain.question.dto.NewQuestion;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import com.sajarok.infra.ai.EvidenceVerifier;
 import java.util.List;
 import java.util.Map;
 
@@ -58,16 +59,11 @@ public record RecordQuestionResult(Boolean insufficientMaterial, List<Question> 
     if (source != null && !attachmentTexts.containsKey(source)) {
       throw new BusinessException(ErrorCode.AI_FAILED);
     }
-    // TODO(AI 모듈 담당): EvidenceVerifier.isQuoted가 생기면 그걸로 바꾼다.
     String original = source == null ? recordText : attachmentTexts.get(source);
-    boolean quoted = !isBlank(q.quote()) && normalize(original).contains(normalize(q.quote()));
+    boolean quoted = EvidenceVerifier.isQuoted(original, q.quote());
     return quoted
         ? new NewQuestion(q.tag(), q.quote().strip(), source, q.content().strip())
         : new NewQuestion(q.tag(), null, null, q.content().strip());
-  }
-
-  private static String normalize(String text) {
-    return text == null ? "" : text.replaceAll("\\s+", " ").strip();
   }
 
   private static boolean isBlank(String value) {
