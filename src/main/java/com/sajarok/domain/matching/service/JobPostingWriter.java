@@ -1,5 +1,7 @@
 package com.sajarok.domain.matching.service;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.matching.ai.PostingAnalysisResult;
 import com.sajarok.domain.matching.dto.JobPostingCreateRequest;
 import com.sajarok.domain.matching.dto.JobPostingCreateRequest.QuestionRequest;
@@ -31,6 +33,7 @@ public class JobPostingWriter {
 
   private final JobPostingRepository jobPostingRepository;
   private final CoverLetterQuestionRepository coverLetterQuestionRepository;
+  private final AttachmentService attachmentService;
 
   /** 역량을 반영한 공고와 문항(순서대로). */
   public record Applied(JobPosting posting, List<CoverLetterQuestion> questions) {}
@@ -65,6 +68,8 @@ public class JobPostingWriter {
 
     // TODO(첨부 담당): 공고 첨부(category JOB_POSTING)를 이 공고에 연결한다.
     // attachmentService.connect(userId, request.attachmentIds(), owner);
+    attachmentService.connect(
+        userId, request.attachmentIds(), AttachmentOwner.jobPosting(posting.getId()));
     return posting;
   }
 
@@ -107,7 +112,7 @@ public class JobPostingWriter {
    */
   @Transactional
   public void discard(Long jobPostingId) {
-    // TODO(첨부 담당): AI 실패 시 첨부는 공고 연결만 해제, 첨부 데이터·S3 파일은 유지 (첨부 담당 의견, PR #19)
+    attachmentService.disconnect(AttachmentOwner.jobPosting(jobPostingId));
     coverLetterQuestionRepository.deleteAllByJobPostingId(jobPostingId);
     jobPostingRepository.deleteById(jobPostingId);
   }

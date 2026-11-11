@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.project.dto.HomeProjectTiles;
 import com.sajarok.domain.project.dto.HomeProjectTiles.DoneTile;
 import com.sajarok.domain.project.dto.HomeProjectTiles.InProgressTile;
@@ -60,6 +61,7 @@ class ProjectServiceTest {
   @Mock private StoryCardService storyCardService;
   @Mock private ProjectRecordService projectRecordService;
   @Mock private AiQuestionService aiQuestionService;
+  @Mock private AttachmentService attachmentService;
 
   @InjectMocks private ProjectService projectService;
 

@@ -6,6 +6,7 @@ import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.matching.ai.PostingAnalysisResult;
 import com.sajarok.domain.matching.dto.JobPostingCreateRequest;
 import com.sajarok.domain.matching.dto.JobPostingCreateRequest.QuestionRequest;
@@ -31,6 +32,7 @@ class JobPostingWriterTest {
 
   @Mock private JobPostingRepository jobPostingRepository;
   @Mock private CoverLetterQuestionRepository coverLetterQuestionRepository;
+  @Mock private AttachmentService attachmentService;
 
   @InjectMocks private JobPostingWriter jobPostingWriter;
 

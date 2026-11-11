@@ -13,6 +13,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
 import com.sajarok.domain.project.dto.ProjectRecordResponse;
 import com.sajarok.domain.project.dto.ProjectRecordUpdateRequest;
@@ -54,6 +55,7 @@ class ProjectRecordServiceTest {
   @Mock private ProjectRepository projectRepository;
   @Mock private StoryCardService storyCardService;
   @Mock private AiQuestionService aiQuestionService;
+  @Mock private AttachmentService attachmentService;
 
   @InjectMocks private ProjectRecordService projectRecordService;
 

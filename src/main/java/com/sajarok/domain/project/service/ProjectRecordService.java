@@ -1,5 +1,7 @@
 package com.sajarok.domain.project.service;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.project.ai.RecordAttachment;
 import com.sajarok.domain.project.ai.RecordQuestionResult.Validated;
 import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
@@ -49,6 +51,7 @@ public class ProjectRecordService {
   private final RecordOrganizer recordOrganizer;
   private final RecordQuestionGenerator recordQuestionGenerator;
   private final RecordQuestionWriter recordQuestionWriter;
+  private final AttachmentService attachmentService;
 
   /** 30번 결과. created면 201(새로 만듦), 아니면 200. */
   public record RecordQuestions(boolean created, RecordQuestionsResponse response) {}
@@ -269,9 +272,7 @@ public class ProjectRecordService {
   public void deleteChildren(Long recordId) {
     storyCardService.deleteByRecord(recordId);
     aiQuestionService.deleteAll(QuestionOwner.projectRecord(recordId));
-
-    // TODO(첨부 담당): AttachmentService가 생기면 호출한다. S3 파일까지 지운다.
-    // attachmentService.deleteAll(owner);
+    attachmentService.deleteAll(AttachmentOwner.projectRecord(recordId));
   }
 
   /** cutoff보다 먼저 만든 DRAFT 기록 ID를 오래된 순으로 최대 limit개 (DRAFT 정리 스케줄러용). */

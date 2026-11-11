@@ -118,6 +118,7 @@ public class AttachmentService {
   public void disconnect(AttachmentOwner owner) {
     findAttachments(owner.kind(), List.of(owner.id()))
         .forEach(attachment -> attachment.disconnectFrom(owner));
+    attachmentRepository.flush();
   }
 
   public List<AttachmentView> findAll(AttachmentOwner owner) {
@@ -283,6 +284,7 @@ public class AttachmentService {
             .toList();
 
     attachmentRepository.deleteAll(attachments);
+    attachmentRepository.flush();
 
     if (s3Keys.isEmpty()) {
       return;

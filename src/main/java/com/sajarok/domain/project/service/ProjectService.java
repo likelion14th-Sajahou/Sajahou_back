@@ -1,5 +1,7 @@
 package com.sajarok.domain.project.service;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.project.dto.HomeProjectTiles;
 import com.sajarok.domain.project.dto.HomeProjectTiles.DoneTile;
 import com.sajarok.domain.project.dto.HomeProjectTiles.InProgressTile;
@@ -42,6 +44,7 @@ public class ProjectService {
   private final StoryCardService storyCardService;
   private final ProjectRecordService projectRecordService;
   private final AiQuestionService aiQuestionService;
+  private final AttachmentService attachmentService;
 
   /** 25번: 프로젝트를 만든다. 같은 역할을 여러 번 보내면 하나로 줄인다. 상태는 진행 중(IN_PROGRESS)으로 시작한다. */
   @Transactional
@@ -119,9 +122,7 @@ public class ProjectService {
         .findIdsByProjectId(projectId)
         .forEach(projectRecordService::deleteChildren);
     aiQuestionService.deleteAll(QuestionOwner.project(projectId));
-
-    // TODO(첨부 담당): 프로젝트 산출물 첨부를 지운다. S3 파일까지.
-    // attachmentService.deleteAll(owner);
+    attachmentService.deleteAll(AttachmentOwner.project(projectId));
 
     projectRecordRepository.deleteAllByProjectId(projectId);
     projectRepository.delete(project);
