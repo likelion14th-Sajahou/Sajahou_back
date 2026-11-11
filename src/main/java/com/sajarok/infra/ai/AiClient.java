@@ -61,7 +61,7 @@ public class AiClient {
                   "instructions",
                   system + "\nRespond with a single JSON object.",
                   "input",
-                  user,
+                  user + "\n\nRespond with a single JSON object.",
                   "store",
                   false,
                   "text",
