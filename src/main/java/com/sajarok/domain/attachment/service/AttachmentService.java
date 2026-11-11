@@ -1,5 +1,7 @@
 package com.sajarok.domain.attachment.service;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.dto.AttachmentView;
 import com.sajarok.domain.attachment.entity.Attachment;
 import com.sajarok.domain.attachment.entity.AttachmentCategory;
 import com.sajarok.domain.attachment.entity.LinkType;
@@ -7,7 +9,12 @@ import com.sajarok.domain.attachment.repository.AttachmentRepository;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.net.URI;
+import java.util.Collection;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,5 +71,61 @@ public class AttachmentService {
 
   private static boolean matchesDomain(String host, String domain) {
     return host.equals(domain) || host.endsWith("." + domain);
+  }
+
+  @Transactional
+  public void connect(Long userId, List<Long> ids, AttachmentOwner owner) {
+    if (ids == null || ids.isEmpty()) {
+      return;
+    }
+
+    var distinctIds = new LinkedHashSet<>(ids);
+    var attachments = attachmentRepository.findAllByUserIdAndIdInOrderByIdAsc(userId, distinctIds);
+
+    if (attachments.size() != distinctIds.size()) {
+      throw new BusinessException(ErrorCode.NOT_FOUND);
+    }
+
+    if (attachments.stream().anyMatch(attachment -> !attachment.canConnectTo(owner))) {
+      throw new BusinessException(ErrorCode.INVALID_STATE, "이미 다른 곳에 연결된 첨부가 있어요.");
+    }
+
+    attachments.forEach(attachment -> attachment.connectTo(owner));
+  }
+
+  public List<AttachmentView> findAll(AttachmentOwner owner) {
+    return findAll(owner.kind(), List.of(owner.id())).getOrDefault(owner.id(), List.of());
+  }
+
+  public Map<Long, List<AttachmentView>> findAll(
+      AttachmentOwner.Kind kind, Collection<Long> ownerIds) {
+    if (ownerIds.isEmpty()) {
+      return Map.of();
+    }
+
+    List<Attachment> attachments =
+        switch (kind) {
+          case RETROSPECTIVE ->
+              attachmentRepository.findAllByRetrospectiveIdInOrderByIdAsc(ownerIds);
+          case PROJECT_RECORD ->
+              attachmentRepository.findAllByProjectRecordIdInOrderByIdAsc(ownerIds);
+          case PROJECT -> attachmentRepository.findAllByProjectIdInOrderByIdAsc(ownerIds);
+          case JOB_POSTING -> attachmentRepository.findAllByJobPostingIdInOrderByIdAsc(ownerIds);
+        };
+
+    return attachments.stream()
+        .collect(
+            Collectors.groupingBy(
+                attachment -> ownerIdOf(attachment, kind),
+                Collectors.mapping(AttachmentView::from, Collectors.toList())));
+  }
+
+  private static Long ownerIdOf(Attachment attachment, AttachmentOwner.Kind kind) {
+    return switch (kind) {
+      case RETROSPECTIVE -> attachment.getRetrospectiveId();
+      case PROJECT_RECORD -> attachment.getProjectRecordId();
+      case PROJECT -> attachment.getProjectId();
+      case JOB_POSTING -> attachment.getJobPostingId();
+    };
   }
 }
