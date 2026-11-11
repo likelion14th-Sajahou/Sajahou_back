@@ -100,4 +100,20 @@ public class Retrospective extends BaseTimeEntity {
       this.currentStep = 2;
     }
   }
+
+  /** 16번 '처음부터'(R-05). 완료한 회고는 안 된다. 질문·카드 초안·첨부 정리는 서비스가 한다 */
+  public void reset() {
+    if (status == RetrospectiveStatus.COMPLETED) {
+      throw new BusinessException(ErrorCode.INVALID_STATE);
+    }
+    this.currentStep = 2;
+    this.hasPractice = null;
+    this.practiceContent = null;
+    this.assignmentMode = null;
+    this.assignmentContent = null;
+    this.codeReview = null;
+    this.memo = null;
+    this.questionInputHash = null;
+    this.lastSavedAt = null;
+  }
 }

@@ -5,8 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.question.entity.QuestionOwner;
+import com.sajarok.domain.question.service.AiQuestionService;
+import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveState;
@@ -15,6 +19,7 @@ import com.sajarok.domain.retrospective.entity.Retrospective;
 import com.sajarok.domain.retrospective.entity.RetrospectiveType;
 import com.sajarok.domain.retrospective.repository.RetrospectiveRepository;
 import com.sajarok.domain.retrospective.service.RetrospectiveService.StartResult;
+import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.util.Optional;
@@ -27,9 +32,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
- * 서비스 테스트: 12번 회고 시작(이미 있으면 그대로, 휴회, 과제 회고 조건)과 15번 휴회 표시·해제 규칙을 확인한다.
+ * 서비스 테스트: 12번 회고 시작(이미 있으면 그대로, 휴회, 과제 회고 조건), 15번 휴회 표시·해제, 16번 처음부터 규칙을 확인한다.
  *
- * <p>DB 없이 레포지토리를 가짜(@Mock)로 바꾼다. 주차 확인은 주차 모듈이 생기면 더한다.
+ * <p>DB 없이 레포지토리와 AI 질문·카드 서비스를 가짜(@Mock)로 바꾼다. 주차 확인은 주차 모듈이 생기면 더한다.
  */
 @ExtendWith(MockitoExtension.class)
 class RetrospectiveServiceTest {
@@ -38,6 +43,8 @@ class RetrospectiveServiceTest {
   private static final Long WEEK = 10L;
 
   @Mock private RetrospectiveRepository retrospectiveRepository;
+  @Mock private AiQuestionService aiQuestionService;
+  @Mock private StoryCardService storyCardService;
 
   @InjectMocks private RetrospectiveService retrospectiveService;
 
@@ -250,5 +257,49 @@ class RetrospectiveServiceTest {
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(ErrorCode.NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("16번: 처음부터 하면 2단계 자료와 자료 해시를 비우고 2단계로 돌아가며, AI 질문과 카드 초안도 지운다")
+  void reset_clearsMaterialsAndDeletesQuestionsAndCard() {
+    Retrospective session = mySessionAtStep3();
+    ReflectionTestUtils.setField(session, "questionInputHash", "a".repeat(64));
+
+    RetrospectiveProgressResponse response = retrospectiveService.reset(ME, 101L);
+
+    assertThat(response.id()).isEqualTo(101L);
+    assertThat(response.state()).isEqualTo(RetrospectiveState.IN_PROGRESS);
+    assertThat(response.currentStep()).isEqualTo(2);
+    assertThat(response.lastSavedAt()).isNull();
+    assertThat(session.getMemo()).isNull();
+    assertThat(session.getAssignmentMode()).isNull();
+    assertThat(session.getQuestionInputHash()).isNull();
+    verify(aiQuestionService).deleteAll(QuestionOwner.retrospective(101L));
+    verify(storyCardService).deleteByRetrospective(101L);
+  }
+
+  @Test
+  @DisplayName("16번: 완료한 회고는 409 INVALID_STATE이고, 질문·카드는 하나도 지우지 않는다")
+  void reset_completed_deletesNothing() {
+    Retrospective session = mySessionAtStep3();
+    session.complete(java.time.LocalDateTime.of(2026, 11, 8, 21, 0));
+
+    assertThatThrownBy(() -> retrospectiveService.reset(ME, 101L))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.INVALID_STATE);
+    verifyNoInteractions(aiQuestionService, storyCardService);
+  }
+
+  @Test
+  @DisplayName("16번: 없거나 남의 회고면 NOT_FOUND이고, 아무것도 지우지 않는다")
+  void reset_notMine_notFound() {
+    when(retrospectiveRepository.findByIdAndUserId(999L, ME)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> retrospectiveService.reset(ME, 999L))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verifyNoInteractions(aiQuestionService, storyCardService);
   }
 }

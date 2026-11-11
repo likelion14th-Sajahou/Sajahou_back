@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartResponse;
@@ -159,6 +160,33 @@ class RetrospectiveControllerTest {
             patch("/api/v1/retrospectives/205/rest")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"rested\": true}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.error.code").value("INVALID_STATE"));
+  }
+
+  @Test
+  @DisplayName("16번: 처음부터 하면 200과 id·state·currentStep(2)을 준다")
+  void reset_returns200() throws Exception {
+    when(retrospectiveService.reset(1L, 101L))
+        .thenReturn(
+            new RetrospectiveProgressResponse(101L, RetrospectiveState.IN_PROGRESS, 2, null));
+
+    mockMvc
+        .perform(post("/api/v1/retrospectives/101/reset"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.id").value(101))
+        .andExpect(jsonPath("$.data.state").value("IN_PROGRESS"))
+        .andExpect(jsonPath("$.data.currentStep").value(2));
+  }
+
+  @Test
+  @DisplayName("16번: 완료한 회고면 409 INVALID_STATE를 준다")
+  void reset_completed_returns409() throws Exception {
+    when(retrospectiveService.reset(1L, 101L))
+        .thenThrow(new BusinessException(ErrorCode.INVALID_STATE));
+
+    mockMvc
+        .perform(post("/api/v1/retrospectives/101/reset"))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.error.code").value("INVALID_STATE"));
   }

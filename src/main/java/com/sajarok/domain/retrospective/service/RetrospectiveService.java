@@ -1,6 +1,9 @@
 package com.sajarok.domain.retrospective.service;
 
+import com.sajarok.domain.question.entity.QuestionOwner;
+import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.domain.retrospective.dto.HomeRetroSummary;
+import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartResponse;
@@ -10,6 +13,7 @@ import com.sajarok.domain.retrospective.entity.AssignmentMode;
 import com.sajarok.domain.retrospective.entity.Retrospective;
 import com.sajarok.domain.retrospective.entity.RetrospectiveType;
 import com.sajarok.domain.retrospective.repository.RetrospectiveRepository;
+import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.util.List;
@@ -23,7 +27,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class RetrospectiveService {
 
-  private final RetrospectiveRepository retrospectiveRepository; // 필드 추가
+  private final RetrospectiveRepository retrospectiveRepository;
+  private final AiQuestionService aiQuestionService;
+  private final StoryCardService storyCardService;
 
   public HomeRetroSummary homeSummary(Long userId, Long currentWeekId) {
     return new HomeRetroSummary(null, RetrospectiveState.NOT_STARTED, List.of(), true); // TODO fake
@@ -79,5 +85,18 @@ public class RetrospectiveService {
     return retrospectiveRepository
         .findByIdAndUserId(retrospectiveId, userId)
         .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+  }
+
+  /** 16번: 처음부터. 2단계 자료·AI 질문·카드 초안·첨부를 지우고 2단계로 돌아간다 */
+  @Transactional
+  public RetrospectiveProgressResponse reset(Long userId, Long retrospectiveId) {
+    Retrospective retrospective = findMine(userId, retrospectiveId);
+    retrospective.reset();
+    aiQuestionService.deleteAll(QuestionOwner.retrospective(retrospectiveId));
+    storyCardService.deleteByRetrospective(retrospectiveId);
+    // TODO(첨부 담당): attachmentService.deleteAll(AttachmentOwner.retrospective(retrospectiveId)). S3
+    // 파일까지
+
+    return RetrospectiveProgressResponse.from(retrospective);
   }
 }

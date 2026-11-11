@@ -53,6 +53,14 @@ public class StoryCardService {
     storyCardRepository.findByProjectRecordId(recordId).ifPresent(storyCardRepository::delete);
   }
 
+  /** 16번 처음부터: 회고의 카드 초안을 지운다. 없으면 아무것도 하지 않는다 */
+  @Transactional
+  public void deleteByRetrospective(Long retrospectiveId) {
+    storyCardRepository
+        .findByRetrospectiveId(retrospectiveId)
+        .ifPresent(storyCardRepository::delete);
+  }
+
   public Map<Long, RecordCardInfo> findByRecordIds(Collection<Long> recordIds) {
     if (recordIds.isEmpty()) {
       return Map.of();

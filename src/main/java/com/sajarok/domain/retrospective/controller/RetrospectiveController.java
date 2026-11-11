@@ -1,5 +1,6 @@
 package com.sajarok.domain.retrospective.controller;
 
+import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartRequest;
@@ -40,6 +41,15 @@ public class RetrospectiveController {
   @PatchMapping("/{retrospectiveId}/rest")
   public ApiResponse<RetrospectiveRestResponse> changeRested(
       @PathVariable Long retrospectiveId, @Valid @RequestBody RetrospectiveRestRequest request) {
-    return ApiResponse.ok(retrospectiveService.changeRested(currentUserProvider.getUserId(), retrospectiveId, request.rested()));
+    return ApiResponse.ok(
+        retrospectiveService.changeRested(
+            currentUserProvider.getUserId(), retrospectiveId, request.rested()));
+  }
+
+  /** 16번: 처음부터 */
+  @PostMapping("/{retrospectiveId}/reset")
+  public ApiResponse<RetrospectiveProgressResponse> reset(@PathVariable Long retrospectiveId) {
+    return ApiResponse.ok(
+        retrospectiveService.reset(currentUserProvider.getUserId(), retrospectiveId));
   }
 }
