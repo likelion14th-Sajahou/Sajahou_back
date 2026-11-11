@@ -28,6 +28,10 @@ public interface StoryCardRepository extends JpaRepository<StoryCard, Long> {
   @EntityGraph(attributePaths = "competencyIds")
   List<StoryCard> findAllByUserIdAndStatus(Long userId, StoryCardStatus status);
 
+  @EntityGraph(attributePaths = "competencyIds")
+  List<StoryCard> findAllByUserIdAndStatusOrderByCreatedAtDescIdDesc(
+      Long userId, StoryCardStatus status);
+
   List<StoryCard> findTop3ByUserIdAndStatusAndTypeNotOrderByCreatedAtDesc(
       Long userId, StoryCardStatus status, StoryCardType type);
 

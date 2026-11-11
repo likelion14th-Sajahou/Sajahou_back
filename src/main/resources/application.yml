@@ -11,9 +11,18 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 21MB
 
 auth:
   google:
     client-id: "${GOOGLE_CLIENT_ID:465200297393-5pnl5hpbmf4g9nbfn2a9jk44lu952ut5.apps.googleusercontent.com}"
   demo:
     enabled: ${APP_AUTH_DEMO_ENABLED:true}
+
+attachment:
+  storage:
+    bucket: ${ATTACHMENT_S3_BUCKET:}
+    region: ${AWS_REGION:ap-northeast-2}
