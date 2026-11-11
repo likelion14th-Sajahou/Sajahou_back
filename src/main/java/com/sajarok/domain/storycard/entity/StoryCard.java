@@ -5,7 +5,9 @@ import com.sajarok.global.entity.BaseTimeEntity;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import jakarta.persistence.*;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -161,5 +163,43 @@ public class StoryCard extends BaseTimeEntity {
       return;
     }
     md.append("\n## ").append(heading).append("\n\n").append(body.strip()).append("\n");
+  }
+
+  public List<String> blanks() {
+    List<String> blanks = new ArrayList<>();
+    if (isBlank(situation)) blanks.add("situation");
+    if (isBlank(action)) blanks.add("action");
+    if (isBlank(reason)) blanks.add("reason");
+    if (isBlank(result)) blanks.add("result");
+    if (isBlank(learned)) blanks.add("learned");
+
+    return blanks;
+  }
+
+  private static boolean isBlank(String s) {
+    return s == null || s.isBlank();
+  }
+
+  /** 23번 수정: 보낸 칸만 바꾼다. null이면 그대로, 빈 문자열이면 비운다 */
+  public void editContent(
+      String title,
+      String situation,
+      String action,
+      String reason,
+      String result,
+      String learned,
+      String fullMarkdown) {
+    if (title != null) this.title = blankToNull(title);
+    if (situation != null) this.situation = blankToNull(situation);
+    if (action != null) this.action = blankToNull(action);
+    if (reason != null) this.reason = blankToNull(reason);
+    if (result != null) this.result = blankToNull(result);
+    if (learned != null) this.learned = blankToNull(learned);
+    if (fullMarkdown != null) this.fullMarkdown = blankToNull(fullMarkdown);
+  }
+
+  /** 23번 태그 바꾸기: 초안은 0~3개, 공개된 카드는 1~3개 */
+  public void changeCompetencies(Set<Long> ids) {
+    replaceCompetencies(ids, status == StoryCardStatus.PUBLISHED);
   }
 }
