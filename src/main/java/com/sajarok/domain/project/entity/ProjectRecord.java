@@ -17,6 +17,8 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "project_record")
@@ -57,6 +59,11 @@ public class ProjectRecord extends BaseTimeEntity {
 
   @Column(name = "is_ai_organized", nullable = false)
   private boolean aiOrganized;
+
+  /** 30번 질문을 만들 때의 자료 해시. 다시 부를 때 비교해 자료가 바뀌었는지 판단한다. */
+  @JdbcTypeCode(SqlTypes.CHAR)
+  @Column(length = 64)
+  private String questionInputHash;
 
   @Builder
   private ProjectRecord(
@@ -118,6 +125,11 @@ public class ProjectRecord extends BaseTimeEntity {
   /** '기록 저장'(H-14): DRAFT → SAVED. */
   public void markSaved() {
     this.status = ProjectRecordStatus.SAVED;
+  }
+
+  /** 30번: 질문을 만들었거나 이어 쓰기로 한 시점의 자료 해시를 남긴다. */
+  public void recordQuestionInput(String hash) {
+    this.questionInputHash = hash;
   }
 
   public boolean isDraft() {

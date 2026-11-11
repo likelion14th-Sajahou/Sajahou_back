@@ -3,6 +3,7 @@ package com.sajarok.domain.project.controller;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -18,13 +19,19 @@ import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
 import com.sajarok.domain.project.dto.ProjectRecordResponse;
 import com.sajarok.domain.project.dto.ProjectRecordUpdateRequest;
 import com.sajarok.domain.project.dto.RecordOrganizeResponse;
+import com.sajarok.domain.project.dto.RecordQuestionsResponse;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
+import com.sajarok.domain.project.entity.RecordQuestionMode;
 import com.sajarok.domain.project.service.ProjectRecordService;
+import com.sajarok.domain.project.service.ProjectRecordService.RecordQuestions;
+import com.sajarok.domain.question.dto.QuestionView;
+import com.sajarok.domain.question.entity.QuestionStatus;
 import com.sajarok.global.auth.CurrentUserProvider;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -93,7 +100,7 @@ class ProjectRecordControllerTest {
   }
 
   @Test
-  @DisplayName("27번: 메모·첨부가 다 없으면 400 EMPTY_MATERIAL")
+  @DisplayName("27번 '이대로 저장': 5칸·첨부가 다 없으면 400 EMPTY_MATERIAL")
   void create_emptyMaterial_returns400() throws Exception {
     when(projectRecordService.create(eq(1L), eq(3L), any(ProjectRecordCreateRequest.class)))
         .thenThrow(new BusinessException(ErrorCode.EMPTY_MATERIAL));
@@ -102,9 +109,10 @@ class ProjectRecordControllerTest {
         .perform(
             post("/api/v1/projects/3/records")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"aiOrganize\": true}"))
+                .content("{\"aiOrganize\": false, \"competencyIds\": [3]}"))
         .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.error.code").value("EMPTY_MATERIAL"));
+        .andExpect(jsonPath("$.error.code").value("EMPTY_MATERIAL"))
+        .andExpect(jsonPath("$.error.detail").doesNotExist());
   }
 
   @Test
@@ -273,6 +281,134 @@ class ProjectRecordControllerTest {
         .andExpect(jsonPath("$.error.code").value("AI_FAILED"));
     mockMvc
         .perform(post(ORGANIZE_URL))
+        .andExpect(status().isGatewayTimeout())
+        .andExpect(jsonPath("$.error.code").value("AI_TIMEOUT"));
+  }
+
+  private static final String QUESTIONS_URL = "/api/v1/project-records/77/questions";
+
+  private static RecordQuestions questions(boolean created) {
+    return new RecordQuestions(
+        created,
+        RecordQuestionsResponse.of(
+            List.of(
+                new QuestionView(
+                    950L,
+                    1,
+                    "내 역할·과정",
+                    "나는 시안 2개 준비",
+                    601L,
+                    "시안 2개는 각각 어떤 방향이었나요?",
+                    null,
+                    QuestionStatus.PENDING))));
+  }
+
+  @Test
+  @DisplayName(
+      "30번: 새로 만들면 201과 명세 필드(insufficientMaterial, 질문 8개 필드: quote·sourceAttachmentId·answer 포함)")
+  void createQuestions_new_returns201WithSpecFields() throws Exception {
+    when(projectRecordService.createQuestions(1L, 77L, RecordQuestionMode.REGENERATE))
+        .thenReturn(questions(true));
+
+    mockMvc
+        .perform(
+            post(QUESTIONS_URL)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"mode\": \"REGENERATE\"}"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.insufficientMaterial").value(false))
+        .andExpect(jsonPath("$.data.questions[0].questionId").value(950))
+        .andExpect(jsonPath("$.data.questions[0].seq").value(1))
+        .andExpect(jsonPath("$.data.questions[0].tag").value("내 역할·과정"))
+        .andExpect(jsonPath("$.data.questions[0].quote").value("나는 시안 2개 준비"))
+        .andExpect(jsonPath("$.data.questions[0].sourceAttachmentId").value(601))
+        .andExpect(jsonPath("$.data.questions[0].content").value("시안 2개는 각각 어떤 방향이었나요?"))
+        .andExpect(jsonPath("$.data.questions[0].answer").value(nullValue()))
+        .andExpect(jsonPath("$.data.questions[0].status").value("PENDING"));
+  }
+
+  @Test
+  @DisplayName("30번: 저장된 질문이면 200, 본문이 없으면 mode 없이(null → AUTO) 서비스를 부른다")
+  void createQuestions_noBody_returns200() throws Exception {
+    when(projectRecordService.createQuestions(eq(1L), eq(77L), isNull()))
+        .thenReturn(questions(false));
+
+    mockMvc.perform(post(QUESTIONS_URL)).andExpect(status().isOk());
+  }
+
+  @Test
+  @DisplayName("30번: 자료 부족이면 200, insufficientMaterial true, questions 빈 배열")
+  void createQuestions_insufficient_returns200() throws Exception {
+    when(projectRecordService.createQuestions(1L, 77L, RecordQuestionMode.AUTO))
+        .thenReturn(new RecordQuestions(false, RecordQuestionsResponse.insufficient()));
+
+    mockMvc
+        .perform(
+            post(QUESTIONS_URL)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"mode\": \"AUTO\"}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.insufficientMaterial").value(true))
+        .andExpect(jsonPath("$.data.questions.length()").value(0));
+  }
+
+  @Test
+  @DisplayName("30번: 자료가 바뀌었으면 409 MATERIAL_CHANGED와 메시지, error.detail.answeredCount")
+  void createQuestions_materialChanged_returns409WithDetail() throws Exception {
+    when(projectRecordService.createQuestions(1L, 77L, RecordQuestionMode.AUTO))
+        .thenThrow(
+            new BusinessException(
+                ErrorCode.MATERIAL_CHANGED,
+                "자료가 바뀌었어요. 질문을 새로 만들면 지금까지 쓴 답 2개가 사라져요.",
+                Map.of("answeredCount", 2L)));
+
+    mockMvc
+        .perform(
+            post(QUESTIONS_URL)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"mode\": \"AUTO\"}"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.data").value(nullValue()))
+        .andExpect(jsonPath("$.error.code").value("MATERIAL_CHANGED"))
+        .andExpect(jsonPath("$.error.message").value("자료가 바뀌었어요. 질문을 새로 만들면 지금까지 쓴 답 2개가 사라져요."))
+        .andExpect(jsonPath("$.error.detail.answeredCount").value(2));
+  }
+
+  @Test
+  @DisplayName("30번: mode가 정해진 값이 아니면 400 VALIDATION_ERROR, 서비스를 부르지 않는다")
+  void createQuestions_unknownMode_returns400() throws Exception {
+    mockMvc
+        .perform(
+            post(QUESTIONS_URL)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"mode\": \"RESTART\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+    verifyNoInteractions(projectRecordService);
+  }
+
+  @Test
+  @DisplayName("30번: 남의 기록 404 NOT_FOUND(detail 없음), AI 실패 502 AI_FAILED, 시간 초과 504 AI_TIMEOUT")
+  void createQuestions_errors_mapToSpecStatuses() throws Exception {
+    when(projectRecordService.createQuestions(1L, 77L, RecordQuestionMode.AUTO))
+        .thenThrow(new BusinessException(ErrorCode.NOT_FOUND))
+        .thenThrow(new BusinessException(ErrorCode.AI_FAILED))
+        .thenThrow(new BusinessException(ErrorCode.AI_TIMEOUT));
+    String body = "{\"mode\": \"AUTO\"}";
+
+    mockMvc
+        .perform(post(QUESTIONS_URL).contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
+        .andExpect(jsonPath("$.error.detail").doesNotExist());
+    mockMvc
+        .perform(post(QUESTIONS_URL).contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().isBadGateway())
+        .andExpect(jsonPath("$.error.code").value("AI_FAILED"));
+    mockMvc
+        .perform(post(QUESTIONS_URL).contentType(MediaType.APPLICATION_JSON).content(body))
         .andExpect(status().isGatewayTimeout())
         .andExpect(jsonPath("$.error.code").value("AI_TIMEOUT"));
   }

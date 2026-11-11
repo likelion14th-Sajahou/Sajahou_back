@@ -1,12 +1,16 @@
 package com.sajarok.domain.project.service;
 
+import com.sajarok.domain.project.ai.RecordAttachment;
+import com.sajarok.domain.project.ai.RecordQuestionResult.Validated;
 import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
 import com.sajarok.domain.project.dto.ProjectRecordResponse;
 import com.sajarok.domain.project.dto.ProjectRecordUpdateRequest;
 import com.sajarok.domain.project.dto.RecordOrganizeResponse;
+import com.sajarok.domain.project.dto.RecordQuestionsResponse;
 import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
+import com.sajarok.domain.project.entity.RecordQuestionMode;
 import com.sajarok.domain.project.repository.ProjectRecordRepository;
 import com.sajarok.domain.project.repository.ProjectRepository;
 import com.sajarok.domain.project.repository.RecordDate;
@@ -43,6 +47,11 @@ public class ProjectRecordService {
   private final StoryCardService storyCardService;
   private final AiQuestionService aiQuestionService;
   private final RecordOrganizer recordOrganizer;
+  private final RecordQuestionGenerator recordQuestionGenerator;
+  private final RecordQuestionWriter recordQuestionWriter;
+
+  /** 30번 결과. created면 201(새로 만듦), 아니면 200. */
+  public record RecordQuestions(boolean created, RecordQuestionsResponse response) {}
 
   /**
    * 27번: 기록 추가. 마친(DONE) 프로젝트에도 추가할 수 있다 (H-11·H-21: 완료해도 잠기지 않음).
@@ -200,7 +209,7 @@ public class ProjectRecordService {
   }
 
   /**
-   * 'AI와 정리하기': DRAFT 기록만 만들고 카드는 만들지 않는다. 메모나 첨부가 있어야 한다(없으면 EMPTY_MATERIAL).
+   * 'AI와 정리하기': DRAFT 기록만 만들고 카드는 만들지 않는다. 메모·첨부가 없어도 만든다(PM 결정 11/11: 30번에서 자료 부족 안내).
    *
    * <p>isAiOrganized는 31번(AI 정리) 뒤에 true가 되므로 여기서는 false. competencyIds는 무시한다.
    */
@@ -217,9 +226,6 @@ public class ProjectRecordService {
             .nextStep(request.nextStep())
             .aiOrganized(false)
             .build();
-    if (!record.hasMemo() && !request.hasAttachments()) {
-      throw new BusinessException(ErrorCode.EMPTY_MATERIAL);
-    }
     ProjectRecord saved = projectRecordRepository.save(record);
 
     // TODO(첨부 담당): AttachmentService가 생기면 호출한다. 내 첨부인지 확인도 여기서 된다.
@@ -289,6 +295,58 @@ public class ProjectRecordService {
     deleteChildren(recordId);
     projectRecordRepository.delete(record);
     return true;
+  }
+
+  /**
+   * 30번: 기록 AI 질문. 회고 17번과 같은 mode 규칙(PM 결정 11/11).
+   *
+   * <p>질문이 있을 때 자료 해시가 다르면 AUTO는 409 MATERIAL_CHANGED, CONTINUE는 이어 쓰기(해시 갱신), REGENERATE는 새로 만든다.
+   * 자료가 모두 비었거나 AI가 부족하다고 하면 insufficientMaterial로 200(저장 안 함). AI는 트랜잭션 밖에서 부른다.
+   */
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
+  public RecordQuestions createQuestions(
+      Long userId, Long recordId, RecordQuestionMode requestedMode) {
+    RecordQuestionMode mode = requestedMode == null ? RecordQuestionMode.AUTO : requestedMode;
+    // TODO(AI 모듈 담당): AiLock이 생기면 기록 단위로 감싼다. 진행 중이면 AI_IN_PROGRESS.
+    ProjectRecord record =
+        projectRecordRepository
+            .findByIdAndUserId(recordId, userId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+    // TODO(첨부 담당): attachmentService.findAll·readTexts(기록)에서 추출 DONE인 첨부만 만든다(FAILED·SKIPPED 건너뜀).
+    List<RecordAttachment> attachments = List.of();
+    String hash = MaterialHash.of(record, attachments);
+
+    List<QuestionView> existing = aiQuestionService.findAll(QuestionOwner.projectRecord(recordId));
+    if (!existing.isEmpty() && mode != RecordQuestionMode.REGENERATE) {
+      boolean changed = !hash.equals(record.getQuestionInputHash());
+      if (changed && mode == RecordQuestionMode.AUTO) {
+        throw materialChanged(existing);
+      }
+      if (changed) {
+        recordQuestionWriter.continueWith(recordId, hash);
+      }
+      return new RecordQuestions(false, RecordQuestionsResponse.of(existing));
+    }
+
+    if (!record.hasMemo() && !record.hasFiveFields() && attachments.isEmpty()) {
+      return new RecordQuestions(false, RecordQuestionsResponse.insufficient());
+    }
+    Validated generated = recordQuestionGenerator.generate(record, attachments);
+    if (generated.insufficientMaterial()) {
+      return new RecordQuestions(false, RecordQuestionsResponse.insufficient());
+    }
+    return new RecordQuestions(
+        true,
+        RecordQuestionsResponse.of(
+            recordQuestionWriter.replace(recordId, generated.questions(), hash)));
+  }
+
+  private static BusinessException materialChanged(List<QuestionView> existing) {
+    long answered = existing.stream().filter(q -> q.status() == QuestionStatus.ANSWERED).count();
+    return new BusinessException(
+        ErrorCode.MATERIAL_CHANGED,
+        "자료가 바뀌었어요. 질문을 새로 만들면 지금까지 쓴 답 %d개가 사라져요.".formatted(answered),
+        Map.of("answeredCount", answered));
   }
 
   /**
