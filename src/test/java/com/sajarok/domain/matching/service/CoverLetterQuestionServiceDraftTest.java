@@ -24,6 +24,7 @@ import com.sajarok.domain.storycard.entity.StoryCardType;
 import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import com.sajarok.infra.ai.AiLock;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -50,6 +51,7 @@ class CoverLetterQuestionServiceDraftTest {
   @Spy private CardRecommender cardRecommender = new CardRecommender();
   @Mock private AnswerDrafter answerDrafter;
   @Mock private AnswerDraftWriter answerDraftWriter;
+  @Spy private AiLock aiLock = new AiLock();
 
   @InjectMocks private CoverLetterQuestionService coverLetterQuestionService;
 
@@ -164,5 +166,16 @@ class CoverLetterQuestionServiceDraftTest {
         .extracting("errorCode")
         .isEqualTo(code);
     verify(answerDraftWriter, never()).save(anyLong(), anyLong(), any(), anyList());
+  }
+
+  @Test
+  @DisplayName("37번: 같은 문항에서 AI가 돌고 있으면(키 answer:{id}) AI_IN_PROGRESS이고 문항도 읽지 않는다")
+  void createDraft_inProgress_throwsAiInProgress() {
+    assertThatThrownBy(
+            () -> aiLock.run("answer:55", () -> coverLetterQuestionService.createDraft(1L, 55L)))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.AI_IN_PROGRESS);
+    verifyNoInteractions(coverLetterQuestionRepository, answerDrafter);
   }
 }

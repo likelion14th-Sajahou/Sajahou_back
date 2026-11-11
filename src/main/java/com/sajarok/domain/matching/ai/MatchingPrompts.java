@@ -5,17 +5,16 @@ import com.sajarok.domain.storycard.dto.CardSnapshot;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 자소서 매칭(36·37번) 프롬프트를 한곳에 모은다 (평가 기준: 프롬프트를 서비스 로직에 흩어 두지 않음).
- *
- * <p>호출은 AI 모듈(infra/ai)의 AiClient.call(system, user, 결과 record)로 한다. TODO(AI 모듈 담당): AiClient가 생기면
- * 36·37번 서비스에서 이 문자열로 부른다 (트랜잭션 밖에서).
- */
+/** 자소서 매칭(36·37번) 프롬프트. 호출은 PostingAnalyzer·AnswerDrafter에서 트랜잭션 밖에서 한다. */
 public final class MatchingPrompts {
 
   private MatchingPrompts() {}
 
-  /** 프롬프트에 넣는 역량 하나. 목록은 competency 테이블에서 받는다(하드코딩하지 않음, C-06). */
+  /**
+   * 프롬프트에 넣는 역량 하나. 목록은 competency 테이블에서 받는다(하드코딩하지 않음, C-06).
+   *
+   * <p>TODO(역량 담당): 역량 서비스가 생기면 description을 더해 [역량 목록]에 같이 넣는다.
+   */
   public record CompetencyOption(Long id, String name) {}
 
   /** 프롬프트에 넣는 공고 내용. */

@@ -36,6 +36,7 @@ import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import com.sajarok.infra.ai.AiLock;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -46,6 +47,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -62,6 +64,7 @@ class ProjectRecordQuestionsTest {
   @Mock private RecordOrganizer recordOrganizer;
   @Mock private RecordQuestionGenerator recordQuestionGenerator;
   @Mock private RecordQuestionWriter recordQuestionWriter;
+  @Spy private AiLock aiLock = new AiLock();
   @Mock private AttachmentService attachmentService;
 
   @InjectMocks private ProjectRecordService projectRecordService;
@@ -292,5 +295,19 @@ class ProjectRecordQuestionsTest {
     assertThat(result.created()).isTrue();
     verify(attachmentService).readTexts(owner);
     verify(attachmentService, never()).getOwnedAttachment(1L, 602L);
+  }
+
+  @Test
+  @DisplayName("30번: 같은 기록에서 AI가 돌고 있으면(30·31번 같은 키 record:{id}) AI_IN_PROGRESS이고 기록도 읽지 않는다")
+  void createQuestions_inProgress_throwsAiInProgress() {
+    assertThatThrownBy(
+            () ->
+                aiLock.run(
+                    "record:77",
+                    () -> projectRecordService.createQuestions(1L, 77L, RecordQuestionMode.AUTO)))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.AI_IN_PROGRESS);
+    verifyNoInteractions(projectRecordRepository, recordQuestionGenerator);
   }
 }

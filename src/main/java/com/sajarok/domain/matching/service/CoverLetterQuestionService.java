@@ -12,6 +12,7 @@ import com.sajarok.domain.storycard.dto.CardSnapshot;
 import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import com.sajarok.infra.ai.AiLock;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -26,6 +27,7 @@ public class CoverLetterQuestionService {
   private final CardRecommender cardRecommender;
   private final AnswerDrafter answerDrafter;
   private final AnswerDraftWriter answerDraftWriter;
+  private final AiLock aiLock;
 
   /**
    * 37번: 문항별 답 초안. 다시 부르면 초안을 새로 만들고 직접 고친 답은 비운다.
@@ -37,8 +39,10 @@ public class CoverLetterQuestionService {
    * NOT_FOUND.
    */
   public AnswerResponse createDraft(Long userId, Long questionId) {
-    // TODO(AI 모듈 담당): AiLock이 생기면 문항 단위로 감싼다. 진행 중이면 AI_IN_PROGRESS.
-    // return aiLock.run("answer:" + questionId, () -> { ... });
+    return aiLock.run("answer:" + questionId, () -> createDraftLocked(userId, questionId));
+  }
+
+  private AnswerResponse createDraftLocked(Long userId, Long questionId) {
     CoverLetterQuestion question =
         coverLetterQuestionRepository
             .findWithPostingByIdAndUserId(questionId, userId)

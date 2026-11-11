@@ -28,6 +28,7 @@ import com.sajarok.domain.storycard.dto.RecordCardSource;
 import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import com.sajarok.infra.ai.AiLock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -55,6 +56,7 @@ public class ProjectRecordService {
   private final RecordQuestionGenerator recordQuestionGenerator;
   private final RecordQuestionWriter recordQuestionWriter;
   private final AttachmentService attachmentService;
+  private final AiLock aiLock;
 
   /** 30번 결과. created면 201(새로 만듦), 아니면 200. */
   public record RecordQuestions(boolean created, RecordQuestionsResponse response) {}
@@ -324,8 +326,14 @@ public class ProjectRecordService {
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public RecordQuestions createQuestions(
       Long userId, Long recordId, RecordQuestionMode requestedMode) {
+    // 30·31번이 같은 키: 한 기록에서 AI가 돌고 있으면 AI_IN_PROGRESS.
+    return aiLock.run(
+        recordLockKey(recordId), () -> createQuestionsLocked(userId, recordId, requestedMode));
+  }
+
+  private RecordQuestions createQuestionsLocked(
+      Long userId, Long recordId, RecordQuestionMode requestedMode) {
     RecordQuestionMode mode = requestedMode == null ? RecordQuestionMode.AUTO : requestedMode;
-    // TODO(AI 모듈 담당): AiLock이 생기면 기록 단위로 감싼다. 진행 중이면 AI_IN_PROGRESS.
     ProjectRecord record =
         projectRecordRepository
             .findByIdAndUserId(recordId, userId)
@@ -399,7 +407,14 @@ public class ProjectRecordService {
    */
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public RecordOrganizeResponse organize(Long userId, Long recordId) {
-    // TODO(AI 모듈 담당): AiLock이 생기면 기록 단위로 감싼다. 진행 중이면 AI_IN_PROGRESS.
+    return aiLock.run(recordLockKey(recordId), () -> organizeLocked(userId, recordId));
+  }
+
+  static String recordLockKey(Long recordId) {
+    return "record:" + recordId;
+  }
+
+  private RecordOrganizeResponse organizeLocked(Long userId, Long recordId) {
     ProjectRecord record =
         projectRecordRepository
             .findByIdAndUserId(recordId, userId)

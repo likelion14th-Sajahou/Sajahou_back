@@ -29,6 +29,7 @@ import com.sajarok.domain.question.entity.QuestionStatus;
 import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import com.sajarok.infra.ai.AiLock;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,6 +44,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -56,6 +58,7 @@ class ProjectFinishPortfolioDraftTest {
   @Mock private FinishQuestionGenerator finishQuestionGenerator;
   @Mock private PortfolioDrafter portfolioDrafter;
   @Mock private AttachmentService attachmentService;
+  @Spy private AiLock aiLock = new AiLock();
 
   @InjectMocks private ProjectFinishService projectFinishService;
 
@@ -201,5 +204,19 @@ class ProjectFinishPortfolioDraftTest {
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(code);
+  }
+
+  @Test
+  @DisplayName("33번: 같은 프로젝트에서 32번 질문 만들기가 돌고 있으면(같은 키 finish:{id}) AI_IN_PROGRESS이고 AI를 부르지 않는다")
+  void createPortfolioDraft_inProgress_throwsAiInProgress() {
+    assertThatThrownBy(
+            () ->
+                aiLock.run(
+                    "finish:3",
+                    () -> projectFinishService.createPortfolioDraft(1L, 3L, List.of(77L))))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.AI_IN_PROGRESS);
+    verifyNoInteractions(projectRepository, portfolioDrafter);
   }
 }

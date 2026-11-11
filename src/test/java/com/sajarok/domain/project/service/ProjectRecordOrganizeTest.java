@@ -24,6 +24,7 @@ import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import com.sajarok.infra.ai.AiLock;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +37,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /** 31번 기록 AI 정리 서비스 테스트. AI(RecordOrganizer)는 가짜. */
@@ -48,6 +50,7 @@ class ProjectRecordOrganizeTest {
   @Mock private AiQuestionService aiQuestionService;
   @Mock private RecordOrganizer recordOrganizer;
   @Mock private AttachmentService attachmentService;
+  @Spy private AiLock aiLock = new AiLock();
 
   @InjectMocks private ProjectRecordService projectRecordService;
 
@@ -167,5 +170,15 @@ class ProjectRecordOrganizeTest {
         .thenReturn(suggestion());
 
     assertThat(projectRecordService.organize(1L, 77L).did()).isEqualTo("AI가 쓴 한 일");
+  }
+
+  @Test
+  @DisplayName("31번: 같은 기록에서 30번 질문 만들기가 돌고 있으면(같은 키 record:{id}) AI_IN_PROGRESS이고 기록도 읽지 않는다")
+  void organize_inProgress_throwsAiInProgress() {
+    assertThatThrownBy(() -> aiLock.run("record:77", () -> projectRecordService.organize(1L, 77L)))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.AI_IN_PROGRESS);
+    verifyNoInteractions(projectRecordRepository, recordOrganizer);
   }
 }

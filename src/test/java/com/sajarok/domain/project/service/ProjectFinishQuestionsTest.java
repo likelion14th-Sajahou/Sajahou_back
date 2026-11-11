@@ -26,6 +26,7 @@ import com.sajarok.domain.question.entity.QuestionStatus;
 import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import com.sajarok.infra.ai.AiLock;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -36,6 +37,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /** 32번 마치기 질문 서비스 테스트. AI(FinishQuestionGenerator)와 질문 저장(AiQuestionService)은 가짜. */
@@ -49,6 +51,7 @@ class ProjectFinishQuestionsTest {
   @Mock private ProjectRecordRepository projectRecordRepository;
   @Mock private FinishQuestionGenerator finishQuestionGenerator;
   @Mock private AttachmentService attachmentService;
+  @Spy private AiLock aiLock = new AiLock();
 
   @InjectMocks private ProjectFinishService projectFinishService;
 
@@ -159,5 +162,18 @@ class ProjectFinishQuestionsTest {
         .extracting("errorCode")
         .isEqualTo(code);
     verify(aiQuestionService, never()).replace(any(), anyList());
+  }
+
+  @Test
+  @DisplayName("32번: 같은 프로젝트에서 AI가 돌고 있으면(32·33번 같은 키 finish:{id}) AI_IN_PROGRESS이고 AI를 부르지 않는다")
+  void createQuestions_inProgress_throwsAiInProgress() {
+    assertThatThrownBy(
+            () ->
+                aiLock.run(
+                    "finish:3", () -> projectFinishService.createQuestions(1L, 3L, List.of(77L))))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.AI_IN_PROGRESS);
+    verifyNoInteractions(projectRepository, finishQuestionGenerator);
   }
 }

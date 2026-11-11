@@ -6,12 +6,7 @@ import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.question.dto.QuestionView;
 import java.util.List;
 
-/**
- * 프로젝트 마치기(32·33번) 프롬프트를 한곳에 모은다 (프롬프트를 서비스 로직에 흩어 두지 않음).
- *
- * <p>호출은 AI 모듈(infra/ai)의 AiClient.call(system, user, 결과 record)로 한다. TODO(AI 모듈 담당): AiClient가 생기면
- * FinishQuestionGenerator·PortfolioDrafter에서 이 문자열로 부른다 (트랜잭션 밖에서).
- */
+/** 프로젝트 마치기(32·33번) 프롬프트. 호출은 FinishQuestionGenerator·PortfolioDrafter에서 트랜잭션 밖에서 한다. */
 public final class FinishPrompts {
 
   private FinishPrompts() {}
