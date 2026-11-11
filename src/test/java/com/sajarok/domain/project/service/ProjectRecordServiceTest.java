@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -606,7 +607,7 @@ class ProjectRecordServiceTest {
   void create_notMyAttachment_throwsWithoutCard() {
     when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
     when(projectRecordRepository.save(any(ProjectRecord.class))).thenAnswer(i -> i.getArgument(0));
-    org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.NOT_FOUND))
+    doThrow(new BusinessException(ErrorCode.NOT_FOUND))
         .when(attachmentService)
         .connect(eq(1L), eq(List.of(999L)), any());
 
@@ -638,13 +639,48 @@ class ProjectRecordServiceTest {
   }
 
   @Test
-  @DisplayName("28번 첨부: attachmentIds를 보내면 새 첨부를 이 기록에 연결한다 (빠진 첨부 해제는 끊기 메서드가 생기면)")
-  void update_withAttachmentIds_connects() {
+  @DisplayName("28번 첨부: attachmentIds를 보내면 기존 연결을 모두 끊은 뒤 보낸 목록으로 연결한다 (통째로 교체)")
+  void update_withAttachmentIds_disconnectsThenConnects() {
     ProjectRecord record = record(ProjectRecordStatus.SAVED);
     when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
 
-    projectRecordService.update(1L, 77L, update(null, null, null, List.of(603L), null));
+    projectRecordService.update(1L, 77L, update(null, null, null, List.of(601L, 603L), null));
 
-    verify(attachmentService).connect(1L, List.of(603L), AttachmentOwner.projectRecord(77L));
+    AttachmentOwner owner = AttachmentOwner.projectRecord(77L);
+    InOrder order = inOrder(attachmentService);
+    order.verify(attachmentService).disconnect(owner);
+    order.verify(attachmentService).connect(1L, List.of(601L, 603L), owner);
+    order.verify(attachmentService).findAll(owner);
+  }
+
+  @Test
+  @DisplayName("28번 첨부: 빈 배열을 보내면 모두 끊고, 5칸이 있으면 첨부 없이 저장한다")
+  void update_emptyAttachmentIds_disconnectsAll() {
+    ProjectRecord record = record(ProjectRecordStatus.SAVED);
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+
+    ProjectRecordResponse response =
+        projectRecordService.update(1L, 77L, update(null, null, null, List.of(), null));
+
+    verify(attachmentService).disconnect(AttachmentOwner.projectRecord(77L));
+    assertThat(response.attachments()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("28번 첨부: 새 목록에 남의 첨부가 있으면 connect의 NOT_FOUND를 그대로 던진다 (트랜잭션이라 끊기도 되돌려짐)")
+  void update_attachmentNotMine_throwsNotFound() {
+    ProjectRecord record = record(ProjectRecordStatus.SAVED);
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+    doThrow(new BusinessException(ErrorCode.NOT_FOUND))
+        .when(attachmentService)
+        .connect(1L, List.of(999L), AttachmentOwner.projectRecord(77L));
+
+    assertThatThrownBy(
+            () ->
+                projectRecordService.update(1L, 77L, update(null, null, null, List.of(999L), null)))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verifyNoInteractions(storyCardService);
   }
 }
