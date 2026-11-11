@@ -97,7 +97,7 @@ public class ProjectRecordService {
             .nextStep(request.nextStep())
             .aiOrganized(false)
             .build();
-    checkSavedMaterial(record, request.hasAttachments());
+    checkMaterial(record, request.hasAttachments());
     Set<Long> competencyIds = validateCompetencyCount(request.competencyIds());
     // TODO(역량 담당): CompetencyService가 생기면 위 개수 확인을 지우고 이 호출로 바꾼다 (1~3·내 파트 확인).
     // competencyService.validate(userId, competencyIds, true);
@@ -148,7 +148,7 @@ public class ProjectRecordService {
       if (request.competencyIds() == null) {
         return ProjectRecordResponse.of(record, null, List.of(), attachments);
       }
-      checkSavedMaterial(record, hasAttachments);
+      checkMaterial(record, hasAttachments);
       Set<Long> competencyIds = validateCompetencyCount(request.competencyIds());
       // TODO(역량 담당): competencyService.validate(userId, competencyIds, true);
       record.markSaved();
@@ -159,7 +159,7 @@ public class ProjectRecordService {
       return ProjectRecordResponse.of(record, cardId, List.of(), attachments);
     }
 
-    checkSavedMaterial(record, hasAttachments);
+    checkMaterial(record, hasAttachments);
     Set<Long> competencyIds =
         request.competencyIds() == null ? null : validateCompetencyCount(request.competencyIds());
     // TODO(역량 담당): competencyIds가 있으면 competencyService.validate(userId, competencyIds, true);
@@ -189,11 +189,11 @@ public class ProjectRecordService {
   }
 
   /**
-   * SAVED 기록의 자료 확인. H-14: 5칸과 첨부가 모두 비어 있으면 저장하지 않음 (메모는 조건에 없음). 아니면 EMPTY_MATERIAL.
+   * 자료 확인. 5칸과 첨부가 모두 비면 EMPTY_MATERIAL (메모는 화면에서 안 써서 조건에 없음, H-14·11/12 기능명세).
    *
-   * <p>27·28번이 같이 쓴다.
+   * <p>27번(DRAFT·SAVED)·28번이 같이 쓴다.
    */
-  private void checkSavedMaterial(ProjectRecord record, boolean hasAttachments) {
+  private void checkMaterial(ProjectRecord record, boolean hasAttachments) {
     if (!record.hasFiveFields() && !hasAttachments) {
       throw new BusinessException(ErrorCode.EMPTY_MATERIAL);
     }
@@ -229,7 +229,7 @@ public class ProjectRecordService {
   }
 
   /**
-   * 'AI와 정리하기': DRAFT 기록만 만들고 카드는 만들지 않는다. 메모·첨부가 없어도 만든다(PM 결정 11/11: 30번에서 자료 부족 안내).
+   * 'AI와 정리하기': DRAFT 기록만 만들고 카드는 만들지 않는다. 5칸이나 첨부가 있어야 한다(11/12 기능명세).
    *
    * <p>isAiOrganized는 31번(AI 정리) 뒤에 true가 되므로 여기서는 false. competencyIds는 무시한다.
    */
@@ -247,6 +247,7 @@ public class ProjectRecordService {
             .nextStep(request.nextStep())
             .aiOrganized(false)
             .build();
+    checkMaterial(record, request.hasAttachments());
     ProjectRecord saved = projectRecordRepository.save(record);
     List<AttachmentView> attachments =
         connectAttachments(userId, saved.getId(), request.attachmentIds());

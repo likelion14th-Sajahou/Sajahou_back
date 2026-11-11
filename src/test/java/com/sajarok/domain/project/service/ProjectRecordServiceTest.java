@@ -65,9 +65,9 @@ class ProjectRecordServiceTest {
 
   @InjectMocks private ProjectRecordService projectRecordService;
 
-  private static ProjectRecordCreateRequest draftRequest(String memo, List<Long> attachmentIds) {
+  private static ProjectRecordCreateRequest draftRequest(String did, List<Long> attachmentIds) {
     return new ProjectRecordCreateRequest(
-        true, memo, null, null, null, null, null, attachmentIds, List.of(3L, 21L));
+        true, null, did, null, null, null, null, attachmentIds, List.of(3L, 21L));
   }
 
   private Project myProject() {
@@ -75,7 +75,7 @@ class ProjectRecordServiceTest {
   }
 
   @Test
-  @DisplayName("27번 DRAFT: 메모가 있으면 DRAFT·AI 정리 전으로 저장하고, 카드·역량 없이 응답한다 (보낸 역량은 무시)")
+  @DisplayName("27번 DRAFT: 5칸이 하나라도 있으면 DRAFT·AI 정리 전으로 저장하고, 카드·역량 없이 응답한다 (보낸 역량은 무시)")
   void create_draft_savesDraftWithoutCard() {
     when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
     when(projectRecordRepository.save(any(ProjectRecord.class))).thenAnswer(i -> i.getArgument(0));
@@ -86,12 +86,12 @@ class ProjectRecordServiceTest {
     assertThat(response.status()).isEqualTo(ProjectRecordStatus.DRAFT);
     assertThat(response.isAiOrganized()).isFalse();
     assertThat(response.cardId()).isNull();
-    assertThat(response.memo()).isEqualTo("회의에서 API 명세 확정");
+    assertThat(response.did()).isEqualTo("회의에서 API 명세 확정");
     assertThat(response.competencies()).isEmpty();
   }
 
   @Test
-  @DisplayName("27번 DRAFT: 메모가 비어도 첨부가 있으면 저장한다")
+  @DisplayName("27번 DRAFT: 5칸이 모두 비어도 첨부가 있으면 저장한다")
   void create_draft_attachmentOnly_saves() {
     when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
     when(projectRecordRepository.save(any(ProjectRecord.class))).thenAnswer(i -> i.getArgument(0));
@@ -103,16 +103,31 @@ class ProjectRecordServiceTest {
   }
 
   @Test
-  @DisplayName("27번 DRAFT: 메모가 공백뿐이고 첨부도 없어도 DRAFT로 만든다 (PM 결정 11/11: 자료 부족은 30번에서 안내)")
-  void create_draft_noMaterial_stillCreatesDraft() {
+  @DisplayName("27번 DRAFT: 5칸이 모두 비고 첨부도 없으면 EMPTY_MATERIAL이고 저장·연결하지 않는다 (11/12 기능명세)")
+  void create_draft_noMaterial_throwsEmptyMaterial() {
     when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
-    when(projectRecordRepository.save(any(ProjectRecord.class))).thenAnswer(i -> i.getArgument(0));
 
-    ProjectRecordResponse response =
-        projectRecordService.create(1L, 3L, draftRequest("  ", List.of()));
+    assertThatThrownBy(() -> projectRecordService.create(1L, 3L, draftRequest("  ", null)))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.EMPTY_MATERIAL);
+    verify(projectRecordRepository, never()).save(any());
+    verifyNoInteractions(attachmentService);
+  }
 
-    assertThat(response.status()).isEqualTo(ProjectRecordStatus.DRAFT);
-    assertThat(response.memo()).isNull();
+  @Test
+  @DisplayName("27번 DRAFT: 메모만 있고 첨부가 빈 배열이면 EMPTY_MATERIAL (메모는 화면에서 안 써서 자료로 안 침)")
+  void create_draft_memoOnly_throwsEmptyMaterial() {
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
+    ProjectRecordCreateRequest memoOnly =
+        new ProjectRecordCreateRequest(
+            true, "회의에서 API 명세 확정", null, null, null, null, null, List.of(), null);
+
+    assertThatThrownBy(() -> projectRecordService.create(1L, 3L, memoOnly))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.EMPTY_MATERIAL);
+    verify(projectRecordRepository, never()).save(any());
   }
 
   private static ProjectRecordCreateRequest savedRequest(
