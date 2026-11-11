@@ -112,6 +112,12 @@ public class AttachmentService {
     attachments.forEach(attachment -> attachment.connectTo(owner));
   }
 
+  @Transactional
+  public void disconnect(AttachmentOwner owner) {
+    findAttachments(owner.kind(), List.of(owner.id()))
+        .forEach(attachment -> attachment.disconnectFrom(owner));
+  }
+
   public List<AttachmentView> findAll(AttachmentOwner owner) {
     return findAll(owner.kind(), List.of(owner.id())).getOrDefault(owner.id(), List.of());
   }

@@ -111,6 +111,31 @@ public class Attachment extends BaseTimeEntity {
     }
   }
 
+  public void disconnectFrom(AttachmentOwner owner) {
+    switch (owner.kind()) {
+      case RETROSPECTIVE -> {
+        if (owner.id().equals(retrospectiveId)) {
+          retrospectiveId = null;
+        }
+      }
+      case PROJECT_RECORD -> {
+        if (owner.id().equals(projectRecordId)) {
+          projectRecordId = null;
+        }
+      }
+      case PROJECT -> {
+        if (owner.id().equals(projectId)) {
+          projectId = null;
+        }
+      }
+      case JOB_POSTING -> {
+        if (owner.id().equals(jobPostingId)) {
+          jobPostingId = null;
+        }
+      }
+    }
+  }
+
   public static Attachment createFile(
       Long userId,
       AttachmentCategory category,
