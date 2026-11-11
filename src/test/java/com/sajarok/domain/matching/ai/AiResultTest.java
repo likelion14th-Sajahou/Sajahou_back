@@ -109,16 +109,20 @@ class AiResultTest {
   }
 
   @Test
-  @DisplayName("프롬프트: 역량 목록·공고·문항이 user 메시지에 들어가고, 빈 칸은 빠진다")
+  @DisplayName("프롬프트: 역량 목록·공고·공고 첨부 글자·문항이 user 메시지에 들어가고, 빈 칸은 빠진다")
   void prompts_includeInputs() {
     MatchingPrompts.PostingText posting =
         new MatchingPrompts.PostingText("카카오", null, null, "API 개발", null, null);
 
     String user =
         MatchingPrompts.postingAnalysisUser(
-            posting, List.of(new MatchingPrompts.CompetencyOption(3L, "협업")), List.of("협업 경험"));
+            posting,
+            List.of("우대: 협업 경험"),
+            List.of(new MatchingPrompts.CompetencyOption(3L, "협업")),
+            List.of("협업 경험"));
 
-    assertThat(user).contains("id 3: 협업", "회사: 카카오", "주요 업무·자격 요건: API 개발", "1. 협업 경험");
+    assertThat(user)
+        .contains("id 3: 협업", "회사: 카카오", "주요 업무·자격 요건: API 개발", "공고 첨부: 우대: 협업 경험", "1. 협업 경험");
     assertThat(user).doesNotContain("부서:", "우대사항:");
     assertThat(MatchingPrompts.POSTING_ANALYSIS_SYSTEM).contains("최대 5개", "최대 3개");
   }

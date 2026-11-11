@@ -1,5 +1,6 @@
 package com.sajarok.domain.project.ai;
 
+import com.sajarok.domain.attachment.dto.AttachmentView;
 import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.question.dto.QuestionView;
@@ -67,12 +68,13 @@ public final class FinishPrompts {
   /**
    * @param records 고른 기록 (만든 순서)
    */
-  public static String questionsUser(Project project, List<ProjectRecord> records) {
+  public static String questionsUser(
+      Project project, List<ProjectRecord> records, FinishAttachments attachments) {
     StringBuilder sb = new StringBuilder();
     sb.append("[태그 목록]\n").append(String.join(" / ", FinishQuestionResult.TAGS)).append("\n\n");
     appendProject(sb, project);
     appendRecords(sb, records);
-    appendAttachments(sb);
+    appendAttachments(sb, attachments);
     return sb.toString();
   }
 
@@ -136,7 +138,10 @@ public final class FinishPrompts {
    * @param answered 답한(ANSWERED) 마치기 질문
    */
   public static String portfolioUser(
-      Project project, List<ProjectRecord> records, List<QuestionView> answered) {
+      Project project,
+      List<ProjectRecord> records,
+      List<QuestionView> answered,
+      FinishAttachments attachments) {
     StringBuilder sb = new StringBuilder();
     sb.append("[항목 목록]\n").append(String.join(" / ", PortfolioDraftResult.KEYS)).append("\n\n");
     appendProject(sb, project);
@@ -151,7 +156,7 @@ public final class FinishPrompts {
           line(sb, "질문", q.content());
           line(sb, "답", q.answer());
         });
-    appendAttachments(sb);
+    appendAttachments(sb, attachments);
     return sb.toString();
   }
 
@@ -179,9 +184,23 @@ public final class FinishPrompts {
     }
   }
 
-  private static void appendAttachments(StringBuilder sb) {
-    // TODO(첨부 담당): 기록·프로젝트 첨부의 종류(category)와 이름을 [첨부]로 붙인다 (attachmentService.findAll).
-    sb.append("\n[첨부]\n없음\n");
+  private static void appendAttachments(StringBuilder sb, FinishAttachments attachments) {
+    sb.append("\n[첨부]\n");
+    if (attachments.artifacts().isEmpty() && attachments.recordAttachments().isEmpty()) {
+      sb.append("없음\n");
+    }
+    attachments.artifacts().forEach(a -> appendAttachment(sb, "산출물", a));
+    attachments.recordAttachments().forEach(a -> appendAttachment(sb, "기록 첨부", a));
+  }
+
+  private static void appendAttachment(StringBuilder sb, String where, AttachmentView a) {
+    sb.append("- ")
+        .append(where)
+        .append(" / ")
+        .append(a.category())
+        .append(" / ")
+        .append(a.name() != null ? a.name() : a.url())
+        .append('\n');
   }
 
   private static void line(StringBuilder sb, String label, String value) {

@@ -1,5 +1,6 @@
 package com.sajarok.domain.project.dto;
 
+import com.sajarok.domain.attachment.dto.AttachmentView;
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
 import java.time.LocalDate;
@@ -19,8 +20,7 @@ public record ProjectRecordResponse(
     String result,
     String nextStep,
     List<CompetencyTag> competencies,
-    // TODO(첨부 담당): 첨부 응답 DTO가 생기면 그 타입으로 바꾼다. 지금은 빈 배열.
-    List<Object> attachments) {
+    List<AttachmentView> attachments) {
 
   /** 역량 태그 한 개. */
   public record CompetencyTag(Long id, String name) {}
@@ -29,7 +29,7 @@ public record ProjectRecordResponse(
       ProjectRecord record,
       Long cardId,
       List<CompetencyTag> competencies,
-      List<Object> attachments) {
+      List<AttachmentView> attachments) {
     return new ProjectRecordResponse(
         record.getId(),
         record.getStatus(),

@@ -10,6 +10,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.attachment.service.AttachmentService;
+import com.sajarok.domain.project.ai.FinishAttachments;
 import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
@@ -46,6 +48,7 @@ class ProjectFinishQuestionsTest {
   @Mock private AiQuestionService aiQuestionService;
   @Mock private ProjectRecordRepository projectRecordRepository;
   @Mock private FinishQuestionGenerator finishQuestionGenerator;
+  @Mock private AttachmentService attachmentService;
 
   @InjectMocks private ProjectFinishService projectFinishService;
 
@@ -123,7 +126,8 @@ class ProjectFinishQuestionsTest {
         .thenReturn(records);
     List<NewQuestion> questions =
         List.of(new NewQuestion("산출물 요청", "최종 산출물이 아직 첨부되지 않았어요", null, "산출물을 첨부해 주세요."));
-    when(finishQuestionGenerator.generate(project, records)).thenReturn(questions);
+    when(finishQuestionGenerator.generate(project, records, FinishAttachments.none()))
+        .thenReturn(questions);
     when(aiQuestionService.replace(OWNER, questions))
         .thenReturn(List.of(view(null, QuestionStatus.PENDING)));
 
@@ -147,7 +151,7 @@ class ProjectFinishQuestionsTest {
     when(projectRecordRepository.findAllByProjectIdAndStatusAndIdInOrderByCreatedAtAscIdAsc(
             eq(3L), eq(ProjectRecordStatus.SAVED), any()))
         .thenReturn(List.of(record(project)));
-    when(finishQuestionGenerator.generate(eq(project), anyList()))
+    when(finishQuestionGenerator.generate(eq(project), anyList(), any()))
         .thenThrow(new BusinessException(code));
 
     assertThatThrownBy(() -> projectFinishService.createQuestions(1L, 3L, List.of(71L)))

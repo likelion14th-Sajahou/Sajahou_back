@@ -2,6 +2,7 @@ package com.sajarok.domain.project.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.sajarok.domain.project.ai.FinishAttachments;
 import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
@@ -24,7 +25,8 @@ class FinishQuestionGeneratorTest {
             .did("API 연동")
             .build();
 
-    List<NewQuestion> questions = new FinishQuestionGenerator().generate(project, List.of(record));
+    List<NewQuestion> questions =
+        new FinishQuestionGenerator().generate(project, List.of(record), FinishAttachments.none());
 
     assertThat(questions)
         .extracting(NewQuestion::tag)

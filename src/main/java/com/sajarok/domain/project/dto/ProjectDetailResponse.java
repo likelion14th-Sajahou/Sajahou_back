@@ -1,5 +1,6 @@
 package com.sajarok.domain.project.dto;
 
+import com.sajarok.domain.attachment.dto.AttachmentView;
 import com.sajarok.domain.project.dto.ProjectRecordResponse.CompetencyTag;
 import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
@@ -41,11 +42,11 @@ public record ProjectDetailResponse(
       String result,
       String nextStep,
       List<CompetencyTag> competencies,
-      // TODO(첨부 담당): 첨부 응답 DTO가 생기면 그 타입으로 바꾼다. 지금은 빈 배열.
-      List<Object> attachments) {
+      List<AttachmentView> attachments) {
 
-    // TODO(역량·첨부 담당): names·findAll로 한 번에 가져와 채운다 (기록마다 부르지 않음, N+1 방지).
-    public static RecordItem of(ProjectRecord record, Long cardId) {
+    // TODO(역량 담당): names로 한 번에 가져와 채운다 (기록마다 부르지 않음, N+1 방지).
+    public static RecordItem of(
+        ProjectRecord record, Long cardId, List<AttachmentView> attachments) {
       return new RecordItem(
           record.getId(),
           cardId,
@@ -58,17 +59,26 @@ public record ProjectDetailResponse(
           record.getResult(),
           record.getNextStep(),
           List.of(),
-          List.of());
+          attachments);
     }
   }
 
   /**
    * @param cardIds 기록 ID → 카드 ID (카드 담당 findByRecordIds로 한 번에 가져온 것). 없으면 cardId는 null.
+   * @param attachments 기록 ID → 첨부 (findAll로 한 번에 가져온 것). 없으면 빈 배열.
    */
   public static ProjectDetailResponse of(
-      Project project, List<ProjectRecord> savedRecords, Map<Long, Long> cardIds) {
+      Project project,
+      List<ProjectRecord> savedRecords,
+      Map<Long, Long> cardIds,
+      Map<Long, List<AttachmentView>> attachments) {
     List<RecordItem> records =
-        savedRecords.stream().map(r -> RecordItem.of(r, cardIds.get(r.getId()))).toList();
+        savedRecords.stream()
+            .map(
+                r ->
+                    RecordItem.of(
+                        r, cardIds.get(r.getId()), attachments.getOrDefault(r.getId(), List.of())))
+            .toList();
     return new ProjectDetailResponse(
         project.getId(),
         project.getName(),

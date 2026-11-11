@@ -6,6 +6,8 @@ import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.matching.ai.PostingAnalysisResult;
 import com.sajarok.domain.matching.dto.JobPostingCreateRequest;
 import com.sajarok.domain.matching.dto.JobPostingCreateRequest.QuestionRequest;
@@ -31,6 +33,7 @@ class JobPostingWriterTest {
 
   @Mock private JobPostingRepository jobPostingRepository;
   @Mock private CoverLetterQuestionRepository coverLetterQuestionRepository;
+  @Mock private AttachmentService attachmentService;
 
   @InjectMocks private JobPostingWriter jobPostingWriter;
 
@@ -85,7 +88,8 @@ class JobPostingWriterTest {
                 new PostingAnalysisResult.Competency(7L, "문제 해결")),
             List.of(new PostingAnalysisResult.Question(1, List.of(3L, 3L, 7L))));
 
-    JobPostingWriter.Applied applied = jobPostingWriter.applyAnalysis(21L, result);
+    JobPostingWriter.Applied applied =
+        jobPostingWriter.applyAnalysis(1L, 21L, List.of(701L), result);
 
     assertThat(posting.getCompetencies())
         .containsExactly(new PostingCompetency(3L, "협업"), new PostingCompetency(7L, "문제 해결"));
@@ -93,6 +97,7 @@ class JobPostingWriterTest {
     assertThat(questions.get(1).getCompetencyIds()).isEmpty();
     assertThat(applied.posting()).isSameAs(posting);
     assertThat(applied.questions()).isEqualTo(questions);
+    verify(attachmentService).connect(1L, List.of(701L), AttachmentOwner.jobPosting(21L));
   }
 
   @Test

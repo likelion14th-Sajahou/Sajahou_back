@@ -10,6 +10,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.dto.AttachmentView;
+import com.sajarok.domain.attachment.entity.AttachmentCategory;
+import com.sajarok.domain.attachment.entity.AttachmentType;
+import com.sajarok.domain.attachment.entity.ExtractStatus;
+import com.sajarok.domain.attachment.service.AttachmentService;
+import com.sajarok.domain.project.ai.FinishAttachments;
 import com.sajarok.domain.project.dto.PortfolioDraftResponse;
 import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
@@ -48,6 +55,7 @@ class ProjectFinishPortfolioDraftTest {
   @Mock private ProjectRecordRepository projectRecordRepository;
   @Mock private FinishQuestionGenerator finishQuestionGenerator;
   @Mock private PortfolioDrafter portfolioDrafter;
+  @Mock private AttachmentService attachmentService;
 
   @InjectMocks private ProjectFinishService projectFinishService;
 
@@ -121,17 +129,57 @@ class ProjectFinishPortfolioDraftTest {
                 question("내 역할", QuestionStatus.SKIPPED),
                 answered,
                 question("최종 결과", QuestionStatus.PENDING)));
-    when(portfolioDrafter.draft(eq(project), eq(records), anyList())).thenReturn(allBlank());
+    when(portfolioDrafter.draft(eq(project), eq(records), anyList(), any())).thenReturn(allBlank());
 
     PortfolioDraftResponse response =
         projectFinishService.createPortfolioDraft(1L, 3L, List.of(71L, 71L));
 
     ArgumentCaptor<List<QuestionView>> captor = ArgumentCaptor.forClass(List.class);
-    verify(portfolioDrafter).draft(eq(project), eq(records), captor.capture());
+    verify(portfolioDrafter).draft(eq(project), eq(records), captor.capture(), any());
     assertThat(captor.getValue()).containsExactly(answered);
     assertThat(response.markdown()).startsWith("# 사자록\n");
     assertThat(response.blanks()).hasSize(6);
     verify(aiQuestionService, never()).replace(any(), anyList());
+  }
+
+  @Test
+  @DisplayName("33번 첨부: 프로젝트 산출물 첨부와 고른 기록의 첨부를 나눠서 포트폴리오 AI에 넘긴다")
+  void draft_passesArtifactsAndRecordAttachments() {
+    Project project = project();
+    ProjectRecord record = record(project);
+    ReflectionTestUtils.setField(record, "id", 71L);
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(project));
+    when(projectRecordRepository.findAllByProjectIdAndStatusAndIdInOrderByCreatedAtAscIdAsc(
+            3L, ProjectRecordStatus.SAVED, Set.of(71L)))
+        .thenReturn(List.of(record));
+    AttachmentView artifact = attachmentView(610L, AttachmentCategory.PRESENTATION, "최종 발표.pdf");
+    AttachmentView meetingNote = attachmentView(601L, AttachmentCategory.MEETING_NOTE, "회의록.pdf");
+    when(attachmentService.findAll(AttachmentOwner.project(3L))).thenReturn(List.of(artifact));
+    when(attachmentService.findAll(AttachmentOwner.Kind.PROJECT_RECORD, List.of(71L)))
+        .thenReturn(Map.of(71L, List.of(meetingNote)));
+    when(portfolioDrafter.draft(any(), anyList(), anyList(), any())).thenReturn(allBlank());
+
+    projectFinishService.createPortfolioDraft(1L, 3L, List.of(71L));
+
+    verify(portfolioDrafter)
+        .draft(
+            eq(project),
+            anyList(),
+            anyList(),
+            eq(new FinishAttachments(List.of(artifact), List.of(meetingNote))));
+  }
+
+  private static AttachmentView attachmentView(Long id, AttachmentCategory category, String name) {
+    return new AttachmentView(
+        id,
+        AttachmentType.FILE,
+        category,
+        name,
+        null,
+        null,
+        "application/pdf",
+        10L,
+        ExtractStatus.DONE);
   }
 
   @ParameterizedTest
@@ -146,7 +194,7 @@ class ProjectFinishPortfolioDraftTest {
             eq(3L), eq(ProjectRecordStatus.SAVED), any()))
         .thenReturn(List.of(record(project)));
     when(aiQuestionService.findAll(QuestionOwner.project(3L))).thenReturn(List.of());
-    when(portfolioDrafter.draft(any(), anyList(), anyList()))
+    when(portfolioDrafter.draft(any(), anyList(), anyList(), any()))
         .thenThrow(new BusinessException(code));
 
     assertThatThrownBy(() -> projectFinishService.createPortfolioDraft(1L, 3L, List.of(71L)))

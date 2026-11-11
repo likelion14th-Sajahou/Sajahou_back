@@ -1,5 +1,6 @@
 package com.sajarok.domain.project.service;
 
+import com.sajarok.domain.project.ai.FinishAttachments;
 import com.sajarok.domain.project.ai.FinishPrompts;
 import com.sajarok.domain.project.ai.FinishQuestionResult;
 import com.sajarok.domain.project.ai.FinishQuestionResult.Question;
@@ -33,8 +34,9 @@ public class FinishQuestionGenerator {
                   "포트폴리오에 넣을 산출물을 첨부해 주세요. 최종 발표 자료, 시연 링크, 피그마가 있으면 좋아요."),
               new Question("배운 점", "프로젝트 전체를 돌아본 문장이 없어요", "다음 프로젝트에 꼭 가져갈 한 가지는요?")));
 
-  public List<NewQuestion> generate(Project project, List<ProjectRecord> records) {
-    String user = FinishPrompts.questionsUser(project, records);
+  public List<NewQuestion> generate(
+      Project project, List<ProjectRecord> records, FinishAttachments attachments) {
+    String user = FinishPrompts.questionsUser(project, records, attachments);
 
     // TODO(AI 모듈 담당): AiClient가 생기면 아래 고정 질문 대신 호출한다.
     // FinishQuestionResult raw =
