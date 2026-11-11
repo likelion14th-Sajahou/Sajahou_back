@@ -1,8 +1,10 @@
 package com.sajarok.domain.retrospective.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -15,6 +17,7 @@ import com.sajarok.domain.question.dto.QuestionView;
 import com.sajarok.domain.question.entity.QuestionStatus;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse.Materials;
+import com.sajarok.domain.retrospective.dto.RetrospectiveDraftRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartRequest;
@@ -27,11 +30,13 @@ import com.sajarok.domain.retrospective.service.RetrospectiveService.StartResult
 import com.sajarok.global.auth.CurrentUserProvider;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import com.sajarok.global.time.KstTime;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -211,7 +216,7 @@ class RetrospectiveControllerTest {
                 RetrospectiveState.IN_PROGRESS,
                 false,
                 3,
-                LocalDateTime.of(2026, 11, 5, 22, 40),
+                KstTime.toOffset(LocalDateTime.of(2026, 11, 5, 22, 40)),
                 null,
                 null,
                 new Materials(true, "실습 내용", AssignmentMode.RECORD, "과제 내용", null, "메모"),
@@ -235,6 +240,7 @@ class RetrospectiveControllerTest {
         .andExpect(jsonPath("$.data.state").value("IN_PROGRESS"))
         .andExpect(jsonPath("$.data.isRested").value(false))
         .andExpect(jsonPath("$.data.currentStep").value(3))
+        .andExpect(jsonPath("$.data.lastSavedAt").value("2026-11-05T22:40:00+09:00"))
         .andExpect(jsonPath("$.data.week").value(nullValue()))
         .andExpect(jsonPath("$.data.materials.assignmentMode").value("RECORD"))
         .andExpect(jsonPath("$.data.materials.memo").value("메모"))
@@ -254,5 +260,69 @@ class RetrospectiveControllerTest {
         .perform(get("/api/v1/retrospectives/999"))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+  }
+
+  @Test
+  @DisplayName("14번: JSON에 null로 보낸 칸은 '보냄'으로, 아예 뺀 칸은 '안 보냄'으로 서비스에 넘어가고, 저장 시각은 +09:00으로 준다")
+  void draft_distinguishesNullAndMissing() throws Exception {
+    when(retrospectiveService.saveDraft(
+            org.mockito.ArgumentMatchers.eq(1L),
+            org.mockito.ArgumentMatchers.eq(101L),
+            any(RetrospectiveDraftRequest.class)))
+        .thenReturn(
+            new RetrospectiveProgressResponse(
+                101L,
+                RetrospectiveState.IN_PROGRESS,
+                3,
+                KstTime.toOffset(LocalDateTime.of(2026, 11, 12, 0, 30))));
+
+    mockMvc
+        .perform(
+            patch("/api/v1/retrospectives/101")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"currentStep\": 3, \"memo\": null}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.currentStep").value(3))
+        .andExpect(jsonPath("$.data.lastSavedAt").value("2026-11-12T00:30:00+09:00"));
+
+    ArgumentCaptor<RetrospectiveDraftRequest> captor =
+        ArgumentCaptor.forClass(RetrospectiveDraftRequest.class);
+    verify(retrospectiveService)
+        .saveDraft(
+            org.mockito.ArgumentMatchers.eq(1L),
+            org.mockito.ArgumentMatchers.eq(101L),
+            captor.capture());
+    RetrospectiveDraftRequest sent = captor.getValue();
+    assertThat(sent.has("memo")).isTrue();
+    assertThat(sent.getMemo()).isNull();
+    assertThat(sent.has("practiceContent")).isFalse();
+    assertThat(sent.getCurrentStep()).isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName("14번: 단계가 2~4가 아니면 400 VALIDATION_ERROR와 currentStep 칸의 이유를 준다")
+  void draft_invalidStep_returns400() throws Exception {
+    mockMvc
+        .perform(
+            patch("/api/v1/retrospectives/101")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"currentStep\": 5}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+        .andExpect(jsonPath("$.error.fields[0].field").value("currentStep"));
+    verifyNoInteractions(retrospectiveService);
+  }
+
+  @Test
+  @DisplayName("14번: 과제 작성 방식이 정해진 값이 아니면 400 VALIDATION_ERROR를 준다")
+  void draft_unknownAssignmentMode_returns400() throws Exception {
+    mockMvc
+        .perform(
+            patch("/api/v1/retrospectives/101")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"assignmentMode\": \"FOO\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+    verifyNoInteractions(retrospectiveService);
   }
 }

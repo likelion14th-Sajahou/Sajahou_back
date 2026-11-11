@@ -1,6 +1,7 @@
 package com.sajarok.domain.retrospective.controller;
 
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
+import com.sajarok.domain.retrospective.dto.RetrospectiveDraftRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestResponse;
@@ -60,5 +61,13 @@ public class RetrospectiveController {
   public ApiResponse<RetrospectiveDetailResponse> getDetail(@PathVariable Long retrospectiveId) {
     return ApiResponse.ok(
         retrospectiveService.getDetail(currentUserProvider.getUserId(), retrospectiveId));
+  }
+
+  /** 14번: 임시저장 */
+  @PatchMapping("/{retrospectiveId}")
+  public ApiResponse<RetrospectiveProgressResponse> saveDraft(
+      @PathVariable Long retrospectiveId, @Valid @RequestBody RetrospectiveDraftRequest request) {
+    return ApiResponse.ok(
+        retrospectiveService.saveDraft(currentUserProvider.getUserId(), retrospectiveId, request));
   }
 }

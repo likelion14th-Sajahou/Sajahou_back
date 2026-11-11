@@ -13,6 +13,7 @@ import com.sajarok.domain.question.entity.QuestionOwner;
 import com.sajarok.domain.question.entity.QuestionStatus;
 import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
+import com.sajarok.domain.retrospective.dto.RetrospectiveDraftRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartRequest;
@@ -39,7 +40,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
- * 서비스 테스트: 12번 회고 시작(이미 있으면 그대로, 휴회, 과제 회고 조건), 13번 상세, 15번 휴회 표시·해제, 16번 처음부터 규칙을 확인한다.
+ * 서비스 테스트: 12번 회고 시작(이미 있으면 그대로, 휴회, 과제 회고 조건), 13번 상세, 14번 임시저장, 15번 휴회 표시·해제, 16번 처음부터 규칙을 확인한다.
  *
  * <p>DB 없이 레포지토리와 AI 질문·카드 서비스를 가짜(@Mock)로 바꾼다. 주차 확인은 주차 모듈이 생기면 더한다.
  */
@@ -383,5 +384,68 @@ class RetrospectiveServiceTest {
         .extracting("errorCode")
         .isEqualTo(ErrorCode.NOT_FOUND);
     verifyNoInteractions(aiQuestionService, storyCardService);
+  }
+
+  @Test
+  @DisplayName("14번: 보낸 칸만 바뀐다. null을 보낸 칸은 비우고, 안 보낸 칸은 그대로 두고, 저장 시각을 남긴다")
+  void draft_changesOnlySentFields() {
+    Retrospective session = mySessionAtStep3();
+    ReflectionTestUtils.setField(session, "practiceContent", "실습 내용");
+    RetrospectiveDraftRequest request = new RetrospectiveDraftRequest();
+    request.setCurrentStep(4);
+    request.setMemo(null);
+    request.setAssignmentMode(AssignmentMode.LATER);
+
+    RetrospectiveProgressResponse response = retrospectiveService.saveDraft(ME, 101L, request);
+
+    assertThat(session.getMemo()).isNull();
+    assertThat(session.getAssignmentMode()).isEqualTo(AssignmentMode.LATER);
+    assertThat(session.getPracticeContent()).isEqualTo("실습 내용");
+    assertThat(response.currentStep()).isEqualTo(4);
+    assertThat(response.lastSavedAt()).isNotNull();
+  }
+
+  @Test
+  @DisplayName("14번: '나중에 이어쓰기'처럼 단계만 보내면 자료는 하나도 바뀌지 않는다")
+  void draft_stepOnly_keepsMaterials() {
+    Retrospective session = mySessionAtStep3();
+    RetrospectiveDraftRequest request = new RetrospectiveDraftRequest();
+    request.setCurrentStep(3);
+
+    retrospectiveService.saveDraft(ME, 101L, request);
+
+    assertThat(session.getMemo()).isEqualTo("이번 주 고민");
+    assertThat(session.getAssignmentMode()).isEqualTo(AssignmentMode.RECORD);
+    assertThat(session.getLastSavedAt()).isNotNull();
+  }
+
+  @Test
+  @DisplayName("14번: 과제 회고에 과제 작성 방식을 보내면 400 VALIDATION_ERROR이고, 아무것도 바뀌지 않는다")
+  void draft_assignmentModeOnAssignment_validationError() {
+    Retrospective assignment = Retrospective.start(ME, WEEK, RetrospectiveType.ASSIGNMENT);
+    when(retrospectiveRepository.findByIdAndUserId(205L, ME)).thenReturn(Optional.of(assignment));
+    RetrospectiveDraftRequest request = new RetrospectiveDraftRequest();
+    request.setMemo("메모");
+    request.setAssignmentMode(AssignmentMode.LATER);
+
+    assertThatThrownBy(() -> retrospectiveService.saveDraft(ME, 205L, request))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.VALIDATION_ERROR);
+    assertThat(assignment.getMemo()).isNull();
+  }
+
+  @Test
+  @DisplayName("14번: 완료한 회고도 고칠 수 있다")
+  void draft_completed_allowed() {
+    Retrospective session = mySessionAtStep3();
+    session.complete(java.time.LocalDateTime.of(2026, 11, 8, 21, 0));
+    RetrospectiveDraftRequest request = new RetrospectiveDraftRequest();
+    request.setMemo("완료 후에 고친 메모");
+
+    RetrospectiveProgressResponse response = retrospectiveService.saveDraft(ME, 101L, request);
+
+    assertThat(session.getMemo()).isEqualTo("완료 후에 고친 메모");
+    assertThat(response.state()).isEqualTo(RetrospectiveState.COMPLETED);
   }
 }

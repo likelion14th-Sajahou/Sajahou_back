@@ -5,6 +5,7 @@ import com.sajarok.domain.question.entity.QuestionOwner;
 import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.domain.retrospective.dto.HomeRetroSummary;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
+import com.sajarok.domain.retrospective.dto.RetrospectiveDraftRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartRequest;
@@ -19,6 +20,8 @@ import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
 import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import com.sajarok.global.time.KstTime;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -111,5 +114,18 @@ public class RetrospectiveService {
     StoryCardDetailResponse card =
         storyCardService.findDetailByRetrospective(retrospectiveId).orElse(null);
     return RetrospectiveDetailResponse.of(retrospective, questions, card);
+  }
+
+  /** 14번: 임시저장. 완료한 회고도 고칠 수 있다 */
+  @Transactional
+  public RetrospectiveProgressResponse saveDraft(
+      Long userId, Long retrospectiveId, RetrospectiveDraftRequest request) {
+    Retrospective retrospective = findMine(userId, retrospectiveId);
+    // TODO(주차 담당): 진행 중인 회고가 마감 + 7일을 넘겼으면 409 DEADLINE_PASSED (완료한 회고는 기간 상관없음)
+    // TODO(회원 담당): codeReview는 FE 파트만. 아니면 400 VALIDATION_ERROR
+    retrospective.saveDraft(request, LocalDateTime.now(KstTime.OFFSET));
+    // TODO(첨부 담당): request.has("attachmentIds")면 attachmentService.connect(userId,
+    // request.getAttachmentIds(), AttachmentOwner.retrospective(retrospectiveId))
+    return RetrospectiveProgressResponse.from(retrospective);
   }
 }

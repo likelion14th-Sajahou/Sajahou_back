@@ -1,5 +1,6 @@
 package com.sajarok.domain.retrospective.entity;
 
+import com.sajarok.domain.retrospective.dto.RetrospectiveDraftRequest;
 import com.sajarok.global.entity.BaseTimeEntity;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
@@ -115,5 +116,23 @@ public class Retrospective extends BaseTimeEntity {
     this.memo = null;
     this.questionInputHash = null;
     this.lastSavedAt = null;
+  }
+
+  /** 14번 임시저장. 요청에 들어 있던 칸만 바꾸고, 저장 시각을 남긴다 */
+  public void saveDraft(RetrospectiveDraftRequest draft, LocalDateTime now) {
+    if (draft.has("assignmentMode") && this.type != RetrospectiveType.SESSION) {
+      throw new BusinessException(ErrorCode.VALIDATION_ERROR, "과제 작성 방식은 세션 회고에서만 골라요.");
+    }
+
+    if (draft.has("currentStep") && draft.getCurrentStep() != null) {
+      this.currentStep = draft.getCurrentStep();
+    }
+    if (draft.has("hasPractice")) this.hasPractice = draft.getHasPractice();
+    if (draft.has("practiceContent")) this.practiceContent = draft.getPracticeContent();
+    if (draft.has("assignmentMode")) this.assignmentMode = draft.getAssignmentMode();
+    if (draft.has("assignmentContent")) this.assignmentContent = draft.getAssignmentContent();
+    if (draft.has("codeReview")) this.codeReview = draft.getCodeReview();
+    if (draft.has("memo")) this.memo = draft.getMemo();
+    this.lastSavedAt = now;
   }
 }
