@@ -95,15 +95,16 @@ class ProjectRecordServiceTest {
   }
 
   @Test
-  @DisplayName("27번 DRAFT: 메모가 공백뿐이고 첨부도 없으면 EMPTY_MATERIAL이고 저장하지 않는다")
-  void create_draft_noMaterial_throwsEmptyMaterial() {
+  @DisplayName("27번 DRAFT: 메모가 공백뿐이고 첨부도 없어도 DRAFT로 만든다 (PM 결정 11/11: 자료 부족은 30번에서 안내)")
+  void create_draft_noMaterial_stillCreatesDraft() {
     when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
+    when(projectRecordRepository.save(any(ProjectRecord.class))).thenAnswer(i -> i.getArgument(0));
 
-    assertThatThrownBy(() -> projectRecordService.create(1L, 3L, draftRequest("  ", List.of())))
-        .isInstanceOf(BusinessException.class)
-        .extracting("errorCode")
-        .isEqualTo(ErrorCode.EMPTY_MATERIAL);
-    verify(projectRecordRepository, never()).save(any());
+    ProjectRecordResponse response =
+        projectRecordService.create(1L, 3L, draftRequest("  ", List.of()));
+
+    assertThat(response.status()).isEqualTo(ProjectRecordStatus.DRAFT);
+    assertThat(response.memo()).isNull();
   }
 
   private static ProjectRecordCreateRequest savedRequest(

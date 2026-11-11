@@ -200,7 +200,7 @@ public class ProjectRecordService {
   }
 
   /**
-   * 'AI와 정리하기': DRAFT 기록만 만들고 카드는 만들지 않는다. 메모나 첨부가 있어야 한다(없으면 EMPTY_MATERIAL).
+   * 'AI와 정리하기': DRAFT 기록만 만들고 카드는 만들지 않는다. 메모·첨부가 없어도 만든다(PM 결정 11/11: 30번에서 자료 부족 안내).
    *
    * <p>isAiOrganized는 31번(AI 정리) 뒤에 true가 되므로 여기서는 false. competencyIds는 무시한다.
    */
@@ -217,9 +217,6 @@ public class ProjectRecordService {
             .nextStep(request.nextStep())
             .aiOrganized(false)
             .build();
-    if (!record.hasMemo() && !request.hasAttachments()) {
-      throw new BusinessException(ErrorCode.EMPTY_MATERIAL);
-    }
     ProjectRecord saved = projectRecordRepository.save(record);
 
     // TODO(첨부 담당): AttachmentService가 생기면 호출한다. 내 첨부인지 확인도 여기서 된다.

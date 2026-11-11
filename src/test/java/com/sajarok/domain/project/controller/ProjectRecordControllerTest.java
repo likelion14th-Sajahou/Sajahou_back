@@ -93,7 +93,7 @@ class ProjectRecordControllerTest {
   }
 
   @Test
-  @DisplayName("27번: 메모·첨부가 다 없으면 400 EMPTY_MATERIAL")
+  @DisplayName("27번 '이대로 저장': 5칸·첨부가 다 없으면 400 EMPTY_MATERIAL")
   void create_emptyMaterial_returns400() throws Exception {
     when(projectRecordService.create(eq(1L), eq(3L), any(ProjectRecordCreateRequest.class)))
         .thenThrow(new BusinessException(ErrorCode.EMPTY_MATERIAL));
@@ -102,9 +102,10 @@ class ProjectRecordControllerTest {
         .perform(
             post("/api/v1/projects/3/records")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"aiOrganize\": true}"))
+                .content("{\"aiOrganize\": false, \"competencyIds\": [3]}"))
         .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.error.code").value("EMPTY_MATERIAL"));
+        .andExpect(jsonPath("$.error.code").value("EMPTY_MATERIAL"))
+        .andExpect(jsonPath("$.error.detail").doesNotExist());
   }
 
   @Test
