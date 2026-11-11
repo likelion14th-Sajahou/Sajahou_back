@@ -27,4 +27,8 @@ public class S3AttachmentStorage {
   public void delete(String key) {
     s3Client.deleteObject(request -> request.bucket(bucket).key(key));
   }
+
+  public InputStream open(String key) {
+    return s3Client.getObject(request -> request.bucket(bucket).key(key));
+  }
 }

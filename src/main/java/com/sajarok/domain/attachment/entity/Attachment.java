@@ -1,5 +1,6 @@
 package com.sajarok.domain.attachment.entity;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
 import com.sajarok.global.entity.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -85,13 +86,39 @@ public class Attachment extends BaseTimeEntity {
     return attachment;
   }
 
+  public boolean canConnectTo(AttachmentOwner owner) {
+    if (retrospectiveId == null
+        && projectRecordId == null
+        && projectId == null
+        && jobPostingId == null) {
+      return true;
+    }
+
+    return switch (owner.kind()) {
+      case RETROSPECTIVE -> owner.id().equals(retrospectiveId);
+      case PROJECT_RECORD -> owner.id().equals(projectRecordId);
+      case PROJECT -> owner.id().equals(projectId);
+      case JOB_POSTING -> owner.id().equals(jobPostingId);
+    };
+  }
+
+  public void connectTo(AttachmentOwner owner) {
+    switch (owner.kind()) {
+      case RETROSPECTIVE -> retrospectiveId = owner.id();
+      case PROJECT_RECORD -> projectRecordId = owner.id();
+      case PROJECT -> projectId = owner.id();
+      case JOB_POSTING -> jobPostingId = owner.id();
+    }
+  }
+
   public static Attachment createFile(
       Long userId,
       AttachmentCategory category,
       String name,
       String s3Key,
       String contentType,
-      long sizeBytes) {
+      long sizeBytes,
+      ExtractStatus initialStatus) {
     Attachment attachment = new Attachment();
     attachment.userId = userId;
     attachment.type = AttachmentType.FILE;
@@ -100,7 +127,7 @@ public class Attachment extends BaseTimeEntity {
     attachment.s3Key = s3Key;
     attachment.contentType = contentType;
     attachment.sizeBytes = sizeBytes;
-    attachment.extractStatus = ExtractStatus.PENDING;
+    attachment.extractStatus = initialStatus;
     return attachment;
   }
 }

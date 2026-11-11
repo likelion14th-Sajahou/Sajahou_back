@@ -5,10 +5,12 @@ import com.sajarok.domain.attachment.dto.AttachmentLinkRequest;
 import com.sajarok.domain.attachment.dto.AttachmentLinkResponse;
 import com.sajarok.domain.attachment.dto.AttachmentStatusResponse;
 import com.sajarok.domain.attachment.entity.AttachmentCategory;
+import com.sajarok.domain.attachment.service.AttachmentExtractionJob;
 import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.global.auth.CurrentUserProvider;
 import com.sajarok.global.response.ApiResponse;
 import jakarta.validation.Valid;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -23,6 +25,7 @@ public class AttachmentController {
 
   private final AttachmentService attachmentService;
   private final CurrentUserProvider currentUserProvider;
+  private final AttachmentExtractionJob extractionJob;
 
   @PostMapping("/links")
   public ResponseEntity<ApiResponse<AttachmentLinkResponse>> registerLink(
@@ -49,6 +52,16 @@ public class AttachmentController {
       @RequestParam("category") AttachmentCategory category) {
     var attachment =
         attachmentService.registerFile(currentUserProvider.getUserId(), file, category);
+    String name = attachment.getName().toLowerCase(Locale.ROOT);
+    String extension = name.substring(name.lastIndexOf('.') + 1);
+
+    switch (extension) {
+      case "txt", "md", "pdf", "zip" ->
+          extractionJob.run(attachment.getId(), attachment.getS3Key(), extension);
+      default -> {
+        // 현재 추출을 지원하는 형식만 작업을 시작한다.
+      }
+    }
 
     return ResponseEntity.status(HttpStatus.CREATED)
         .body(ApiResponse.ok(AttachmentFileResponse.from(attachment)));
