@@ -19,7 +19,9 @@ public class GlobalExceptionHandler {
   /** 서비스에서 던진 규칙 위반 (404, 409 등) */
   @ExceptionHandler(BusinessException.class)
   public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException e) {
-    return respond(e.getErrorCode(), e.getMessage(), null);
+    ErrorCode code = e.getErrorCode();
+    return ResponseEntity.status(code.getStatus())
+        .body(ApiResponse.fail(code.name(), e.getMessage(), null, e.getDetail()));
   }
 
   /**
