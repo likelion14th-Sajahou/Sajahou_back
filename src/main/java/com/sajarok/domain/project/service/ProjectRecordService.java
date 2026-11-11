@@ -138,11 +138,10 @@ public class ProjectRecordService {
         request.nextStep(),
         request.isAiOrganized());
 
-    // TODO(첨부 담당): 끊기 메서드가 생기면 attachmentIds에서 빠진 첨부의 연결을 해제한다. 지금은 새 첨부 연결만 한다.
     List<AttachmentView> attachments =
         request.attachmentIds() == null
             ? attachmentService.findAll(AttachmentOwner.projectRecord(recordId))
-            : connectAttachments(userId, recordId, request.attachmentIds());
+            : replaceAttachments(userId, recordId, request.attachmentIds());
     boolean hasAttachments = !attachments.isEmpty();
 
     if (record.isDraft()) {
@@ -180,6 +179,13 @@ public class ProjectRecordService {
     AttachmentOwner owner = AttachmentOwner.projectRecord(recordId);
     attachmentService.connect(userId, attachmentIds, owner);
     return attachmentService.findAll(owner);
+  }
+
+  /** 28번: 보낸 목록으로 통째로 바꾼다(빠진 첨부는 연결만 풂). 같은 트랜잭션이라 connect가 실패하면 끊은 것도 되돌려진다. */
+  private List<AttachmentView> replaceAttachments(
+      Long userId, Long recordId, List<Long> attachmentIds) {
+    attachmentService.disconnect(AttachmentOwner.projectRecord(recordId));
+    return connectAttachments(userId, recordId, attachmentIds);
   }
 
   /**
