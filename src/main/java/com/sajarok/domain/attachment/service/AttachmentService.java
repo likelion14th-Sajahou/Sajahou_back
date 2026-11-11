@@ -83,8 +83,11 @@ public class AttachmentService {
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public Attachment registerFile(Long userId, MultipartFile file, AttachmentCategory category) {
     String name = file.getOriginalFilename();
-    if (file.isEmpty() || file.getSize() > MAX_FILE_SIZE) {
-      throw new BusinessException(ErrorCode.VALIDATION_ERROR, "파일은 비어 있지 않아야 하고 20MB까지 올릴 수 있어요.");
+    if (file.isEmpty()) {
+      throw new BusinessException(ErrorCode.VALIDATION_ERROR, "빈 파일은 올릴 수 없어요.");
+    }
+    if (file.getSize() > MAX_FILE_SIZE) {
+      throw new BusinessException(ErrorCode.FILE_TOO_LARGE);
     }
     if (name == null || name.isBlank() || name.length() > 255) {
       throw new BusinessException(ErrorCode.VALIDATION_ERROR, "파일 이름을 확인해 주세요.");
@@ -92,7 +95,7 @@ public class AttachmentService {
 
     int dot = name.lastIndexOf('.');
     if (dot < 0 || !ALLOWED_EXTENSIONS.contains(name.substring(dot + 1).toLowerCase(Locale.ROOT))) {
-      throw new BusinessException(ErrorCode.VALIDATION_ERROR, "지원하지 않는 파일 형식이에요.");
+      throw new BusinessException(ErrorCode.UNSUPPORTED_FILE);
     }
 
     String key = "attachments/" + UUID.randomUUID();
