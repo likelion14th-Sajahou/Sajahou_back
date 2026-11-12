@@ -1,5 +1,8 @@
 package com.sajarok.domain.retrospective.service;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.dto.AttachmentView;
+import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.question.dto.QuestionView;
 import com.sajarok.domain.question.entity.QuestionOwner;
 import com.sajarok.domain.question.service.AiQuestionService;
@@ -37,6 +40,7 @@ public class RetrospectiveService {
   private final RetrospectiveRepository retrospectiveRepository;
   private final AiQuestionService aiQuestionService;
   private final StoryCardService storyCardService;
+  private final AttachmentService attachmentService;
 
   public HomeRetroSummary homeSummary(Long userId, Long currentWeekId) {
     return new HomeRetroSummary(null, RetrospectiveState.NOT_STARTED, List.of(), true); // TODO fake
@@ -101,8 +105,7 @@ public class RetrospectiveService {
     retrospective.reset();
     aiQuestionService.deleteAll(QuestionOwner.retrospective(retrospectiveId));
     storyCardService.deleteByRetrospective(retrospectiveId);
-    // TODO(첨부 담당): attachmentService.deleteAll(AttachmentOwner.retrospective(retrospectiveId)). S3
-    // 파일까지
+    attachmentService.deleteAll(AttachmentOwner.retrospective(retrospectiveId));
 
     return RetrospectiveProgressResponse.from(retrospective);
   }
@@ -112,9 +115,11 @@ public class RetrospectiveService {
     Retrospective retrospective = findMine(userId, retrospectiveId);
     List<QuestionView> questions =
         aiQuestionService.findAll(QuestionOwner.retrospective(retrospectiveId));
+    List<AttachmentView> attachments =
+        attachmentService.findAll(AttachmentOwner.retrospective(retrospectiveId));
     StoryCardDetailResponse card =
         storyCardService.findDetailByRetrospective(retrospectiveId).orElse(null);
-    return RetrospectiveDetailResponse.of(retrospective, questions, card);
+    return RetrospectiveDetailResponse.of(retrospective, questions, attachments, card);
   }
 
   /** 14번: 임시저장. 완료한 회고도 고칠 수 있다 */
@@ -125,8 +130,11 @@ public class RetrospectiveService {
     // TODO(주차 담당): 진행 중인 회고가 마감 + 7일을 넘겼으면 409 DEADLINE_PASSED (완료한 회고는 기간 상관없음)
     // TODO(회원 담당): codeReview는 FE 파트만. 아니면 400 VALIDATION_ERROR
     retrospective.saveDraft(request, LocalDateTime.now(KstTime.OFFSET));
-    // TODO(첨부 담당): request.has("attachmentIds")면 attachmentService.connect(userId,
-    // request.getAttachmentIds(), AttachmentOwner.retrospective(retrospectiveId))
+    if (request.has("attachmentIds")) {
+      AttachmentOwner owner = AttachmentOwner.retrospective(retrospectiveId);
+      attachmentService.disconnect(owner);
+      attachmentService.connect(userId, request.getAttachmentIds(), owner);
+    }
     return RetrospectiveProgressResponse.from(retrospective);
   }
 

@@ -1,5 +1,6 @@
 package com.sajarok.domain.retrospective.dto;
 
+import com.sajarok.domain.attachment.dto.AttachmentView;
 import com.sajarok.domain.question.dto.QuestionView;
 import com.sajarok.domain.retrospective.entity.AssignmentMode;
 import com.sajarok.domain.retrospective.entity.Retrospective;
@@ -20,7 +21,7 @@ public record RetrospectiveDetailResponse(
     OffsetDateTime completedAt,
     WeekInfo week,
     Materials materials,
-    List<Object> attachments,
+    List<AttachmentView> attachments,
     List<QuestionView> questions,
     StoryCardDetailResponse card) {
 
@@ -38,7 +39,10 @@ public record RetrospectiveDetailResponse(
 
   /** card는 4단계(19번)를 거치기 전이면 null */
   public static RetrospectiveDetailResponse of(
-      Retrospective r, List<QuestionView> questions, StoryCardDetailResponse card) {
+      Retrospective r,
+      List<QuestionView> questions,
+      List<AttachmentView> attachments,
+      StoryCardDetailResponse card) {
     return new RetrospectiveDetailResponse(
         r.getId(),
         r.getType(),
@@ -55,7 +59,7 @@ public record RetrospectiveDetailResponse(
             r.getAssignmentContent(),
             r.getCodeReview(),
             r.getMemo()),
-        List.of(), // TODO(첨부 담당): attachmentService.findAll(AttachmentOwner.retrospective(id))
+        attachments,
         questions,
         card);
   }

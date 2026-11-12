@@ -3,11 +3,20 @@ package com.sajarok.domain.retrospective.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.dto.AttachmentView;
+import com.sajarok.domain.attachment.entity.AttachmentCategory;
+import com.sajarok.domain.attachment.entity.AttachmentType;
+import com.sajarok.domain.attachment.entity.ExtractStatus;
+import com.sajarok.domain.attachment.entity.LinkType;
+import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.question.dto.QuestionView;
 import com.sajarok.domain.question.entity.QuestionOwner;
 import com.sajarok.domain.question.entity.QuestionStatus;
@@ -36,6 +45,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -45,17 +55,19 @@ import org.springframework.test.util.ReflectionTestUtils;
  * 서비스 테스트: 12번 회고 시작(이미 있으면 그대로, 휴회, 과제 회고 조건), 13번 상세, 14번 임시저장, 15번 휴회 표시·해제, 16번 처음부터, 20번 저장
  * 규칙을 확인한다.
  *
- * <p>DB 없이 레포지토리와 AI 질문·카드 서비스를 가짜(@Mock)로 바꾼다. 주차 확인은 주차 모듈이 생기면 더한다.
+ * <p>DB 없이 레포지토리와 AI 질문·카드·첨부 서비스를 가짜(@Mock)로 바꾼다. 주차 확인은 주차 모듈이 생기면 더한다.
  */
 @ExtendWith(MockitoExtension.class)
 class RetrospectiveServiceTest {
 
   private static final Long ME = 1L;
   private static final Long WEEK = 10L;
+  private static final AttachmentOwner RETRO_101 = AttachmentOwner.retrospective(101L);
 
   @Mock private RetrospectiveRepository retrospectiveRepository;
   @Mock private AiQuestionService aiQuestionService;
   @Mock private StoryCardService storyCardService;
+  @Mock private AttachmentService attachmentService;
 
   @InjectMocks private RetrospectiveService retrospectiveService;
 
@@ -271,8 +283,8 @@ class RetrospectiveServiceTest {
   }
 
   @Test
-  @DisplayName("16번: 처음부터 하면 2단계 자료와 자료 해시를 비우고 2단계로 돌아가며, AI 질문과 카드 초안도 지운다")
-  void reset_clearsMaterialsAndDeletesQuestionsAndCard() {
+  @DisplayName("16번: 처음부터 하면 2단계 자료와 자료 해시를 비우고 2단계로 돌아가며, AI 질문·카드 초안·첨부도 지운다")
+  void reset_clearsMaterialsAndDeletesQuestionsCardAndAttachments() {
     Retrospective session = mySessionAtStep3();
     ReflectionTestUtils.setField(session, "questionInputHash", "a".repeat(64));
 
@@ -287,10 +299,11 @@ class RetrospectiveServiceTest {
     assertThat(session.getQuestionInputHash()).isNull();
     verify(aiQuestionService).deleteAll(QuestionOwner.retrospective(101L));
     verify(storyCardService).deleteByRetrospective(101L);
+    verify(attachmentService).deleteAll(RETRO_101);
   }
 
   @Test
-  @DisplayName("16번: 완료한 회고는 409 INVALID_STATE이고, 질문·카드는 하나도 지우지 않는다")
+  @DisplayName("16번: 완료한 회고는 409 INVALID_STATE이고, 질문·카드·첨부는 하나도 지우지 않는다")
   void reset_completed_deletesNothing() {
     Retrospective session = mySessionAtStep3();
     session.complete(java.time.LocalDateTime.of(2026, 11, 8, 21, 0));
@@ -299,7 +312,7 @@ class RetrospectiveServiceTest {
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(ErrorCode.INVALID_STATE);
-    verifyNoInteractions(aiQuestionService, storyCardService);
+    verifyNoInteractions(aiQuestionService, storyCardService, attachmentService);
   }
 
   @Test
@@ -311,13 +324,27 @@ class RetrospectiveServiceTest {
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(ErrorCode.NOT_FOUND);
-    verifyNoInteractions(aiQuestionService, storyCardService);
+    verifyNoInteractions(aiQuestionService, storyCardService, attachmentService);
   }
 
   /** 13번 준비: 회고 101의 첫 질문 */
   private static QuestionView firstQuestion() {
     return new QuestionView(
         901L, 1, "근거와 숫자", null, null, "쿼리 수가 실제로 얼마나 줄었나요?", null, QuestionStatus.PENDING);
+  }
+
+  /** 13번 준비: 회고 101에 붙은 GitHub 링크 */
+  private static AttachmentView githubLink() {
+    return new AttachmentView(
+        501L,
+        AttachmentType.LINK,
+        AttachmentCategory.ASSIGNMENT,
+        null,
+        "https://github.com/me/assignment",
+        LinkType.GITHUB,
+        null,
+        null,
+        ExtractStatus.DONE);
   }
 
   /** 13번 준비: 회고 101의 카드 초안 (필요한 칸만) */
@@ -344,11 +371,12 @@ class RetrospectiveServiceTest {
   }
 
   @Test
-  @DisplayName("13번: 상세는 회고 자료와 이 회고의 질문·카드를 한 번에 모아 준다 (주차는 null, 첨부는 빈 목록)")
-  void detail_collectsQuestionsAndCard() {
+  @DisplayName("13번: 상세는 회고 자료와 이 회고의 질문·첨부·카드를 한 번에 모아 준다 (주차는 아직 null)")
+  void detail_collectsQuestionsAttachmentsAndCard() {
     mySessionAtStep3();
     when(aiQuestionService.findAll(QuestionOwner.retrospective(101L)))
         .thenReturn(List.of(firstQuestion()));
+    when(attachmentService.findAll(RETRO_101)).thenReturn(List.of(githubLink()));
     when(storyCardService.findDetailByRetrospective(101L)).thenReturn(Optional.of(draftCard()));
 
     RetrospectiveDetailResponse response = retrospectiveService.getDetail(ME, 101L);
@@ -361,11 +389,13 @@ class RetrospectiveServiceTest {
     assertThat(response.questions()).extracting(QuestionView::questionId).containsExactly(901L);
     assertThat(response.card().cardId()).isEqualTo(301L);
     assertThat(response.week()).isNull();
-    assertThat(response.attachments()).isEmpty();
+    assertThat(response.attachments())
+        .extracting(AttachmentView::attachmentId, AttachmentView::linkType)
+        .containsExactly(org.assertj.core.groups.Tuple.tuple(501L, LinkType.GITHUB));
   }
 
   @Test
-  @DisplayName("13번: 4단계 전이라 카드가 없으면 card는 null이다")
+  @DisplayName("13번: 4단계 전이라 카드가 없으면 card는 null, 첨부가 없으면 빈 목록이다")
   void detail_noCard() {
     mySessionAtStep3();
     when(aiQuestionService.findAll(QuestionOwner.retrospective(101L))).thenReturn(List.of());
@@ -375,10 +405,11 @@ class RetrospectiveServiceTest {
 
     assertThat(response.card()).isNull();
     assertThat(response.questions()).isEmpty();
+    assertThat(response.attachments()).isEmpty();
   }
 
   @Test
-  @DisplayName("13번: 없거나 남의 회고면 NOT_FOUND이고, 질문·카드는 찾지 않는다")
+  @DisplayName("13번: 없거나 남의 회고면 NOT_FOUND이고, 질문·첨부·카드는 찾지 않는다")
   void detail_notMine_notFound() {
     when(retrospectiveRepository.findByIdAndUserId(999L, ME)).thenReturn(Optional.empty());
 
@@ -386,7 +417,7 @@ class RetrospectiveServiceTest {
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(ErrorCode.NOT_FOUND);
-    verifyNoInteractions(aiQuestionService, storyCardService);
+    verifyNoInteractions(aiQuestionService, storyCardService, attachmentService);
   }
 
   @Test
@@ -409,7 +440,7 @@ class RetrospectiveServiceTest {
   }
 
   @Test
-  @DisplayName("14번: '나중에 이어쓰기'처럼 단계만 보내면 자료는 하나도 바뀌지 않는다")
+  @DisplayName("14번: '나중에 이어쓰기'처럼 단계만 보내면 자료와 첨부는 하나도 바뀌지 않는다")
   void draft_stepOnly_keepsMaterials() {
     Retrospective session = mySessionAtStep3();
     RetrospectiveDraftRequest request = new RetrospectiveDraftRequest();
@@ -420,22 +451,68 @@ class RetrospectiveServiceTest {
     assertThat(session.getMemo()).isEqualTo("이번 주 고민");
     assertThat(session.getAssignmentMode()).isEqualTo(AssignmentMode.RECORD);
     assertThat(session.getLastSavedAt()).isNotNull();
+    verifyNoInteractions(attachmentService);
   }
 
   @Test
-  @DisplayName("14번: 과제 회고에 과제 작성 방식을 보내면 400 VALIDATION_ERROR이고, 아무것도 바뀌지 않는다")
+  @DisplayName("14번: 과제 회고에 과제 작성 방식을 보내면 400 VALIDATION_ERROR이고, 자료도 첨부도 바뀌지 않는다")
   void draft_assignmentModeOnAssignment_validationError() {
     Retrospective assignment = Retrospective.start(ME, WEEK, RetrospectiveType.ASSIGNMENT);
     when(retrospectiveRepository.findByIdAndUserId(205L, ME)).thenReturn(Optional.of(assignment));
     RetrospectiveDraftRequest request = new RetrospectiveDraftRequest();
     request.setMemo("메모");
     request.setAssignmentMode(AssignmentMode.LATER);
+    request.setAttachmentIds(List.of(501L));
 
     assertThatThrownBy(() -> retrospectiveService.saveDraft(ME, 205L, request))
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(ErrorCode.VALIDATION_ERROR);
     assertThat(assignment.getMemo()).isNull();
+    verifyNoInteractions(attachmentService);
+  }
+
+  @Test
+  @DisplayName("14번: attachmentIds를 보내면 그 목록으로 통째로 바꾼다 (기존 연결을 다 풀고 → 보낸 것만 연결)")
+  void draft_attachmentIds_replacesAll() {
+    mySessionAtStep3();
+    RetrospectiveDraftRequest request = new RetrospectiveDraftRequest();
+    request.setAttachmentIds(List.of(501L, 502L));
+
+    retrospectiveService.saveDraft(ME, 101L, request);
+
+    InOrder order = inOrder(attachmentService);
+    order.verify(attachmentService).disconnect(RETRO_101);
+    order.verify(attachmentService).connect(ME, List.of(501L, 502L), RETRO_101);
+  }
+
+  @Test
+  @DisplayName("14번: attachmentIds를 null로 보내면 연결만 다 풀린다 (connect는 null이면 아무것도 안 함)")
+  void draft_attachmentIdsNull_disconnectsAll() {
+    mySessionAtStep3();
+    RetrospectiveDraftRequest request = new RetrospectiveDraftRequest();
+    request.setAttachmentIds(null);
+
+    retrospectiveService.saveDraft(ME, 101L, request);
+
+    verify(attachmentService).disconnect(RETRO_101);
+    verify(attachmentService).connect(ME, null, RETRO_101);
+  }
+
+  @Test
+  @DisplayName("14번: 남의 첨부거나 없는 첨부면 NOT_FOUND가 그대로 나간다 (실제로는 @Transactional이 회고 변경·연결 해제를 함께 되돌림)")
+  void draft_attachmentNotMine_notFound() {
+    mySessionAtStep3();
+    RetrospectiveDraftRequest request = new RetrospectiveDraftRequest();
+    request.setAttachmentIds(List.of(999L));
+    doThrow(new BusinessException(ErrorCode.NOT_FOUND))
+        .when(attachmentService)
+        .connect(ME, List.of(999L), RETRO_101);
+
+    assertThatThrownBy(() -> retrospectiveService.saveDraft(ME, 101L, request))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
   }
 
   @Test

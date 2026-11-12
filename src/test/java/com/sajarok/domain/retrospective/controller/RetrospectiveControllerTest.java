@@ -13,6 +13,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.sajarok.domain.attachment.dto.AttachmentView;
+import com.sajarok.domain.attachment.entity.AttachmentCategory;
+import com.sajarok.domain.attachment.entity.AttachmentType;
+import com.sajarok.domain.attachment.entity.ExtractStatus;
+import com.sajarok.domain.attachment.entity.LinkType;
 import com.sajarok.domain.question.dto.QuestionView;
 import com.sajarok.domain.question.entity.QuestionStatus;
 import com.sajarok.domain.retrospective.dto.RetrospectiveCompleteResponse;
@@ -208,7 +213,7 @@ class RetrospectiveControllerTest {
 
   @Test
   @DisplayName(
-      "13번: 상세는 200과 명세 모양(isRested, materials, questions, 빈 attachments, week·card null)을 준다")
+      "13번: 상세는 200과 명세 모양(isRested, materials, attachments, questions, week·card null)을 준다")
   void detail_returns200() throws Exception {
     when(retrospectiveService.getDetail(1L, 101L))
         .thenReturn(
@@ -222,7 +227,17 @@ class RetrospectiveControllerTest {
                 null,
                 null,
                 new Materials(true, "실습 내용", AssignmentMode.RECORD, "과제 내용", null, "메모"),
-                List.of(),
+                List.of(
+                    new AttachmentView(
+                        501L,
+                        AttachmentType.LINK,
+                        AttachmentCategory.ASSIGNMENT,
+                        null,
+                        "https://github.com/me/assignment",
+                        LinkType.GITHUB,
+                        null,
+                        null,
+                        ExtractStatus.DONE)),
                 List.of(
                     new QuestionView(
                         901L,
@@ -246,7 +261,10 @@ class RetrospectiveControllerTest {
         .andExpect(jsonPath("$.data.week").value(nullValue()))
         .andExpect(jsonPath("$.data.materials.assignmentMode").value("RECORD"))
         .andExpect(jsonPath("$.data.materials.memo").value("메모"))
-        .andExpect(jsonPath("$.data.attachments.length()").value(0))
+        .andExpect(jsonPath("$.data.attachments[0].attachmentId").value(501))
+        .andExpect(jsonPath("$.data.attachments[0].type").value("LINK"))
+        .andExpect(jsonPath("$.data.attachments[0].linkType").value("GITHUB"))
+        .andExpect(jsonPath("$.data.attachments[0].extractStatus").value("DONE"))
         .andExpect(jsonPath("$.data.questions[0].questionId").value(901))
         .andExpect(jsonPath("$.data.questions[0].status").value("PENDING"))
         .andExpect(jsonPath("$.data.card").value(nullValue()));
@@ -298,7 +316,37 @@ class RetrospectiveControllerTest {
     assertThat(sent.has("memo")).isTrue();
     assertThat(sent.getMemo()).isNull();
     assertThat(sent.has("practiceContent")).isFalse();
+    assertThat(sent.has("attachmentIds")).isFalse();
     assertThat(sent.getCurrentStep()).isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName("14번: attachmentIds를 보내면 '보냄'으로 표시되고 목록 그대로 서비스에 넘어간다")
+  void draft_passesAttachmentIds() throws Exception {
+    when(retrospectiveService.saveDraft(
+            org.mockito.ArgumentMatchers.eq(1L),
+            org.mockito.ArgumentMatchers.eq(101L),
+            any(RetrospectiveDraftRequest.class)))
+        .thenReturn(
+            new RetrospectiveProgressResponse(101L, RetrospectiveState.IN_PROGRESS, 2, null));
+
+    mockMvc
+        .perform(
+            patch("/api/v1/retrospectives/101")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"attachmentIds\": [501, 502]}"))
+        .andExpect(status().isOk());
+
+    ArgumentCaptor<RetrospectiveDraftRequest> captor =
+        ArgumentCaptor.forClass(RetrospectiveDraftRequest.class);
+    verify(retrospectiveService)
+        .saveDraft(
+            org.mockito.ArgumentMatchers.eq(1L),
+            org.mockito.ArgumentMatchers.eq(101L),
+            captor.capture());
+    assertThat(captor.getValue().has("attachmentIds")).isTrue();
+    assertThat(captor.getValue().getAttachmentIds()).containsExactly(501L, 502L);
+    assertThat(captor.getValue().has("memo")).isFalse();
   }
 
   @Test
