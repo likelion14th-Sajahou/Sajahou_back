@@ -184,7 +184,7 @@ public class JobPostingService {
   /**
    * 39번: 매칭 결과(공고 상세). 남의 공고거나 없으면 NOT_FOUND.
    *
-   * <p>문항·카드 연결·공개 카드·프로젝트 이름·역량별 카드 수를 각각 한 번씩만 읽는다 (문항 수만큼 늘지 않음, N+1 방지).
+   * <p>문항·카드 연결·공개 카드·프로젝트 이름·역량별 카드 수·빠진 역량 이름을 각각 한 번씩만 읽는다 (문항 수만큼 늘지 않음, N+1 방지).
    */
   public JobPostingDetailResponse getDetail(Long userId, Long jobPostingId) {
     JobPosting posting =
@@ -204,6 +204,13 @@ public class JobPostingService {
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet()));
     Map<Long, Long> cardCounts = storyCardService.countByCompetency(userId);
+    Map<Long, String> missingNames =
+        competencyService.names(
+            questions.stream()
+                .map(CoverLetterQuestion::getAnswerDraft)
+                .filter(d -> d != null && d.missingCompetencyIds() != null)
+                .flatMap(d -> d.missingCompetencyIds().stream())
+                .collect(Collectors.toSet()));
 
     List<QuestionItem> questionItems =
         questions.stream()
@@ -219,7 +226,8 @@ public class JobPostingService {
                             q,
                             rolesByQuestion.getOrDefault(q.getId(), Map.of()),
                             liveCards,
-                            projectNames),
+                            projectNames,
+                            missingNames),
                         q.getEditedAnswer()))
             .toList();
 

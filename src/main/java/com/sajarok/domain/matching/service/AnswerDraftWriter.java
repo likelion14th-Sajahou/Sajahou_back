@@ -1,5 +1,6 @@
 package com.sajarok.domain.matching.service;
 
+import com.sajarok.domain.competency.service.CompetencyService;
 import com.sajarok.domain.matching.dto.AnswerResponse;
 import com.sajarok.domain.matching.entity.AnswerDraft;
 import com.sajarok.domain.matching.entity.CoverLetterCardRole;
@@ -36,6 +37,7 @@ public class AnswerDraftWriter {
   private final CoverLetterQuestionCardRepository coverLetterQuestionCardRepository;
   private final StoryCardService storyCardService;
   private final ProjectService projectService;
+  private final CompetencyService competencyService;
   private final AnswerAssembler answerAssembler;
 
   /**
@@ -77,6 +79,9 @@ public class AnswerDraftWriter {
                 .map(id -> liveCards.get(id).projectId())
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet()));
-    return answerAssembler.assemble(question, roles, liveCards, projectNames);
+    Map<Long, String> competencyNames =
+        competencyService.names(
+            draft.missingCompetencyIds() == null ? List.of() : draft.missingCompetencyIds());
+    return answerAssembler.assemble(question, roles, liveCards, projectNames, competencyNames);
   }
 }

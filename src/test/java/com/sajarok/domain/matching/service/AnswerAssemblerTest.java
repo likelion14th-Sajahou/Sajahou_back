@@ -65,18 +65,19 @@ class AnswerAssemblerTest {
   void assemble_noDraft_returnsNull() {
     CoverLetterQuestion question = CoverLetterQuestion.builder().seq(1).content("협업 경험").build();
 
-    assertThat(assembler.assemble(question, Map.of(), Map.of(), Map.of())).isNull();
+    assertThat(assembler.assemble(question, Map.of(), Map.of(), Map.of(), Map.of())).isNull();
   }
 
   @Test
-  @DisplayName("카드 출처에 역할·카드 정보·프로젝트 이름을 붙이고, 글자 수·빈칸 수·공고 사용·저장된 없는 역량을 그대로 준다")
+  @DisplayName("카드 출처에 역할·카드 정보·프로젝트 이름을 붙이고, 글자 수·빈칸 수·공고 사용을 주고, 저장된 없는 역량에 이름을 붙인다")
   void assemble_buildsCardsAndCounts() {
     AnswerResponse answer =
         assembler.assemble(
             questionWithDraft(),
             Map.of(410L, CoverLetterCardRole.MAIN, 411L, CoverLetterCardRole.SUB),
             Map.of(410L, card(410L, 3L), 411L, card(411L, null)),
-            Map.of(3L, "사자록"));
+            Map.of(3L, "사자록"),
+            Map.of(4L, "갈등 조율"));
 
     assertThat(answer.questionId()).isEqualTo(55L);
     assertThat(answer.cards())
@@ -90,8 +91,9 @@ class AnswerAssemblerTest {
     assertThat(answer.blankCount()).isEqualTo(1);
     assertThat(answer.usesJobPosting()).isTrue();
     assertThat(answer.missingCompetencies())
-        .extracting(AnswerResponse.MissingCompetency::competencyId)
-        .containsExactly(4L);
+        .extracting(
+            AnswerResponse.MissingCompetency::competencyId, AnswerResponse.MissingCompetency::name)
+        .containsExactly(tuple(4L, "갈등 조율"));
     assertThat(answer.noMatchingCard()).isFalse();
   }
 
@@ -103,6 +105,7 @@ class AnswerAssemblerTest {
             questionWithDraft(),
             Map.of(410L, CoverLetterCardRole.MAIN, 411L, CoverLetterCardRole.SUB),
             Map.of(410L, card(410L, null)),
+            Map.of(),
             Map.of());
 
     assertThat(answer.cards()).extracting(AnswerResponse.CardRef::cardId).containsExactly(410L);
@@ -110,5 +113,17 @@ class AnswerAssemblerTest {
     assertThat(answer.segments().get(1).source()).isNull();
     assertThat(answer.segments().get(0).source()).isEqualTo(1);
     assertThat(answer.segments().get(3).source()).isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName("없는 역량의 이름을 이름표에서 못 찾으면(시드에서 지워진 역량 등) 이름만 null로 둔다")
+  void assemble_unknownCompetency_nameNull() {
+    AnswerResponse answer =
+        assembler.assemble(questionWithDraft(), Map.of(), Map.of(), Map.of(), Map.of());
+
+    assertThat(answer.missingCompetencies())
+        .extracting(
+            AnswerResponse.MissingCompetency::competencyId, AnswerResponse.MissingCompetency::name)
+        .containsExactly(tuple(4L, null));
   }
 }
