@@ -1,5 +1,6 @@
 package com.sajarok.domain.retrospective.ai;
 
+import com.sajarok.domain.question.dto.QuestionView;
 import com.sajarok.domain.retrospective.entity.AssignmentMode;
 import com.sajarok.domain.retrospective.entity.Retrospective;
 import com.sajarok.domain.retrospective.entity.RetrospectiveType;
@@ -8,7 +9,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-/** 회고 AI(17번) 프롬프트. 호출은 RetroQuestionGenerator에서 트랜잭션 밖에서 한다. */
+/** 회고 AI(17·19번) 프롬프트. 호출은 RetroQuestionGenerator·RetroReviewGenerator에서 트랜잭션 밖에서 한다. */
 public final class RetroPrompts {
 
   private RetroPrompts() {}
@@ -90,12 +91,130 @@ public final class RetroPrompts {
       Retrospective r, Part part, List<RetroAttachment> attachments) {
     StringBuilder sb = new StringBuilder();
     sb.append("[태그 목록]\n").append(String.join(" / ", RetroQuestionResult.TAGS)).append("\n\n");
+    appendHeader(sb, r, part);
+    appendMaterials(sb, r);
+    appendAttachments(sb, attachments);
+    return sb.toString();
+  }
+
+  /** 출처 첨부가 없는 quote를 대조할 원문: 실습·과제·코드 리뷰·메모를 이은 글. */
+  public static String materialText(Retrospective r) {
+    return Stream.of(
+            r.getPracticeContent(), r.getAssignmentContent(), r.getCodeReview(), r.getMemo())
+        .filter(v -> v != null && !v.isBlank())
+        .collect(Collectors.joining("\n"));
+  }
+
+  /** 19번 system 프롬프트 초안. 카드 5칸(상황·행동·이유·결과·배운 점)은 22번 카드 상세와 같다. TODO: 실제 응답 보며 다듬기. */
+  public static final String REVIEW_SYSTEM =
+      """
+      너는 아기사자(교육생)가 쓴 주간 회고 자료·AI 질문에 한 답·첨부를 읽고, 회고록과 스토리 카드 초안을 써 주는 도우미다.
+
+      [규칙]
+      1. 자료에 없는 사실·숫자·결과는 쓰지 않는다. 숫자·결과·반응은 [회고 자료]·[질문과 답]·[첨부]에 있는 것만 쓴다.
+      2. 카드 칸은 5개다. 근거가 없는 칸은 null로 둔다. 비슷한 내용으로 억지로 채우지 않는다.
+         - situation(상황): 어떤 문제나 과제를 마주했는지
+         - action(행동): 내가 직접 한 일
+         - reason(이유): 그 방법을 고른 이유, 다른 방법과 비교한 것
+         - result(결과): 숫자·확인한 결과·받은 반응
+         - learned(배운 점): 배운 것과 다음에 다르게 할 것
+      3. title은 이번 주에 한 가장 구체적인 일을 한 줄(30자 안팎)로 쓴다. "10주차 회고"처럼 뻔하게 쓰지 않는다.
+      4. 칸마다 1~3문장, 아기사자가 직접 쓴 것처럼 1인칭 평서문("~했다")으로 쓴다.
+      5. markdownBody는 노션에 붙여 넣을 회고록 본문이다. 아래 ## 제목 중 자료가 있는 것만 이 순서로 쓴다. 맨 위 # 제목은 쓰지 않는다.
+         ## 세션 내용 정리 (세션 자료(SESSION_PDF)가 있을 때만. 핵심 개념 3~5개를 bullet로)
+         ## 실습
+         ## 과제
+         ## 고민과 해결
+         ## 배운 점
+         ## 다음에 할 일
+      6. evidence에는 카드 칸마다 근거가 된 원문 문장을 넣는다. quote는 원문을 한 글자도 바꾸지 않고 옮긴다.
+         첨부에서 옮겼으면 attachmentId에 그 첨부 번호를, 회고 자료나 질문 답에서 옮겼으면 null을 쓴다. 근거가 없는 칸은 넣지 않는다.
+      7. 한국어로 쓴다.
+
+      [좋은 예]
+      입력:
+        [회고 자료] 실습: 게시글 목록 API에서 N+1 문제를 fetch join으로 해결
+        [질문과 답] Q1. (근거와 숫자) 고치기 전후로 쿼리 수가 얼마나 달라졌나요?
+                    A1. 게시글 20개 기준으로 쿼리 21개가 2개로 줄었어요
+        [첨부] (502) FILE / SESSION_PDF / 7주차 JPA.pdf: 지연 로딩과 N+1 문제, fetch join, 배치 사이즈
+      출력:
+      {"title":"게시글 목록 N+1 문제를 fetch join으로 해결",
+       "situation":"게시글 목록 API에서 N+1 문제가 생겼다.",
+       "action":"fetch join으로 게시글과 작성자를 한 번에 가져오게 바꿨다.",
+       "reason":null,
+       "result":"게시글 20개 기준으로 쿼리가 21개에서 2개로 줄었다.",
+       "learned":null,
+       "markdownBody":"## 세션 내용 정리\\n- 지연 로딩과 N+1 문제\\n- fetch join\\n- 배치 사이즈\\n\\n## 실습\\n게시글 목록 API에서 N+1 문제를 fetch join으로 해결했다. 게시글 20개 기준으로 쿼리가 21개에서 2개로 줄었다.",
+       "evidence":{
+         "situation":[{"attachmentId":null,"quote":"게시글 목록 API에서 N+1 문제를 fetch join으로 해결"}],
+         "result":[{"attachmentId":null,"quote":"게시글 20개 기준으로 쿼리 21개가 2개로 줄었어요"}]}}
+      → 왜 fetch join을 골랐는지와 배운 점은 자료에 없어서 reason·learned를 null로 둔다.
+
+      [나쁜 예]
+      "result":"쿼리가 90% 줄어 응답 속도가 빨라졌다" → 자료에 "90%"나 응답 속도가 없다.
+      "reason":"유지보수가 쉬워서 fetch join을 골랐다" → 자료에 없는 이유를 지어냈다. null로 둔다.
+
+      [출력 형식]
+      아래 JSON으로만 답한다. 다른 글은 쓰지 않는다. 근거가 없는 칸은 null.
+      {"title":"...","situation":"...","action":"...","reason":null,"result":"...","learned":"...",
+       "markdownBody":"## 실습\\n...",
+       "evidence":{"situation":[{"attachmentId":null,"quote":"..."}],"result":[{"attachmentId":502,"quote":"..."}]}}
+      """;
+
+  /**
+   * 19번 user 프롬프트.
+   *
+   * @param part 회원 파트. 모르면 null
+   * @param attachments 추출이 끝난(DONE) 첨부
+   * @param answered 답한(ANSWERED) 질문
+   */
+  public static String reviewUser(
+      Retrospective r, Part part, List<RetroAttachment> attachments, List<QuestionView> answered) {
+    StringBuilder sb = new StringBuilder();
+    appendHeader(sb, r, part);
+    appendMaterials(sb, r);
+    sb.append("\n[질문과 답]\n");
+    if (answered.isEmpty()) {
+      sb.append("없음\n");
+    }
+    for (int i = 0; i < answered.size(); i++) {
+      QuestionView q = answered.get(i);
+      sb.append("Q").append(i + 1).append(". (").append(q.tag()).append(") ").append(q.content());
+      sb.append("\nA")
+          .append(i + 1)
+          .append(". ")
+          .append(q.answer() == null ? "" : q.answer().strip());
+      sb.append('\n');
+    }
+    appendAttachments(sb, attachments);
+    return sb.toString();
+  }
+
+  /** 19번: 출처 첨부가 없는 evidence quote를 대조할 원문. 회고 자료에 질문 답을 더한다. */
+  public static String reviewSourceText(Retrospective r, List<QuestionView> answered) {
+    String answers =
+        answered.stream()
+            .map(QuestionView::answer)
+            .filter(v -> v != null && !v.isBlank())
+            .collect(Collectors.joining("\n"));
+    return materialText(r) + "\n" + answers;
+  }
+
+  /** 19번 회고록 전문: 서버가 # 제목을 붙인다. TODO(주차 담당): "10주차 세션 회고"처럼 주차를 넣는다. */
+  public static String fullMarkdown(Retrospective r, String markdownBody) {
+    String heading = r.getType() == RetrospectiveType.ASSIGNMENT ? "과제 회고" : "세션 회고";
+    return "# " + heading + "\n\n" + markdownBody.strip() + "\n";
+  }
+
+  private static void appendHeader(StringBuilder sb, Retrospective r, Part part) {
     sb.append("[회고 종류] ")
         .append(r.getType() == RetrospectiveType.ASSIGNMENT ? "과제 회고" : "세션 회고")
         .append('\n');
     sb.append("[파트] ").append(partLabel(part)).append("\n\n");
     // TODO(주차 담당): 주차 모듈이 생기면 [세션] 주차·세션 제목을 넣는다.
+  }
 
+  private static void appendMaterials(StringBuilder sb, Retrospective r) {
     sb.append("[회고 자료]\n");
     int before = sb.length();
     if (Boolean.FALSE.equals(r.getHasPractice())) {
@@ -115,7 +234,9 @@ public final class RetroPrompts {
     if (sb.length() == before) {
       sb.append("없음\n");
     }
+  }
 
+  private static void appendAttachments(StringBuilder sb, List<RetroAttachment> attachments) {
     sb.append("\n[첨부]\n");
     if (attachments.isEmpty()) {
       sb.append("없음\n");
@@ -133,15 +254,6 @@ public final class RetroPrompts {
                 .append(": ")
                 .append(head(a.text()))
                 .append('\n'));
-    return sb.toString();
-  }
-
-  /** 출처 첨부가 없는 quote를 대조할 원문: 실습·과제·코드 리뷰·메모를 이은 글. */
-  public static String materialText(Retrospective r) {
-    return Stream.of(
-            r.getPracticeContent(), r.getAssignmentContent(), r.getCodeReview(), r.getMemo())
-        .filter(v -> v != null && !v.isBlank())
-        .collect(Collectors.joining("\n"));
   }
 
   private static String partLabel(Part part) {

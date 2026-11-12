@@ -29,6 +29,7 @@ import com.sajarok.domain.retrospective.dto.RetrospectiveDraftRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveQuestionsResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestResponse;
+import com.sajarok.domain.retrospective.dto.RetrospectiveReviewResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveState;
@@ -38,6 +39,9 @@ import com.sajarok.domain.retrospective.service.RetrospectiveAiService;
 import com.sajarok.domain.retrospective.service.RetrospectiveAiService.QuestionsResult;
 import com.sajarok.domain.retrospective.service.RetrospectiveService;
 import com.sajarok.domain.retrospective.service.RetrospectiveService.StartResult;
+import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
+import com.sajarok.domain.storycard.entity.StoryCardStatus;
+import com.sajarok.domain.storycard.entity.StoryCardType;
 import com.sajarok.global.auth.CurrentUserProvider;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
@@ -539,5 +543,56 @@ class RetrospectiveControllerTest {
                 .content("{\"mode\": \"FOO\"}"))
         .andExpect(status().isBadRequest());
     verifyNoInteractions(retrospectiveAiService);
+  }
+
+  @Test
+  @DisplayName("19번: 초안을 만들면 200과 { card } 모양을 주고, evidence는 문자열이 아니라 JSON 객체로 나간다")
+  void review_returns200WithCard() throws Exception {
+    when(retrospectiveAiService.review(1L, 101L))
+        .thenReturn(
+            new RetrospectiveReviewResponse(
+                new StoryCardDetailResponse(
+                    301L,
+                    StoryCardType.SESSION,
+                    StoryCardStatus.DRAFT,
+                    null,
+                    null,
+                    null,
+                    "N+1 문제를 fetch join으로 해결",
+                    "게시글 목록 API에서 N+1 문제가 생겼다.",
+                    "fetch join으로 바꿨다.",
+                    null,
+                    "쿼리 21개 → 2개",
+                    null,
+                    List.of("reason", "learned"),
+                    List.of(),
+                    "# 세션 회고\n\n## 실습\n...",
+                    "{\"situation\":[{\"attachmentId\":501,\"quote\":\"N+1 문제\"}]}",
+                    List.of(),
+                    null)));
+
+    mockMvc
+        .perform(post("/api/v1/retrospectives/101/review"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.card.cardId").value(301))
+        .andExpect(jsonPath("$.data.card.type").value("SESSION"))
+        .andExpect(jsonPath("$.data.card.status").value("DRAFT"))
+        .andExpect(jsonPath("$.data.card.reason").value(nullValue()))
+        .andExpect(jsonPath("$.data.card.blanks[0]").value("reason"))
+        .andExpect(jsonPath("$.data.card.competencies.length()").value(0))
+        .andExpect(jsonPath("$.data.card.evidence.situation[0].attachmentId").value(501))
+        .andExpect(jsonPath("$.data.card.evidence.situation[0].quote").value("N+1 문제"));
+  }
+
+  @Test
+  @DisplayName("19번: 자료가 하나도 없으면 400 EMPTY_MATERIAL을 준다")
+  void review_emptyMaterial_returns400() throws Exception {
+    when(retrospectiveAiService.review(1L, 101L))
+        .thenThrow(new BusinessException(ErrorCode.EMPTY_MATERIAL));
+
+    mockMvc
+        .perform(post("/api/v1/retrospectives/101/review"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("EMPTY_MATERIAL"));
   }
 }
