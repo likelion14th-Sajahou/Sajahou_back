@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.competency.service.CompetencyService;
 import com.sajarok.domain.matching.dto.AnswerResponse;
 import com.sajarok.domain.matching.entity.AnswerDraft;
 import com.sajarok.domain.matching.entity.AnswerDraft.Segment;
@@ -46,6 +47,7 @@ class AnswerDraftWriterTest {
   @Mock private CoverLetterQuestionCardRepository coverLetterQuestionCardRepository;
   @Mock private StoryCardService storyCardService;
   @Mock private ProjectService projectService;
+  @Mock private CompetencyService competencyService;
   @Mock private AnswerAssembler answerAssembler;
 
   @InjectMocks private AnswerDraftWriter answerDraftWriter;
@@ -80,7 +82,8 @@ class AnswerDraftWriterTest {
     when(projectService.names(Set.of(3L))).thenReturn(Map.of(3L, "사자록"));
     AnswerResponse response =
         new AnswerResponse(55L, List.of(), 0, 0, List.of(), false, List.of(), false);
-    when(answerAssembler.assemble(eq(question), anyMap(), anyMap(), eq(Map.of(3L, "사자록"))))
+    when(answerAssembler.assemble(
+            eq(question), anyMap(), anyMap(), eq(Map.of(3L, "사자록")), anyMap()))
         .thenReturn(response);
 
     AnswerResponse result = answerDraftWriter.save(1L, 55L, DRAFT, List.of(card(410L), card(300L)));
@@ -141,5 +144,20 @@ class AnswerDraftWriterTest {
     verify(coverLetterQuestionCardRepository).saveAll(links.capture());
     assertThat(links.getValue()).isEmpty();
     verify(projectService).names(Set.of());
+  }
+
+  @Test
+  @DisplayName("37번 저장: 초안의 빠진 역량 ID로 이름을 읽어 응답에 넘긴다 (M-13)")
+  void save_passesMissingCompetencyNames() {
+    CoverLetterQuestion question = editedQuestion();
+    when(coverLetterQuestionRepository.findByIdAndUserId(55L, 1L))
+        .thenReturn(Optional.of(question));
+    AnswerDraft blankDraft = new AnswerDraft(List.of(), List.of(), List.of(4L), true);
+    Map<Long, String> names = Map.of(4L, "갈등 조율");
+    when(competencyService.names(List.of(4L))).thenReturn(names);
+
+    answerDraftWriter.save(1L, 55L, blankDraft, List.of());
+
+    verify(answerAssembler).assemble(eq(question), anyMap(), anyMap(), anyMap(), eq(names));
   }
 }

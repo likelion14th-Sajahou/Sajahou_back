@@ -17,6 +17,7 @@ import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.competency.service.CompetencyService;
 import com.sajarok.domain.matching.dto.AnswerResponse;
 import com.sajarok.domain.matching.dto.JobPostingDetailResponse;
+import com.sajarok.domain.matching.entity.AnswerDraft;
 import com.sajarok.domain.matching.entity.CoverLetterCardRole;
 import com.sajarok.domain.matching.entity.CoverLetterQuestion;
 import com.sajarok.domain.matching.entity.CoverLetterQuestionCard;
@@ -32,6 +33,7 @@ import com.sajarok.global.exception.ErrorCode;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -79,10 +81,11 @@ class JobPostingServiceTest {
     when(storyCardService.findPublished(1L)).thenReturn(List.of());
     when(storyCardService.countByCompetency(1L)).thenReturn(Map.of(3L, 2L));
     when(competencyService.names(List.of(3L, 7L))).thenReturn(Map.of(3L, "협업", 7L, "API 설계"));
+    when(competencyService.names(Set.of())).thenReturn(Map.of());
     AnswerResponse answer =
         new AnswerResponse(55L, List.of(), 0, 0, List.of(), false, List.of(), false);
     when(answerAssembler.assemble(
-            eq(q1), eq(Map.of(410L, CoverLetterCardRole.MAIN)), anyMap(), anyMap()))
+            eq(q1), eq(Map.of(410L, CoverLetterCardRole.MAIN)), anyMap(), anyMap(), anyMap()))
         .thenReturn(answer);
 
     AttachmentView postingFile =
@@ -117,6 +120,32 @@ class JobPostingServiceTest {
         .containsExactly("협업", "API 설계");
     verify(coverLetterQuestionCardRepository).findAllByIdCoverLetterQuestionIdIn(List.of(55L, 56L));
     verify(storyCardService).findPublished(1L);
+  }
+
+  @Test
+  @DisplayName("39번: 모든 문항의 빠진 역량을 모아 이름을 한 번만 읽고, 문항마다 그 이름표를 넘긴다")
+  void getDetail_loadsMissingCompetencyNamesOnce() {
+    JobPosting posting = JobPosting.builder().userId(1L).company("카카오").build();
+    ReflectionTestUtils.setField(posting, "id", 21L);
+    when(jobPostingRepository.findByIdAndUserId(21L, 1L)).thenReturn(Optional.of(posting));
+    CoverLetterQuestion q1 = question(55L, 1);
+    CoverLetterQuestion q2 = question(56L, 2);
+    ReflectionTestUtils.setField(q1, "answerDraft", draftMissing(4L));
+    ReflectionTestUtils.setField(q2, "answerDraft", draftMissing(4L, 9L));
+    when(coverLetterQuestionRepository.findAllByJobPostingIdOrderBySeqAsc(21L))
+        .thenReturn(List.of(q1, q2));
+    Map<Long, String> names = Map.of(4L, "갈등 조율", 9L, "문제 정의");
+    when(competencyService.names(Set.of(4L, 9L))).thenReturn(names);
+
+    jobPostingService.getDetail(1L, 21L);
+
+    verify(competencyService).names(Set.of(4L, 9L));
+    verify(answerAssembler).assemble(eq(q1), anyMap(), anyMap(), anyMap(), eq(names));
+    verify(answerAssembler).assemble(eq(q2), anyMap(), anyMap(), anyMap(), eq(names));
+  }
+
+  private static AnswerDraft draftMissing(Long... competencyIds) {
+    return new AnswerDraft(List.of(), List.of(), List.of(competencyIds), true);
   }
 
   @Test
