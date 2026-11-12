@@ -6,7 +6,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -28,6 +30,7 @@ import com.sajarok.infra.ai.AiLock;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -52,6 +55,12 @@ class CoverLetterQuestionServiceDraftTest {
   @Mock private AnswerDrafter answerDrafter;
   @Mock private AnswerDraftWriter answerDraftWriter;
   @Spy private AiLock aiLock = new AiLock();
+
+  /** 기본은 내 것. 남의 것 테스트만 다시 정한다. */
+  @BeforeEach
+  void ownedByMe() {
+    lenient().when(coverLetterQuestionRepository.findUserIdById(55L)).thenReturn(Optional.of(1L));
+  }
 
   @InjectMocks private CoverLetterQuestionService coverLetterQuestionService;
 
@@ -176,6 +185,22 @@ class CoverLetterQuestionServiceDraftTest {
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(ErrorCode.AI_IN_PROGRESS);
-    verifyNoInteractions(coverLetterQuestionRepository, answerDrafter);
+    verify(coverLetterQuestionRepository, never())
+        .findWithPostingByIdAndUserId(anyLong(), anyLong());
+    verifyNoInteractions(answerDrafter);
+  }
+
+  @Test
+  @DisplayName("37번: 남의 문항이거나 없으면 잠금을 잡지 않고 바로 NOT_FOUND (주인 ID만 읽음)")
+  void createDraft_notMine_throwsNotFoundBeforeLock() {
+    when(coverLetterQuestionRepository.findUserIdById(55L)).thenReturn(Optional.of(2L));
+
+    assertThatThrownBy(() -> coverLetterQuestionService.createDraft(1L, 55L))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verify(aiLock, never()).run(anyString(), any());
+    verify(coverLetterQuestionRepository, never())
+        .findWithPostingByIdAndUserId(anyLong(), anyLong());
   }
 }

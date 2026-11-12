@@ -39,6 +39,11 @@ public class CoverLetterQuestionService {
    * NOT_FOUND.
    */
   public AnswerResponse createDraft(Long userId, Long questionId) {
+    // 잠금 전에 소유부터 확인해 남의 ID로는 잠금을 잡지 않는다(주인 ID만 읽음).
+    coverLetterQuestionRepository
+        .findUserIdById(questionId)
+        .filter(userId::equals)
+        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
     return aiLock.run("answer:" + questionId, () -> createDraftLocked(userId, questionId));
   }
 

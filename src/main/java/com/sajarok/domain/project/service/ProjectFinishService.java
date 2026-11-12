@@ -55,13 +55,22 @@ public class ProjectFinishService {
    * <p>남의 프로젝트거나 없으면 NOT_FOUND. 고른 기록 중 이 프로젝트의 SAVED 기록이 아닌 것이 있어도 NOT_FOUND.
    */
   public FinishQuestions createQuestions(Long userId, Long projectId, List<Long> recordIds) {
-    // 32·33번이 같은 키: 한 프로젝트에서 AI가 돌고 있으면 AI_IN_PROGRESS.
+    // 잠금 전에 소유부터 확인해 남의 ID로는 잠금을 잡지 않는다. 32·33번이 같은 키.
+    checkProjectOwner(userId, projectId);
     return aiLock.run(
         finishLockKey(projectId), () -> createQuestionsLocked(userId, projectId, recordIds));
   }
 
   static String finishLockKey(Long projectId) {
     return "finish:" + projectId;
+  }
+
+  /** 주인 ID만 읽는 가벼운 확인. 남의 프로젝트거나 없으면 NOT_FOUND. */
+  private void checkProjectOwner(Long userId, Long projectId) {
+    projectRepository
+        .findUserIdById(projectId)
+        .filter(userId::equals)
+        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
   }
 
   private FinishQuestions createQuestionsLocked(Long userId, Long projectId, List<Long> recordIds) {
@@ -93,6 +102,7 @@ public class ProjectFinishService {
    */
   public PortfolioDraftResponse createPortfolioDraft(
       Long userId, Long projectId, List<Long> recordIds) {
+    checkProjectOwner(userId, projectId);
     return aiLock.run(
         finishLockKey(projectId), () -> createPortfolioDraftLocked(userId, projectId, recordIds));
   }

@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -40,6 +41,7 @@ import com.sajarok.infra.ai.AiLock;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -65,6 +67,13 @@ class ProjectRecordQuestionsTest {
   @Mock private RecordQuestionGenerator recordQuestionGenerator;
   @Mock private RecordQuestionWriter recordQuestionWriter;
   @Spy private AiLock aiLock = new AiLock();
+
+  /** 기본은 내 것. 남의 것 테스트만 다시 정한다. */
+  @BeforeEach
+  void ownedByMe() {
+    lenient().when(projectRecordRepository.findUserIdById(77L)).thenReturn(Optional.of(1L));
+  }
+
   @Mock private AttachmentService attachmentService;
 
   @InjectMocks private ProjectRecordService projectRecordService;
@@ -308,6 +317,20 @@ class ProjectRecordQuestionsTest {
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(ErrorCode.AI_IN_PROGRESS);
-    verifyNoInteractions(projectRecordRepository, recordQuestionGenerator);
+    verify(projectRecordRepository, never()).findByIdAndUserId(anyLong(), anyLong());
+    verifyNoInteractions(recordQuestionGenerator);
+  }
+
+  @Test
+  @DisplayName("30번: 남의 기록이거나 없으면 잠금을 잡지 않고 바로 NOT_FOUND (주인 ID만 읽음)")
+  void createQuestions_notMine_throwsNotFoundBeforeLock() {
+    when(projectRecordRepository.findUserIdById(77L)).thenReturn(Optional.of(2L));
+
+    assertThatThrownBy(() -> projectRecordService.createQuestions(1L, 77L, RecordQuestionMode.AUTO))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verify(aiLock, never()).run(anyString(), any());
+    verify(projectRecordRepository, never()).findByIdAndUserId(anyLong(), anyLong());
   }
 }

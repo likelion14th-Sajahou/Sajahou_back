@@ -4,7 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -29,6 +33,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -51,6 +56,12 @@ class ProjectRecordOrganizeTest {
   @Mock private RecordOrganizer recordOrganizer;
   @Mock private AttachmentService attachmentService;
   @Spy private AiLock aiLock = new AiLock();
+
+  /** 기본은 내 것. 남의 것 테스트만 다시 정한다. */
+  @BeforeEach
+  void ownedByMe() {
+    lenient().when(projectRecordRepository.findUserIdById(77L)).thenReturn(Optional.of(1L));
+  }
 
   @InjectMocks private ProjectRecordService projectRecordService;
 
@@ -179,6 +190,20 @@ class ProjectRecordOrganizeTest {
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(ErrorCode.AI_IN_PROGRESS);
-    verifyNoInteractions(projectRecordRepository, recordOrganizer);
+    verify(projectRecordRepository, never()).findByIdAndUserId(anyLong(), anyLong());
+    verifyNoInteractions(recordOrganizer);
+  }
+
+  @Test
+  @DisplayName("31번: 남의 기록이거나 없으면 잠금을 잡지 않고 바로 NOT_FOUND (주인 ID만 읽음)")
+  void organize_notMine_throwsNotFoundBeforeLock() {
+    when(projectRecordRepository.findUserIdById(77L)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> projectRecordService.organize(1L, 77L))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verify(aiLock, never()).run(anyString(), any());
+    verify(projectRecordRepository, never()).findByIdAndUserId(anyLong(), anyLong());
   }
 }

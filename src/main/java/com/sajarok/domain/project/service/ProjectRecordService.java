@@ -326,7 +326,8 @@ public class ProjectRecordService {
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public RecordQuestions createQuestions(
       Long userId, Long recordId, RecordQuestionMode requestedMode) {
-    // 30·31번이 같은 키: 한 기록에서 AI가 돌고 있으면 AI_IN_PROGRESS.
+    // 잠금 전에 소유부터 확인해 남의 ID로는 잠금을 잡지 않는다. 30·31번이 같은 키.
+    checkRecordOwner(userId, recordId);
     return aiLock.run(
         recordLockKey(recordId), () -> createQuestionsLocked(userId, recordId, requestedMode));
   }
@@ -407,11 +408,20 @@ public class ProjectRecordService {
    */
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public RecordOrganizeResponse organize(Long userId, Long recordId) {
+    checkRecordOwner(userId, recordId);
     return aiLock.run(recordLockKey(recordId), () -> organizeLocked(userId, recordId));
   }
 
   static String recordLockKey(Long recordId) {
     return "record:" + recordId;
+  }
+
+  /** 주인 ID만 읽는 가벼운 확인. 남의 기록이거나 없으면 NOT_FOUND. */
+  private void checkRecordOwner(Long userId, Long recordId) {
+    projectRecordRepository
+        .findUserIdById(recordId)
+        .filter(userId::equals)
+        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
   }
 
   private RecordOrganizeResponse organizeLocked(Long userId, Long recordId) {
