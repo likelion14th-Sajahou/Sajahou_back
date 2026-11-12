@@ -4,6 +4,7 @@ import com.sajarok.domain.storycard.entity.StoryCard;
 import com.sajarok.domain.storycard.entity.StoryCardType;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 public record StoryCardListResponse(int totalCount, List<CardItem> cards) {
 
@@ -18,12 +19,20 @@ public record StoryCardListResponse(int totalCount, List<CardItem> cards) {
       List<StoryCardDetailResponse.CompetencyView> competencies,
       List<String> evidenceSummary) {
 
-    /** projectName·recordDate는 회고 카드면 null */
-    public static CardItem of(StoryCard card, String projectName, LocalDate recordDate) {
+    /**
+     * projectName·recordDate는 회고 카드면 null.
+     *
+     * @param competencyNames 목록 전체 카드의 역량 ID → 이름 (한 번에 가져온 것)
+     */
+    public static CardItem of(
+        StoryCard card,
+        String projectName,
+        LocalDate recordDate,
+        Map<Long, String> competencyNames) {
       List<StoryCardDetailResponse.CompetencyView> competencies =
           card.getCompetencyIds().stream()
               .sorted()
-              .map(id -> new StoryCardDetailResponse.CompetencyView(id, null))
+              .map(id -> new StoryCardDetailResponse.CompetencyView(id, competencyNames.get(id)))
               .toList();
 
       List<String> evidenceSummary = recordDate == null ? List.of() : List.of(recordDate + " 기록");

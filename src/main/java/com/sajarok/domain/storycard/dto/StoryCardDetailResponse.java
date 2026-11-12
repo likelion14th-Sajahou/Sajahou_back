@@ -6,6 +6,7 @@ import com.sajarok.domain.storycard.entity.StoryCardStatus;
 import com.sajarok.domain.storycard.entity.StoryCardType;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 public record StoryCardDetailResponse(
     Long cardId,
@@ -31,10 +32,24 @@ public record StoryCardDetailResponse(
 
   public record SourceRecord(Long recordId, LocalDate date) {}
 
+  /** 역량 이름 없이 만든다 (13·19번처럼 회고 화면 안의 카드). 역량은 id만, name은 null */
   public static StoryCardDetailResponse of(
       StoryCard card, String projectName, LocalDate recordDate) {
+    return of(card, projectName, recordDate, Map.of());
+  }
+
+  /**
+   * 21~23번 카드 화면용: 역량 이름까지 채운다.
+   *
+   * @param competencyNames 역량 ID → 이름 (CompetencyService.names). 없는 ID는 name이 null
+   */
+  public static StoryCardDetailResponse of(
+      StoryCard card, String projectName, LocalDate recordDate, Map<Long, String> competencyNames) {
     List<CompetencyView> competencies =
-        card.getCompetencyIds().stream().sorted().map(id -> new CompetencyView(id, null)).toList();
+        card.getCompetencyIds().stream()
+            .sorted()
+            .map(id -> new CompetencyView(id, competencyNames.get(id)))
+            .toList();
 
     SourceRecord sourceRecord =
         card.getProjectRecordId() == null
