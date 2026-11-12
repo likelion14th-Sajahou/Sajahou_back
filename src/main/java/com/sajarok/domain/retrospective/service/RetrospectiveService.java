@@ -214,7 +214,7 @@ public class RetrospectiveService {
       Long userId, Long retrospectiveId, RetrospectiveDraftRequest request) {
     Retrospective retrospective = findMine(userId, retrospectiveId);
     checkWritable(retrospective, scheduleOf(userId, retrospective)); // 바꾸기 전에 기간부터
-    // TODO(회원 담당): codeReview는 FE 파트만. 아니면 400 VALIDATION_ERROR
+    checkCodeReviewPart(userId, request);
     retrospective.saveDraft(request, LocalDateTime.now(KstTime.OFFSET));
     if (request.has("attachmentIds")) {
       AttachmentOwner owner = AttachmentOwner.retrospective(retrospectiveId);
@@ -336,6 +336,18 @@ public class RetrospectiveService {
         && deadline != null
         && OffsetDateTime.now(KstTime.OFFSET).isAfter(deadline.plusDays(GRACE_DAYS))) {
       throw new BusinessException(ErrorCode.DEADLINE_PASSED);
+    }
+  }
+
+  /** 14번: 코드 리뷰 칸은 프론트엔드 파트만 쓴다. 비우는 것(null·빈 글)은 누구나 된다 */
+  private void checkCodeReviewPart(Long userId, RetrospectiveDraftRequest request) {
+    String codeReview = request.getCodeReview();
+    if (!request.has("codeReview") || codeReview == null || codeReview.isBlank()) {
+      return;
+    }
+    Part part = userRepository.findById(userId).map(User::getPart).orElse(null);
+    if (part != Part.FRONTEND) {
+      throw new BusinessException(ErrorCode.VALIDATION_ERROR, "코드 리뷰는 프론트엔드 파트만 쓸 수 있어요.");
     }
   }
 }

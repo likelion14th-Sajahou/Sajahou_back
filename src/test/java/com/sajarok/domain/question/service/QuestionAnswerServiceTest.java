@@ -3,11 +3,14 @@ package com.sajarok.domain.question.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.project.service.ProjectRecordService;
 import com.sajarok.domain.project.service.ProjectService;
 import com.sajarok.domain.question.dto.AnswerQuestionRequest;
@@ -21,10 +24,12 @@ import com.sajarok.domain.retrospective.entity.RetrospectiveType;
 import com.sajarok.domain.retrospective.repository.RetrospectiveRepository;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -45,6 +50,7 @@ class QuestionAnswerServiceTest {
   @Mock private RetrospectiveRepository retrospectiveRepository;
   @Mock private ProjectRecordService projectRecordService;
   @Mock private ProjectService projectService;
+  @Mock private AttachmentService attachmentService;
 
   @InjectMocks private QuestionAnswerService questionAnswerService;
 
@@ -182,5 +188,62 @@ class QuestionAnswerServiceTest {
         .extracting("errorCode")
         .isEqualTo(ErrorCode.VALIDATION_ERROR);
     assertThat(question.getStatus()).isEqualTo(QuestionStatus.PENDING);
+  }
+
+  // ---------- 18번 마치기 '산출물 요청' 첨부 ----------
+
+  /** 3번 프로젝트 마치기 질문 (태그를 정한다) */
+  private static AiQuestion finishQuestion(String tag) {
+    AiQuestion q =
+        AiQuestion.create(QuestionOwner.project(3L), 4, tag, null, null, "산출물을 첨부해 주세요.");
+    ReflectionTestUtils.setField(q, "id", 980L);
+    return q;
+  }
+
+  @Test
+  @DisplayName("18번: 마치기 '산출물 요청' 질문에 attachmentIds를 보내면 프로젝트 산출물을 그 목록으로 통째로 바꾼다 (풀고 → 연결)")
+  void artifactQuestion_replacesProjectAttachments() {
+    when(aiQuestionRepository.findById(980L)).thenReturn(Optional.of(finishQuestion("산출물 요청")));
+    when(projectService.getOwnerId(3L)).thenReturn(ME);
+
+    AnswerQuestionResponse response =
+        questionAnswerService.answer(
+            ME, 980L, new AnswerQuestionRequest(QuestionStatus.ANSWERED, "발표 자료예요", List.of(610L)));
+
+    assertThat(response.status()).isEqualTo(QuestionStatus.ANSWERED);
+    InOrder order = inOrder(attachmentService);
+    order.verify(attachmentService).disconnect(AttachmentOwner.project(3L));
+    order.verify(attachmentService).connect(ME, List.of(610L), AttachmentOwner.project(3L));
+  }
+
+  @Test
+  @DisplayName("18번: 산출물 질문이 아닌데 첨부를 보내면 400 VALIDATION_ERROR이고, 답도 첨부도 바뀌지 않는다")
+  void otherQuestion_withAttachments_validationError() {
+    AiQuestion question = finishQuestion("내 역할");
+    when(aiQuestionRepository.findById(980L)).thenReturn(Optional.of(question));
+    when(projectService.getOwnerId(3L)).thenReturn(ME);
+
+    assertThatThrownBy(
+            () ->
+                questionAnswerService.answer(
+                    ME,
+                    980L,
+                    new AnswerQuestionRequest(QuestionStatus.ANSWERED, "역할", List.of(610L))))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.VALIDATION_ERROR);
+    assertThat(question.getStatus()).isEqualTo(QuestionStatus.PENDING);
+    verifyNoInteractions(attachmentService);
+  }
+
+  @Test
+  @DisplayName("18번: attachmentIds를 안 보내면 산출물 질문이어도 첨부는 그대로 둔다")
+  void artifactQuestion_withoutAttachmentIds_keepsAttachments() {
+    when(aiQuestionRepository.findById(980L)).thenReturn(Optional.of(finishQuestion("산출물 요청")));
+    when(projectService.getOwnerId(3L)).thenReturn(ME);
+
+    questionAnswerService.answer(ME, 980L, request(QuestionStatus.SKIPPED, null));
+
+    verifyNoInteractions(attachmentService);
   }
 }
