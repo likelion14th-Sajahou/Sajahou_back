@@ -3,6 +3,7 @@ package com.sajarok.domain.project.service;
 import com.sajarok.domain.attachment.dto.AttachmentOwner;
 import com.sajarok.domain.attachment.dto.AttachmentView;
 import com.sajarok.domain.attachment.service.AttachmentService;
+import com.sajarok.domain.competency.service.CompetencyService;
 import com.sajarok.domain.project.dto.HomeProjectTiles;
 import com.sajarok.domain.project.dto.HomeProjectTiles.DoneTile;
 import com.sajarok.domain.project.dto.HomeProjectTiles.InProgressTile;
@@ -29,6 +30,7 @@ import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -46,6 +48,7 @@ public class ProjectService {
   private final ProjectRecordService projectRecordService;
   private final AiQuestionService aiQuestionService;
   private final AttachmentService attachmentService;
+  private final CompetencyService competencyService;
 
   /** 25번: 프로젝트를 만든다. 같은 역할을 여러 번 보내면 하나로 줄인다. 상태는 진행 중(IN_PROGRESS)으로 시작한다. */
   @Transactional
@@ -93,17 +96,23 @@ public class ProjectService {
             projectId, ProjectRecordStatus.SAVED);
 
     // 카드 ID·첨부를 기록마다 따로 묻지 않고 한 번에 가져온다 (N+1 방지).
-    Map<Long, Long> cardIds = Map.of();
+    Map<Long, RecordCardInfo> cards = Map.of();
     Map<Long, List<AttachmentView>> attachments = Map.of();
+
     if (!records.isEmpty()) {
       List<Long> recordIds = records.stream().map(ProjectRecord::getId).toList();
+      cards = storyCardService.findByRecordIds(recordIds);
       attachments = attachmentService.findAll(AttachmentOwner.Kind.PROJECT_RECORD, recordIds);
-      cardIds =
-          storyCardService.findByRecordIds(recordIds).values().stream()
-              .filter(card -> card.cardId() != null)
-              .collect(Collectors.toMap(RecordCardInfo::recordId, RecordCardInfo::cardId));
     }
-    return ProjectDetailResponse.of(project, records, cardIds, attachments);
+
+    Set<Long> competencyIds =
+        cards.values().stream()
+            .flatMap(card -> card.competencyIds().stream())
+            .collect(Collectors.toSet());
+    Map<Long, String> competencyNames =
+        competencyIds.isEmpty() ? Map.of() : competencyService.names(competencyIds);
+
+    return ProjectDetailResponse.of(project, records, cards, competencyNames, attachments);
   }
 
   /**

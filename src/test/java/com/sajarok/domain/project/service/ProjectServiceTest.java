@@ -18,6 +18,7 @@ import com.sajarok.domain.attachment.entity.AttachmentCategory;
 import com.sajarok.domain.attachment.entity.AttachmentType;
 import com.sajarok.domain.attachment.entity.ExtractStatus;
 import com.sajarok.domain.attachment.service.AttachmentService;
+import com.sajarok.domain.competency.service.CompetencyService;
 import com.sajarok.domain.project.dto.HomeProjectTiles;
 import com.sajarok.domain.project.dto.HomeProjectTiles.DoneTile;
 import com.sajarok.domain.project.dto.HomeProjectTiles.InProgressTile;
@@ -26,6 +27,7 @@ import com.sajarok.domain.project.dto.ProjectCreateResponse;
 import com.sajarok.domain.project.dto.ProjectDetailResponse;
 import com.sajarok.domain.project.dto.ProjectListResponse;
 import com.sajarok.domain.project.dto.ProjectListResponse.ProjectSummary;
+import com.sajarok.domain.project.dto.ProjectRecordResponse.CompetencyTag;
 import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
@@ -67,6 +69,7 @@ class ProjectServiceTest {
   @Mock private ProjectRecordService projectRecordService;
   @Mock private AiQuestionService aiQuestionService;
   @Mock private AttachmentService attachmentService;
+  @Mock private CompetencyService competencyService;
 
   @InjectMocks private ProjectService projectService;
 
@@ -273,8 +276,9 @@ class ProjectServiceTest {
     when(storyCardService.findByRecordIds(List.of(78L, 77L)))
         .thenReturn(
             Map.of(
-                78L, new RecordCardInfo(78L, 413L, Set.of()),
-                77L, new RecordCardInfo(77L, 412L, Set.of())));
+                78L, new RecordCardInfo(78L, 413L, Set.of(3L)),
+                77L, new RecordCardInfo(77L, 412L, Set.of(3L, 8L))));
+    when(competencyService.names(Set.of(3L, 8L))).thenReturn(Map.of(3L, "협업", 8L, "사용자 리서치"));
     AttachmentView meetingNote =
         new AttachmentView(
             601L,
@@ -292,6 +296,11 @@ class ProjectServiceTest {
     ProjectDetailResponse response = projectService.getDetail(1L, 3L);
 
     verify(storyCardService).findByRecordIds(List.of(78L, 77L));
+    verify(competencyService).names(Set.of(3L, 8L));
+    assertThat(response.records().get(0).competencies())
+        .containsExactly(new CompetencyTag(3L, "협업"));
+    assertThat(response.records().get(1).competencies())
+        .containsExactlyInAnyOrder(new CompetencyTag(3L, "협업"), new CompetencyTag(8L, "사용자 리서치"));
     assertThat(response.records())
         .extracting(
             ProjectDetailResponse.RecordItem::recordId, ProjectDetailResponse.RecordItem::cardId)

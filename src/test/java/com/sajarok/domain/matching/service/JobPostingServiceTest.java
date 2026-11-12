@@ -14,6 +14,7 @@ import com.sajarok.domain.attachment.entity.AttachmentCategory;
 import com.sajarok.domain.attachment.entity.AttachmentType;
 import com.sajarok.domain.attachment.entity.ExtractStatus;
 import com.sajarok.domain.attachment.service.AttachmentService;
+import com.sajarok.domain.competency.service.CompetencyService;
 import com.sajarok.domain.matching.dto.AnswerResponse;
 import com.sajarok.domain.matching.dto.JobPostingDetailResponse;
 import com.sajarok.domain.matching.entity.CoverLetterCardRole;
@@ -49,6 +50,7 @@ class JobPostingServiceTest {
   @Mock private ProjectService projectService;
   @Mock private AnswerAssembler answerAssembler;
   @Mock private AttachmentService attachmentService;
+  @Mock private CompetencyService competencyService;
 
   @InjectMocks private JobPostingService jobPostingService;
 
@@ -76,6 +78,7 @@ class JobPostingServiceTest {
         .thenReturn(List.of(new CoverLetterQuestionCard(55L, 410L, CoverLetterCardRole.MAIN)));
     when(storyCardService.findPublished(1L)).thenReturn(List.of());
     when(storyCardService.countByCompetency(1L)).thenReturn(Map.of(3L, 2L));
+    when(competencyService.names(List.of(3L, 7L))).thenReturn(Map.of(3L, "협업", 7L, "API 설계"));
     AnswerResponse answer =
         new AnswerResponse(55L, List.of(), 0, 0, List.of(), false, List.of(), false);
     when(answerAssembler.assemble(
@@ -108,6 +111,10 @@ class JobPostingServiceTest {
     assertThat(response.competencies())
         .extracting(JobPostingDetailResponse.PostingCompetencyItem::cardCount)
         .containsExactly(2L, 0L);
+    verify(competencyService).names(List.of(3L, 7L));
+    assertThat(response.competencies())
+        .extracting(JobPostingDetailResponse.PostingCompetencyItem::name)
+        .containsExactly("협업", "API 설계");
     verify(coverLetterQuestionCardRepository).findAllByIdCoverLetterQuestionIdIn(List.of(55L, 56L));
     verify(storyCardService).findPublished(1L);
   }
