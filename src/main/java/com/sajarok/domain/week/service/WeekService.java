@@ -27,12 +27,13 @@ public class WeekService {
     return jdbcTemplate
         .query(
             """
-                        SELECT w.id, w.week_number, w.phase,
+
+                    SELECT w.id, w.week_number, w.phase,
                                s.session_title, s.session_deadline, s.assignment_deadline
                         FROM week w
-                        JOIN week_part_schedule s ON s.week_id = w.id
-                        WHERE s.part = ?
-                          AND w.start_date <= ?
+                        LEFT JOIN week_part_schedule s
+                          ON s.week_id = w.id AND s.part = ?
+                        WHERE w.start_date <= ?
                           AND w.start_date > ?
                         ORDER BY w.start_date DESC
                         LIMIT 1
