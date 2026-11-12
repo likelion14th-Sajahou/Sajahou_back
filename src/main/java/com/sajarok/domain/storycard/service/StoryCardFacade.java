@@ -10,6 +10,7 @@ import com.sajarok.domain.storycard.entity.StoryCard;
 import com.sajarok.domain.storycard.entity.StoryCardStatus;
 import com.sajarok.domain.storycard.entity.StoryCardType;
 import com.sajarok.domain.storycard.repository.StoryCardRepository;
+import com.sajarok.domain.week.service.WeekService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.time.LocalDate;
@@ -30,6 +31,7 @@ public class StoryCardFacade {
   private final ProjectRecordService projectRecordService;
   private final ProjectService projectService;
   private final CompetencyService competencyService;
+  private final WeekService weekService;
 
   /** 24번: 카드 삭제. 프로젝트 카드는 기록째 지운다 */
   @Transactional
@@ -92,20 +94,44 @@ public class StoryCardFacade {
                 .findDates(List.of(card.getProjectRecordId()))
                 .get(card.getProjectRecordId());
 
+    Integer weekNumber =
+        card.getWeekId() == null
+            ? null
+            : weekService.findWeekNumbers(List.of(card.getWeekId())).get(card.getWeekId());
+
     return StoryCardDetailResponse.of(
-        card, projectName, recordDate, competencyService.names(card.getCompetencyIds()));
+        card,
+        projectName,
+        recordDate,
+        competencyService.names(card.getCompetencyIds()),
+        weekNumber);
   }
 
   /** 21번: 카드 목록. 공개 카드만 최신순, 조건은 모두 선택 */
   public StoryCardListResponse getList(
       Long userId, StoryCardType type, Long competencyId, Integer weekNumber, String q) {
+    List<StoryCard> published =
+        storyCardRepository.findAllByUserIdAndStatusOrderByCreatedAtDescIdDesc(
+            userId, StoryCardStatus.PUBLISHED);
+
+    // 주차 번호는 거르기에도 쓰니 먼저 한 번에 가져온다. 프로젝트 카드는 weekId가 없다
+    Map<Long, Integer> weekNumbers =
+        weekService.findWeekNumbers(
+            published.stream()
+                .map(StoryCard::getWeekId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList());
+
     List<StoryCard> cards =
-        storyCardRepository
-            .findAllByUserIdAndStatusOrderByCreatedAtDescIdDesc(userId, StoryCardStatus.PUBLISHED)
-            .stream()
+        published.stream()
             .filter(card -> type == null || card.getType() == type)
             .filter(card -> competencyId == null || card.getCompetencyIds().contains(competencyId))
-            // TODO(주차 담당): weekNumber를 weekId로 바꿔서 거른다. 지금은 받기만 한다
+            .filter(
+                card ->
+                    weekNumber == null
+                        || (card.getWeekId() != null
+                            && weekNumber.equals(weekNumbers.get(card.getWeekId()))))
             .filter(
                 card ->
                     q == null
@@ -134,7 +160,8 @@ public class StoryCardFacade {
                         card.getProjectRecordId() == null
                             ? null
                             : recordDates.get(card.getProjectRecordId()),
-                        competencyNames))
+                        competencyNames,
+                        card.getWeekId() == null ? null : weekNumbers.get(card.getWeekId())))
             .toList();
     return new StoryCardListResponse(items.size(), items);
   }

@@ -10,8 +10,11 @@ public record RetrospectiveStartResponse(
     RetrospectiveState state,
     Integer currentStep) {
 
-  public static RetrospectiveStartResponse from(Retrospective r) {
+  /**
+   * @param weekNumber 회고 주차 번호 (WeekService.findWeekNumbers)
+   */
+  public static RetrospectiveStartResponse from(Retrospective r, Integer weekNumber) {
     return new RetrospectiveStartResponse(
-        r.getId(), r.getType(), null, RetrospectiveState.of(r), r.getCurrentStep());
+        r.getId(), r.getType(), weekNumber, RetrospectiveState.of(r), r.getCurrentStep());
   }
 }

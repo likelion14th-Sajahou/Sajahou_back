@@ -19,6 +19,7 @@ import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.domain.user.entity.Part;
 import com.sajarok.domain.user.entity.User;
 import com.sajarok.domain.user.repository.UserRepository;
+import com.sajarok.domain.week.service.WeekService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import com.sajarok.infra.ai.AiLock;
@@ -41,6 +42,7 @@ public class RetrospectiveAiService {
   private final AiLock aiLock;
   private final StoryCardService storyCardService;
   private final RetroReviewGenerator retroReviewGenerator;
+  private final WeekService weekService;
 
   public record QuestionsResult(boolean created, RetrospectiveQuestionsResponse response) {}
 
@@ -147,8 +149,12 @@ public class RetrospectiveAiService {
     }
 
     Part part = userRepository.findById(userId).map(User::getPart).orElse(null);
+    Integer weekNumber =
+        weekService
+            .findWeekNumbers(List.of(retrospective.getWeekId()))
+            .get(retrospective.getWeekId());
     RetroCardDraft draft =
-        retroReviewGenerator.generate(retrospective, part, attachments, answered);
+        retroReviewGenerator.generate(retrospective, weekNumber, part, attachments, answered);
     return new RetrospectiveReviewResponse(storyCardService.saveRetrospectiveDraft(draft));
   }
 }

@@ -41,9 +41,11 @@ import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
 import com.sajarok.domain.storycard.entity.StoryCardStatus;
 import com.sajarok.domain.storycard.entity.StoryCardType;
 import com.sajarok.domain.storycard.service.StoryCardService;
+import com.sajarok.domain.week.service.WeekService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
@@ -71,6 +73,7 @@ class RetrospectiveServiceTest {
   @Mock private RetrospectiveRepository retrospectiveRepository;
   @Mock private AiQuestionService aiQuestionService;
   @Mock private StoryCardService storyCardService;
+  @Mock private WeekService weekService;
   @Mock private AttachmentService attachmentService;
 
   @InjectMocks private RetrospectiveService retrospectiveService;
@@ -375,9 +378,10 @@ class RetrospectiveServiceTest {
   }
 
   @Test
-  @DisplayName("13번: 상세는 회고 자료와 이 회고의 질문·첨부·카드를 한 번에 모아 준다 (주차는 아직 null)")
+  @DisplayName("13번: 상세는 회고 자료와 이 회고의 질문·첨부·카드, 주차 번호를 한 번에 모아 준다")
   void detail_collectsQuestionsAttachmentsAndCard() {
     mySessionAtStep3();
+    when(weekService.findWeekNumbers(List.of(WEEK))).thenReturn(Map.of(WEEK, 10));
     when(aiQuestionService.findAll(QuestionOwner.retrospective(101L)))
         .thenReturn(List.of(firstQuestion()));
     when(attachmentService.findAll(RETRO_101)).thenReturn(List.of(githubLink()));
@@ -392,7 +396,7 @@ class RetrospectiveServiceTest {
     assertThat(response.materials().memo()).isEqualTo("이번 주 고민");
     assertThat(response.questions()).extracting(QuestionView::questionId).containsExactly(901L);
     assertThat(response.card().cardId()).isEqualTo(301L);
-    assertThat(response.week()).isNull();
+    assertThat(response.week().weekNumber()).isEqualTo(10);
     assertThat(response.attachments())
         .extracting(AttachmentView::attachmentId, AttachmentView::linkType)
         .containsExactly(org.assertj.core.groups.Tuple.tuple(501L, LinkType.GITHUB));
@@ -717,5 +721,34 @@ class RetrospectiveServiceTest {
     when(retrospectiveRepository.findAllByUserId(ME)).thenReturn(List.of());
 
     assertThat(retrospectiveService.footprints(ME)).isEmpty();
+  }
+
+  // ---------- 주차 번호 (지윤님 WeekService) ----------
+
+  @Test
+  @DisplayName("12번: 시작 응답에 주차 번호를 넣는다")
+  void start_weekNumber() {
+    when(retrospectiveRepository.findByUserIdAndWeekIdAndType(ME, WEEK, RetrospectiveType.SESSION))
+        .thenReturn(Optional.empty());
+    saveReturnsWithId(101L);
+    when(weekService.findWeekNumbers(List.of(WEEK))).thenReturn(Map.of(WEEK, 10));
+
+    StartResult result = retrospectiveService.start(ME, request(RetrospectiveType.SESSION, null));
+
+    assertThat(result.response().weekNumber()).isEqualTo(10);
+  }
+
+  @Test
+  @DisplayName("20번: 저장 응답과 '과제 회고가 남았어요(assignmentPending)'에 주차 번호를 넣는다")
+  void complete_weekNumber() {
+    Retrospective session = mySessionAtStep3();
+    ReflectionTestUtils.setField(session, "assignmentMode", AssignmentMode.LATER);
+    when(storyCardService.publishRetrospectiveCard(101L)).thenReturn(301L);
+    when(weekService.findWeekNumbers(List.of(WEEK))).thenReturn(Map.of(WEEK, 10));
+
+    RetrospectiveCompleteResponse response = retrospectiveService.complete(ME, 101L);
+
+    assertThat(response.weekNumber()).isEqualTo(10);
+    assertThat(response.assignmentPending().weekNumber()).isEqualTo(10);
   }
 }
