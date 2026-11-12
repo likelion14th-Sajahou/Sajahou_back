@@ -33,7 +33,9 @@ class PostingAnalyzerTest {
   private static final PostingText POSTING =
       new PostingText("카카오", "백엔드", "다양한 직군과 협업한 경험", null, null, null);
   private static final List<CompetencyOption> COMPETENCIES =
-      List.of(new CompetencyOption(3L, "협업"), new CompetencyOption(7L, "API 설계"));
+      List.of(
+          new CompetencyOption(3L, "협업", "팀과 함께 일하며 결과를 만듦"),
+          new CompetencyOption(7L, "API 설계", "요청·응답 규칙 설계"));
 
   private PostingAnalysisResult analyze() {
     return analyzer.analyze(

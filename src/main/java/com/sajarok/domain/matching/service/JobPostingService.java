@@ -4,6 +4,7 @@ import com.sajarok.domain.attachment.dto.AttachmentOwner;
 import com.sajarok.domain.attachment.entity.Attachment;
 import com.sajarok.domain.attachment.entity.ExtractStatus;
 import com.sajarok.domain.attachment.service.AttachmentService;
+import com.sajarok.domain.competency.service.CompetencyService;
 import com.sajarok.domain.matching.ai.MatchingPrompts.CompetencyOption;
 import com.sajarok.domain.matching.ai.MatchingPrompts.PostingText;
 import com.sajarok.domain.matching.ai.PostingAnalysisResult;
@@ -17,6 +18,7 @@ import com.sajarok.domain.matching.entity.CoverLetterCardRole;
 import com.sajarok.domain.matching.entity.CoverLetterQuestion;
 import com.sajarok.domain.matching.entity.CoverLetterQuestionCard;
 import com.sajarok.domain.matching.entity.JobPosting;
+import com.sajarok.domain.matching.entity.PostingCompetency;
 import com.sajarok.domain.matching.repository.CoverLetterQuestionCardRepository;
 import com.sajarok.domain.matching.repository.CoverLetterQuestionRepository;
 import com.sajarok.domain.matching.repository.JobPostingRepository;
@@ -51,6 +53,7 @@ public class JobPostingService {
   private final JobPostingWriter jobPostingWriter;
   private final PostingAnalyzer postingAnalyzer;
   private final AttachmentService attachmentService;
+  private final CompetencyService competencyService;
 
   /**
    * 36번: 공고·문항을 저장하고 AI로 공고가 원하는 역량과 문항별 역량을 찾는다.
@@ -108,8 +111,13 @@ public class JobPostingService {
 
   private PostingAnalysisResult analyze(
       Long userId, JobPostingCreateRequest request, List<String> attachmentTexts) {
-    // TODO(역량 담당): competencyService.findAvailable(userId)로 내 파트의 역량 목록을 받는다.
-    List<CompetencyOption> competencies = List.of();
+    List<CompetencyOption> competencies =
+        competencyService.findForUser(userId).stream()
+            .map(
+                competency ->
+                    new CompetencyOption(
+                        competency.getId(), competency.getName(), competency.getDescription()))
+            .toList();
     PostingText text =
         new PostingText(
             request.company(),
@@ -132,22 +140,32 @@ public class JobPostingService {
     }
   }
 
-  private static JobPostingCreateResponse toCreateResponse(
+  private List<PostingCompetencyItem> toCompetencyItems(
+      JobPosting posting, Map<Long, Long> cardCounts) {
+    List<PostingCompetency> competencies = posting.getCompetencies();
+    if (competencies == null || competencies.isEmpty()) {
+      return List.of();
+    }
+
+    Map<Long, String> names =
+        competencyService.names(
+            competencies.stream().map(PostingCompetency::competencyId).toList());
+
+    return competencies.stream()
+        .map(
+            competency ->
+                new PostingCompetencyItem(
+                    competency.competencyId(),
+                    names.get(competency.competencyId()),
+                    competency.evidenceQuote(),
+                    cardCounts.getOrDefault(competency.competencyId(), 0L)))
+        .toList();
+  }
+
+  private JobPostingCreateResponse toCreateResponse(
       JobPostingWriter.Applied applied, Map<Long, Long> cardCounts) {
     JobPosting posting = applied.posting();
-    List<PostingCompetencyItem> competencies =
-        posting.getCompetencies() == null
-            ? List.of()
-            : posting.getCompetencies().stream()
-                .map(
-                    c ->
-                        new PostingCompetencyItem(
-                            c.competencyId(),
-                            // TODO(역량 담당): competencyService.names로 이름을 채운다. 지금은 null.
-                            null,
-                            c.evidenceQuote(),
-                            cardCounts.getOrDefault(c.competencyId(), 0L)))
-                .toList();
+    List<PostingCompetencyItem> competencies = toCompetencyItems(posting, cardCounts);
     List<JobPostingCreateResponse.QuestionItem> questionItems =
         applied.questions().stream()
             .map(
@@ -205,19 +223,7 @@ public class JobPostingService {
                         q.getEditedAnswer()))
             .toList();
 
-    List<PostingCompetencyItem> competencies =
-        posting.getCompetencies() == null
-            ? List.of()
-            : posting.getCompetencies().stream()
-                .map(
-                    c ->
-                        new PostingCompetencyItem(
-                            c.competencyId(),
-                            // TODO(역량 담당): competencyService.names로 이름을 채운다. 지금은 null.
-                            null,
-                            c.evidenceQuote(),
-                            cardCounts.getOrDefault(c.competencyId(), 0L)))
-                .toList();
+    List<PostingCompetencyItem> competencies = toCompetencyItems(posting, cardCounts);
 
     return new JobPostingDetailResponse(
         posting.getId(),
