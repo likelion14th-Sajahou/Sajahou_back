@@ -69,4 +69,19 @@ public class User extends BaseTimeEntity {
     user.privacyAgreedAt = privacyAgreedAt;
     return user;
   }
+
+  public void updateProfile(String name, String studentNo, String department, Integer cohort) {
+    if (name != null) {
+      this.name = name;
+    }
+    if (studentNo != null) {
+      this.studentNo = studentNo;
+    }
+    if (department != null) {
+      this.department = department;
+    }
+    if (cohort != null) {
+      this.cohort = cohort;
+    }
+  }
 }
