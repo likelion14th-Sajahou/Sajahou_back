@@ -1,5 +1,6 @@
 package com.sajarok.domain.attachment.service;
 
+import com.sajarok.global.exception.BusinessException;
 import com.sajarok.infra.storage.S3AttachmentStorage;
 import java.io.IOException;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,7 @@ public class AttachmentExtractionJob {
   private final PdfAttachmentExtractor pdfExtractor;
   private final AttachmentService attachmentService;
   private final ZipAttachmentExtractor zipExtractor;
+  private final ImageAttachmentExtractor imageExtractor;
 
   @Async
   public void run(Long attachmentId, String s3Key, String extension) {
@@ -28,9 +30,17 @@ public class AttachmentExtractionJob {
             attachmentService.saveExtractionResult(attachmentId, pdfExtractor.extract(input));
         case "zip" ->
             attachmentService.saveExtractionResult(attachmentId, zipExtractor.extract(input));
+        case "jpg", "png" -> {
+          String text = imageExtractor.extract(input, extension);
+          if (text.isBlank()) {
+            attachmentService.saveImageWithoutText(attachmentId);
+          } else {
+            attachmentService.saveExtractionResult(attachmentId, text);
+          }
+        }
         default -> throw new IllegalArgumentException("지원하지 않는 추출 형식: " + extension);
       }
-    } catch (IOException | SdkException e) {
+    } catch (IOException | SdkException | BusinessException e) {
       log.warn("첨부 본문 읽기 실패 attachmentId={}", attachmentId, e);
       attachmentService.saveExtractionResult(attachmentId, null);
     }
