@@ -20,6 +20,7 @@ import com.sajarok.domain.attachment.entity.AttachmentCategory;
 import com.sajarok.domain.attachment.entity.AttachmentType;
 import com.sajarok.domain.attachment.entity.ExtractStatus;
 import com.sajarok.domain.attachment.service.AttachmentService;
+import com.sajarok.domain.competency.service.CompetencyService;
 import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
 import com.sajarok.domain.project.dto.ProjectRecordResponse;
 import com.sajarok.domain.project.dto.ProjectRecordUpdateRequest;
@@ -62,6 +63,7 @@ class ProjectRecordServiceTest {
   @Mock private StoryCardService storyCardService;
   @Mock private AiQuestionService aiQuestionService;
   @Mock private AttachmentService attachmentService;
+  @Mock private CompetencyService competencyService;
 
   @InjectMocks private ProjectRecordService projectRecordService;
 
@@ -139,6 +141,8 @@ class ProjectRecordServiceTest {
   @Test
   @DisplayName("27번 SAVED: 5칸 중 하나만 있어도 SAVED·AI 정리 전으로 저장한다")
   void create_saved_oneField_saves() {
+    when(competencyService.validate(1L, List.of(3L), true)).thenReturn(Set.of(3L));
+    when(competencyService.names(Set.of(3L))).thenReturn(Map.of(3L, "협업"));
     when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
     when(projectRecordRepository.save(any(ProjectRecord.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -148,11 +152,15 @@ class ProjectRecordServiceTest {
     assertThat(response.status()).isEqualTo(ProjectRecordStatus.SAVED);
     assertThat(response.isAiOrganized()).isFalse();
     assertThat(response.did()).isEqualTo("API 명세 확정");
+    assertThat(response.competencies())
+        .containsExactly(new ProjectRecordResponse.CompetencyTag(3L, "협업"));
   }
 
   @Test
   @DisplayName("27번 SAVED: 5칸이 비어도 첨부가 있으면 저장하고, 같은 역량 ID가 겹쳐도 1개로 센다")
   void create_saved_attachmentOnly_andDuplicateCompetency_saves() {
+    when(competencyService.validate(1L, List.of(3L, 3L, 21L, 21L), true))
+        .thenReturn(Set.of(3L, 21L));
     when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
     when(projectRecordRepository.save(any(ProjectRecord.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -182,6 +190,8 @@ class ProjectRecordServiceTest {
     when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
 
     for (List<Long> ids : java.util.Arrays.asList(null, List.<Long>of(), List.of(1L, 2L, 3L, 4L))) {
+      when(competencyService.validate(1L, ids, true))
+          .thenThrow(new BusinessException(ErrorCode.COMPETENCY_LIMIT));
       assertThatThrownBy(
               () -> projectRecordService.create(1L, 3L, savedRequest(null, "한 일", null, ids)))
           .isInstanceOf(BusinessException.class)
@@ -252,6 +262,7 @@ class ProjectRecordServiceTest {
   @Test
   @DisplayName("28번 DRAFT: 역량을 함께 보내면 '기록 저장'으로 SAVED가 된다 (H-14)")
   void update_draftWithCompetencies_becomesSaved() {
+    when(competencyService.validate(1L, List.of(3L, 21L), true)).thenReturn(Set.of(3L, 21L));
     ProjectRecord record = record(ProjectRecordStatus.DRAFT);
     when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
 
@@ -280,6 +291,8 @@ class ProjectRecordServiceTest {
   @Test
   @DisplayName("28번 DRAFT: 역량이 4개면 COMPETENCY_LIMIT이고 DRAFT로 남는다")
   void update_draftSaveWithFourCompetencies_throwsCompetencyLimit() {
+    when(competencyService.validate(1L, List.of(1L, 2L, 3L, 4L), true))
+        .thenThrow(new BusinessException(ErrorCode.COMPETENCY_LIMIT));
     ProjectRecord record = record(ProjectRecordStatus.DRAFT);
     when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
 
@@ -296,6 +309,8 @@ class ProjectRecordServiceTest {
   @Test
   @DisplayName("28번 SAVED: competencyIds를 빈 배열로 보내면 COMPETENCY_LIMIT")
   void update_savedWithEmptyCompetencies_throwsCompetencyLimit() {
+    when(competencyService.validate(1L, List.of(), true))
+        .thenThrow(new BusinessException(ErrorCode.COMPETENCY_LIMIT));
     ProjectRecord record = record(ProjectRecordStatus.SAVED);
     when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
 
@@ -415,6 +430,7 @@ class ProjectRecordServiceTest {
   @Test
   @DisplayName("27번 SAVED: 기록 내용과 역량 Set으로 카드를 만들고, 받은 cardId를 응답에 넣는다")
   void create_saved_createsCardWithSourceAndCompetencies() {
+    when(competencyService.validate(1L, List.of(3L, 21L, 3L), true)).thenReturn(Set.of(3L, 21L));
     when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
     when(projectRecordRepository.save(any(ProjectRecord.class))).thenAnswer(i -> i.getArgument(0));
     when(storyCardService.createFromRecord(any(), any())).thenReturn(412L);
@@ -448,6 +464,7 @@ class ProjectRecordServiceTest {
   @Test
   @DisplayName("28번 DRAFT→SAVED: 카드를 만들고 받은 cardId를 응답에 넣는다")
   void update_draftToSaved_createsCard() {
+    when(competencyService.validate(1L, List.of(3L), true)).thenReturn(Set.of(3L));
     when(projectRecordRepository.findByIdAndUserId(77L, 1L))
         .thenReturn(Optional.of(record(ProjectRecordStatus.DRAFT)));
     when(storyCardService.createFromRecord(any(), eq(Set.of(3L)))).thenReturn(412L);
@@ -462,6 +479,7 @@ class ProjectRecordServiceTest {
   @Test
   @DisplayName("28번 SAVED: 바뀐 memo를 담아 카드에 반영하고, 역량을 안 보내면 null(태그 유지)로 넘긴다")
   void update_saved_syncsCardWithMemoAndNullCompetencies() {
+    when(competencyService.names(Set.of(3L))).thenReturn(Map.of(3L, "협업"));
     ProjectRecord record = record(ProjectRecordStatus.SAVED);
     ReflectionTestUtils.setField(record, "id", 77L);
     when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
@@ -477,6 +495,8 @@ class ProjectRecordServiceTest {
     assertThat(source.getValue().did()).isEqualTo("원래 한 일");
     assertThat(response.cardId()).isEqualTo(412L);
     verify(storyCardService, never()).createFromRecord(any(), any());
+    assertThat(response.competencies())
+        .containsExactly(new ProjectRecordResponse.CompetencyTag(3L, "협업"));
   }
 
   @Test
@@ -595,6 +615,7 @@ class ProjectRecordServiceTest {
   @Test
   @DisplayName("27번 첨부: 저장한 기록에 첨부를 연결하고, 연결된 첨부를 응답에 넣고, 카드에 첨부 수를 넘긴다")
   void create_saved_connectsAttachments() {
+    when(competencyService.validate(1L, List.of(3L), true)).thenReturn(Set.of(3L));
     when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
     when(projectRecordRepository.save(any(ProjectRecord.class)))
         .thenAnswer(
@@ -620,6 +641,7 @@ class ProjectRecordServiceTest {
   @Test
   @DisplayName("27번 첨부: 남의 첨부라 연결이 NOT_FOUND면 카드를 만들지 않는다 (같은 트랜잭션이라 기록 저장도 되돌아감)")
   void create_notMyAttachment_throwsWithoutCard() {
+    when(competencyService.validate(1L, List.of(3L), true)).thenReturn(Set.of(3L));
     when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
     when(projectRecordRepository.save(any(ProjectRecord.class))).thenAnswer(i -> i.getArgument(0));
     doThrow(new BusinessException(ErrorCode.NOT_FOUND))
