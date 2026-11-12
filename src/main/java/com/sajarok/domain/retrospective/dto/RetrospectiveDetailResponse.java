@@ -6,8 +6,6 @@ import com.sajarok.domain.retrospective.entity.Retrospective;
 import com.sajarok.domain.retrospective.entity.RetrospectiveType;
 import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
 import com.sajarok.global.time.KstTime;
-
-import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 

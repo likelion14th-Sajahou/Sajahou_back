@@ -12,6 +12,7 @@ import com.sajarok.domain.question.dto.QuestionView;
 import com.sajarok.domain.question.entity.QuestionOwner;
 import com.sajarok.domain.question.entity.QuestionStatus;
 import com.sajarok.domain.question.service.AiQuestionService;
+import com.sajarok.domain.retrospective.dto.RetrospectiveCompleteResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDraftRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
@@ -20,6 +21,7 @@ import com.sajarok.domain.retrospective.dto.RetrospectiveStartRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveState;
 import com.sajarok.domain.retrospective.entity.AssignmentMode;
 import com.sajarok.domain.retrospective.entity.Retrospective;
+import com.sajarok.domain.retrospective.entity.RetrospectiveStatus;
 import com.sajarok.domain.retrospective.entity.RetrospectiveType;
 import com.sajarok.domain.retrospective.repository.RetrospectiveRepository;
 import com.sajarok.domain.retrospective.service.RetrospectiveService.StartResult;
@@ -40,7 +42,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
- * 서비스 테스트: 12번 회고 시작(이미 있으면 그대로, 휴회, 과제 회고 조건), 13번 상세, 14번 임시저장, 15번 휴회 표시·해제, 16번 처음부터 규칙을 확인한다.
+ * 서비스 테스트: 12번 회고 시작(이미 있으면 그대로, 휴회, 과제 회고 조건), 13번 상세, 14번 임시저장, 15번 휴회 표시·해제, 16번 처음부터, 20번 저장
+ * 규칙을 확인한다.
  *
  * <p>DB 없이 레포지토리와 AI 질문·카드 서비스를 가짜(@Mock)로 바꾼다. 주차 확인은 주차 모듈이 생기면 더한다.
  */
@@ -447,5 +450,72 @@ class RetrospectiveServiceTest {
 
     assertThat(session.getMemo()).isEqualTo("완료 후에 고친 메모");
     assertThat(response.state()).isEqualTo(RetrospectiveState.COMPLETED);
+  }
+
+  @Test
+  @DisplayName("20번: 저장하면 카드를 공개하고 회고를 완료한다. 과제를 함께 기록(RECORD)했으면 남은 과제는 없다")
+  void complete_publishesCardAndCompletes() {
+    Retrospective session = mySessionAtStep3();
+    when(storyCardService.publishRetrospectiveCard(101L)).thenReturn(301L);
+
+    RetrospectiveCompleteResponse response = retrospectiveService.complete(ME, 101L);
+
+    assertThat(response.state()).isEqualTo(RetrospectiveState.COMPLETED);
+    assertThat(response.cardId()).isEqualTo(301L);
+    assertThat(response.isLate()).isFalse();
+    assertThat(response.assignmentPending()).isNull();
+    assertThat(session.getCompletedAt()).isNotNull();
+  }
+
+  @Test
+  @DisplayName("20번: 과제를 '나중에 쓸게요(LATER)'로 골랐으면 assignmentPending을 채운다")
+  void complete_assignmentLater_pending() {
+    Retrospective session = mySessionAtStep3();
+    ReflectionTestUtils.setField(session, "assignmentMode", AssignmentMode.LATER);
+    when(storyCardService.publishRetrospectiveCard(101L)).thenReturn(301L);
+
+    RetrospectiveCompleteResponse response = retrospectiveService.complete(ME, 101L);
+
+    assertThat(response.assignmentPending()).isNotNull();
+  }
+
+  @Test
+  @DisplayName("20번: 카드 초안이 없으면(19번 전) 409 INVALID_STATE이고, 회고는 완료되지 않는다")
+  void complete_noCard_notCompleted() {
+    Retrospective session = mySessionAtStep3();
+    when(storyCardService.publishRetrospectiveCard(101L))
+        .thenThrow(new BusinessException(ErrorCode.INVALID_STATE));
+
+    assertThatThrownBy(() -> retrospectiveService.complete(ME, 101L))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.INVALID_STATE);
+    assertThat(session.getCompletedAt()).isNull();
+    assertThat(session.getStatus()).isEqualTo(RetrospectiveStatus.IN_PROGRESS);
+  }
+
+  @Test
+  @DisplayName("20번: 완료한 회고를 다시 저장해도 처음 완료 시각은 그대로다 (지각 판정이 바뀌지 않게)")
+  void complete_again_keepsFirstCompletedAt() {
+    Retrospective session = mySessionAtStep3();
+    java.time.LocalDateTime first = java.time.LocalDateTime.of(2026, 11, 8, 21, 0);
+    session.complete(first);
+    when(storyCardService.publishRetrospectiveCard(101L)).thenReturn(301L);
+
+    retrospectiveService.complete(ME, 101L);
+
+    assertThat(session.getCompletedAt()).isEqualTo(first);
+  }
+
+  @Test
+  @DisplayName("20번: 없거나 남의 회고면 NOT_FOUND이고, 카드는 건드리지 않는다")
+  void complete_notMine_notFound() {
+    when(retrospectiveRepository.findByIdAndUserId(999L, ME)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> retrospectiveService.complete(ME, 999L))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verifyNoInteractions(storyCardService);
   }
 }

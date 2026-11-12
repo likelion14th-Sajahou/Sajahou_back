@@ -102,4 +102,16 @@ public class StoryCardService {
         .findByRetrospectiveId(retrospectiveId)
         .map(card -> StoryCardDetailResponse.of(card, null, null));
   }
+
+  /** 20번 회고 저장: 회고의 카드 초안을 공개한다. 초안이 없으면 409(19번을 먼저), 태그가 1~3개가 아니면 400 */
+  @Transactional
+  public Long publishRetrospectiveCard(Long retrospectiveId) {
+    StoryCard card =
+        storyCardRepository
+            .findByRetrospectiveId(retrospectiveId)
+            .orElseThrow(
+                () -> new BusinessException(ErrorCode.INVALID_STATE, "회고록·카드 초안을 먼저 만들어 주세요."));
+    card.publish();
+    return card.getId();
+  }
 }

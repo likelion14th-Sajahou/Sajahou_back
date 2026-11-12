@@ -1,5 +1,6 @@
 package com.sajarok.domain.retrospective.controller;
 
+import com.sajarok.domain.retrospective.dto.RetrospectiveCompleteResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDraftRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
@@ -69,5 +70,12 @@ public class RetrospectiveController {
       @PathVariable Long retrospectiveId, @Valid @RequestBody RetrospectiveDraftRequest request) {
     return ApiResponse.ok(
         retrospectiveService.saveDraft(currentUserProvider.getUserId(), retrospectiveId, request));
+  }
+
+  /** 20번: 저장하고 사자록에 추가 */
+  @PostMapping("/{retrospectiveId}/complete")
+  public ApiResponse<RetrospectiveCompleteResponse> complete(@PathVariable Long retrospectiveId) {
+    return ApiResponse.ok(
+        retrospectiveService.complete(currentUserProvider.getUserId(), retrospectiveId));
   }
 }

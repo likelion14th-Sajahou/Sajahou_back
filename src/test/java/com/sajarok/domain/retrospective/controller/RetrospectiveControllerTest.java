@@ -15,6 +15,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.sajarok.domain.question.dto.QuestionView;
 import com.sajarok.domain.question.entity.QuestionStatus;
+import com.sajarok.domain.retrospective.dto.RetrospectiveCompleteResponse;
+import com.sajarok.domain.retrospective.dto.RetrospectiveCompleteResponse.AssignmentPending;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse.Materials;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDraftRequest;
@@ -324,5 +326,51 @@ class RetrospectiveControllerTest {
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
     verifyNoInteractions(retrospectiveService);
+  }
+
+  @Test
+  @DisplayName("20번: 저장하면 200과 state·cardId·isLate·assignmentPending을 준다")
+  void complete_returns200() throws Exception {
+    when(retrospectiveService.complete(1L, 101L))
+        .thenReturn(
+            new RetrospectiveCompleteResponse(
+                RetrospectiveState.COMPLETED,
+                301L,
+                null,
+                false,
+                new AssignmentPending(null, null)));
+
+    mockMvc
+        .perform(post("/api/v1/retrospectives/101/complete"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.state").value("COMPLETED"))
+        .andExpect(jsonPath("$.data.cardId").value(301))
+        .andExpect(jsonPath("$.data.isLate").value(false))
+        .andExpect(jsonPath("$.data.weekNumber").value(nullValue()))
+        .andExpect(jsonPath("$.data.assignmentPending.deadline").value(nullValue()));
+  }
+
+  @Test
+  @DisplayName("20번: 역량 태그를 1~3개 고르지 않았으면 400 COMPETENCY_LIMIT를 준다")
+  void complete_competencyLimit_returns400() throws Exception {
+    when(retrospectiveService.complete(1L, 101L))
+        .thenThrow(new BusinessException(ErrorCode.COMPETENCY_LIMIT));
+
+    mockMvc
+        .perform(post("/api/v1/retrospectives/101/complete"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("COMPETENCY_LIMIT"));
+  }
+
+  @Test
+  @DisplayName("20번: 카드 초안이 없으면 409 INVALID_STATE를 준다")
+  void complete_noCard_returns409() throws Exception {
+    when(retrospectiveService.complete(1L, 101L))
+        .thenThrow(new BusinessException(ErrorCode.INVALID_STATE));
+
+    mockMvc
+        .perform(post("/api/v1/retrospectives/101/complete"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.error.code").value("INVALID_STATE"));
   }
 }

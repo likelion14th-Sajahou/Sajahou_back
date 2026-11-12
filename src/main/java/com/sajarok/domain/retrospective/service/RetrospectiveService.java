@@ -4,6 +4,7 @@ import com.sajarok.domain.question.dto.QuestionView;
 import com.sajarok.domain.question.entity.QuestionOwner;
 import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.domain.retrospective.dto.HomeRetroSummary;
+import com.sajarok.domain.retrospective.dto.RetrospectiveCompleteResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDraftRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
@@ -127,5 +128,15 @@ public class RetrospectiveService {
     // TODO(첨부 담당): request.has("attachmentIds")면 attachmentService.connect(userId,
     // request.getAttachmentIds(), AttachmentOwner.retrospective(retrospectiveId))
     return RetrospectiveProgressResponse.from(retrospective);
+  }
+
+  /** 20번: 저장하고 사자록에 추가. 회고 완료와 카드 공개를 한 트랜잭션에서 */
+  @Transactional
+  public RetrospectiveCompleteResponse complete(Long userId, Long retrospectiveId) {
+    Retrospective retrospective = findMine(userId, retrospectiveId);
+    // TODO(주차 담당): 처음 완료하는데(completedAt == null) 마감 + 7일이 지났으면 409 DEADLINE_PASSED
+    Long cardId = storyCardService.publishRetrospectiveCard(retrospectiveId);
+    retrospective.complete(LocalDateTime.now(KstTime.OFFSET));
+    return RetrospectiveCompleteResponse.of(retrospective, cardId);
   }
 }
