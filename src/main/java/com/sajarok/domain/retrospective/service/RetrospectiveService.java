@@ -199,13 +199,7 @@ public class RetrospectiveService {
         attachmentService.findAll(AttachmentOwner.retrospective(retrospectiveId));
     StoryCardDetailResponse card =
         storyCardService.findDetailByRetrospective(retrospectiveId).orElse(null);
-    Long weekId = retrospective.getWeekId();
-    WeekSchedule schedule =
-        userRepository
-            .findById(userId)
-            .map(User::getPart)
-            .map(part -> weekService.findSchedules(List.of(weekId), part).get(weekId))
-            .orElse(null);
+    WeekSchedule schedule = scheduleOf(userId, retrospective);
     WeekInfo week =
         schedule == null
             ? null
@@ -219,7 +213,7 @@ public class RetrospectiveService {
   public RetrospectiveProgressResponse saveDraft(
       Long userId, Long retrospectiveId, RetrospectiveDraftRequest request) {
     Retrospective retrospective = findMine(userId, retrospectiveId);
-    // TODO(주차 담당): 진행 중인 회고가 마감 + 7일을 넘겼으면 409 DEADLINE_PASSED (완료한 회고는 기간 상관없음)
+    checkWritable(retrospective, scheduleOf(userId, retrospective)); // 바꾸기 전에 기간부터
     // TODO(회원 담당): codeReview는 FE 파트만. 아니면 400 VALIDATION_ERROR
     retrospective.saveDraft(request, LocalDateTime.now(KstTime.OFFSET));
     if (request.has("attachmentIds")) {
@@ -234,11 +228,19 @@ public class RetrospectiveService {
   @Transactional
   public RetrospectiveCompleteResponse complete(Long userId, Long retrospectiveId) {
     Retrospective retrospective = findMine(userId, retrospectiveId);
-    // TODO(주차 담당): 처음 완료하는데(completedAt == null) 마감 + 7일이 지났으면 409 DEADLINE_PASSED
+    WeekSchedule schedule = scheduleOf(userId, retrospective);
+    checkWritable(retrospective, schedule); // 처음 완료할 때만 막힌다 (다시 저장은 기간 상관없음)
     Long cardId = storyCardService.publishRetrospectiveCard(retrospectiveId);
     retrospective.complete(LocalDateTime.now(KstTime.OFFSET));
     return RetrospectiveCompleteResponse.of(
-        retrospective, cardId, weekNumberOf(retrospective.getWeekId()));
+        retrospective,
+        cardId,
+        // 삼항에서 Integer와 int를 섞으면 int로 풀다가(null 언박싱) NPE가 나서 Integer로 맞춘다
+        schedule == null
+            ? weekNumberOf(retrospective.getWeekId())
+            : Integer.valueOf(schedule.weekNumber()),
+        deadlineOf(retrospective, schedule),
+        schedule == null ? null : schedule.assignmentDeadline());
   }
 
   /** 주차 ID → 주차 번호 (지윤님 WeekService). 주차 일정에 없으면 null */
@@ -246,8 +248,8 @@ public class RetrospectiveService {
     return weekService.findWeekNumbers(List.of(weekId)).get(weekId);
   }
 
-  /** 과제 회고는 마감 + 7일까지 이어 쓸 수 있고, 그동안 이번 주 화면의 openAssignments에 남는다 */
-  private static final int ASSIGNMENT_GRACE_DAYS = 7;
+  /** 회고는 마감 + 7일까지 이어 쓸 수 있다. 과제 회고는 그동안 이번 주 화면의 openAssignments에 남는다 */
+  private static final int GRACE_DAYS = 7;
 
   /**
    * 11번: 이번 주 회고 화면. 이번 주 정보 + 이번 주 세션 회고 + 남은 과제 회고 목록.
@@ -288,7 +290,7 @@ public class RetrospectiveService {
             .filter(
                 s ->
                     s.assignmentDeadline() == null
-                        || now.isBefore(s.assignmentDeadline().plusDays(ASSIGNMENT_GRACE_DAYS)))
+                        || now.isBefore(s.assignmentDeadline().plusDays(GRACE_DAYS)))
             .sorted(Comparator.comparingInt(WeekSchedule::weekNumber))
             .map(s -> OpenAssignment.of(assignmentsByWeek.get(s.weekId()), s))
             .toList();
@@ -303,5 +305,37 @@ public class RetrospectiveService {
         .findById(userId)
         .map(User::getPart)
         .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+  }
+
+  /** 이 회고 주차의 내 파트 일정. 회원이나 일정이 없으면 null */
+  private WeekSchedule scheduleOf(Long userId, Retrospective retrospective) {
+    Long weekId = retrospective.getWeekId();
+    return userRepository
+        .findById(userId)
+        .map(User::getPart)
+        .map(part -> weekService.findSchedules(List.of(weekId), part).get(weekId))
+        .orElse(null);
+  }
+
+  /** 세션 회고는 세션 마감, 과제 회고는 과제 마감. 모르면 null */
+  private static OffsetDateTime deadlineOf(Retrospective r, WeekSchedule schedule) {
+    if (schedule == null) {
+      return null;
+    }
+    return r.getType() == RetrospectiveType.ASSIGNMENT
+        ? schedule.assignmentDeadline()
+        : schedule.sessionDeadline();
+  }
+
+  /**
+   * 14·20번: 진행 중인 회고가 마감 + 7일을 넘겼으면 409 DEADLINE_PASSED. 완료한 회고는 기간과 상관없이 고칠 수 있다. 마감을 모르면 막지 않는다.
+   */
+  private static void checkWritable(Retrospective r, WeekSchedule schedule) {
+    OffsetDateTime deadline = deadlineOf(r, schedule);
+    if (r.getStatus() != RetrospectiveStatus.COMPLETED
+        && deadline != null
+        && OffsetDateTime.now(KstTime.OFFSET).isAfter(deadline.plusDays(GRACE_DAYS))) {
+      throw new BusinessException(ErrorCode.DEADLINE_PASSED);
+    }
   }
 }

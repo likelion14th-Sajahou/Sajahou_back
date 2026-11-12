@@ -877,4 +877,111 @@ class RetrospectiveServiceTest {
         .isEqualTo(ErrorCode.NOT_FOUND);
     verifyNoInteractions(weekService);
   }
+
+  // ---------- 마감 (14·20번 DEADLINE_PASSED, 지각) ----------
+
+  /** 10주차 내 파트 일정 */
+  private void week10Deadlines(OffsetDateTime sessionDeadline, OffsetDateTime assignmentDeadline) {
+    iAmBackend();
+    when(weekService.findSchedules(List.of(WEEK), Part.BACKEND))
+        .thenReturn(
+            Map.of(WEEK, new WeekSchedule(WEEK, 10, "세션 10", sessionDeadline, assignmentDeadline)));
+  }
+
+  private static RetrospectiveDraftRequest memo(String memo) {
+    RetrospectiveDraftRequest request = new RetrospectiveDraftRequest();
+    request.setMemo(memo);
+    return request;
+  }
+
+  @Test
+  @DisplayName("14번: 진행 중인 회고가 마감 + 7일을 넘겼으면 409 DEADLINE_PASSED이고, 아무것도 바뀌지 않는다")
+  void draft_deadlinePassed() {
+    Retrospective session = mySessionAtStep3();
+    week10Deadlines(NOW.minusDays(8), null);
+
+    assertThatThrownBy(() -> retrospectiveService.saveDraft(ME, 101L, memo("늦게 쓴 메모")))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.DEADLINE_PASSED);
+    assertThat(session.getMemo()).isEqualTo("이번 주 고민");
+    verifyNoInteractions(attachmentService);
+  }
+
+  @Test
+  @DisplayName("14번: 마감이 지났어도 7일 안이면 이어 쓸 수 있다")
+  void draft_withinGrace_allowed() {
+    Retrospective session = mySessionAtStep3();
+    week10Deadlines(NOW.minusDays(3), null);
+
+    retrospectiveService.saveDraft(ME, 101L, memo("조금 늦은 메모"));
+
+    assertThat(session.getMemo()).isEqualTo("조금 늦은 메모");
+  }
+
+  @Test
+  @DisplayName("14번: 완료한 회고는 기간이 지나도 고칠 수 있다")
+  void draft_completedAfterDeadline_allowed() {
+    Retrospective session = mySessionAtStep3();
+    session.complete(java.time.LocalDateTime.of(2026, 11, 8, 21, 0));
+    week10Deadlines(NOW.minusDays(30), null);
+
+    retrospectiveService.saveDraft(ME, 101L, memo("완료 후 고친 메모"));
+
+    assertThat(session.getMemo()).isEqualTo("완료 후 고친 메모");
+  }
+
+  @Test
+  @DisplayName("14번: 과제 회고는 세션 마감이 아니라 과제 마감으로 본다")
+  void draft_assignmentUsesAssignmentDeadline() {
+    Retrospective assignment = Retrospective.start(ME, WEEK, RetrospectiveType.ASSIGNMENT);
+    ReflectionTestUtils.setField(assignment, "id", 205L);
+    when(retrospectiveRepository.findByIdAndUserId(205L, ME)).thenReturn(Optional.of(assignment));
+    week10Deadlines(NOW.minusDays(20), NOW.plusDays(1));
+
+    retrospectiveService.saveDraft(ME, 205L, memo("과제 회고"));
+
+    assertThat(assignment.getMemo()).isEqualTo("과제 회고");
+  }
+
+  @Test
+  @DisplayName("20번: 처음 완료하는데 마감 + 7일이 지났으면 409 DEADLINE_PASSED이고, 카드도 공개하지 않는다")
+  void complete_deadlinePassed() {
+    Retrospective session = mySessionAtStep3();
+    week10Deadlines(NOW.minusDays(8), null);
+
+    assertThatThrownBy(() -> retrospectiveService.complete(ME, 101L))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.DEADLINE_PASSED);
+    assertThat(session.getStatus()).isEqualTo(RetrospectiveStatus.IN_PROGRESS);
+    verifyNoInteractions(storyCardService);
+  }
+
+  @Test
+  @DisplayName("20번: 마감은 지났지만 7일 안에 완료하면 isLate=true. LATER면 과제 마감을 assignmentPending에 넣는다")
+  void complete_late() {
+    Retrospective session = mySessionAtStep3();
+    ReflectionTestUtils.setField(session, "assignmentMode", AssignmentMode.LATER);
+    OffsetDateTime assignmentDeadline = NOW.plusDays(2);
+    week10Deadlines(NOW.minusDays(1), assignmentDeadline);
+    when(storyCardService.publishRetrospectiveCard(101L)).thenReturn(301L);
+
+    RetrospectiveCompleteResponse response = retrospectiveService.complete(ME, 101L);
+
+    assertThat(response.isLate()).isTrue();
+    assertThat(response.weekNumber()).isEqualTo(10);
+    assertThat(response.assignmentPending().weekNumber()).isEqualTo(10);
+    assertThat(response.assignmentPending().deadline()).isEqualTo(assignmentDeadline);
+  }
+
+  @Test
+  @DisplayName("20번: 마감 전에 완료하면 isLate=false")
+  void complete_onTime() {
+    mySessionAtStep3();
+    week10Deadlines(NOW.plusDays(1), null);
+    when(storyCardService.publishRetrospectiveCard(101L)).thenReturn(301L);
+
+    assertThat(retrospectiveService.complete(ME, 101L).isLate()).isFalse();
+  }
 }
