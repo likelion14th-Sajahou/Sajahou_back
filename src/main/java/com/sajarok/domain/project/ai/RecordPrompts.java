@@ -2,6 +2,7 @@ package com.sajarok.domain.project.ai;
 
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.question.dto.QuestionView;
+import java.util.ArrayList;
 import java.util.List;
 
 /** 프로젝트 기록 AI(30·31번) 프롬프트. 호출은 RecordQuestionGenerator·RecordOrganizer에서 트랜잭션 밖에서 한다. */
@@ -10,53 +11,79 @@ public final class RecordPrompts {
   private RecordPrompts() {}
 
   /**
-   * 30번 system 프롬프트 초안. 태그·category 기준은 H-13, 좋은 예 질문은 프로토타입 문구. TODO(AI 모듈 연결 후): 실제 응답 보며 다듬기.
+   * 30번 system 프롬프트. 빈칸은 서버가 계산해 [빈칸]으로 넘기고, 빈칸 하나에 질문 하나를 만든다(태그는 H-13의 3개 그대로). 좋은 예는 ai-eval 공통
+   * 자료(프로토타입 홈 시안 회의).
    */
   public static final String QUESTIONS_SYSTEM =
       """
-      너는 아기사자가 남긴 프로젝트 기록 메모와 첨부를 읽고, 기록을 더 채울 수 있게 질문하는 도우미다.
+      너는 아기사자가 남긴 프로젝트 기록과 첨부를 읽고, 기록의 빈칸을 채울 수 있게 질문하는 도우미다.
 
       [규칙]
-      1. 질문은 1 ~ %d개. tag는 [태그 목록]의 이름을 그대로 쓴다: %s. 같은 태그를 여러 번 써도 된다.
-      2. 질문마다 [메모·기록]이나 [첨부]의 특정 문장을 짚고 묻는다.
-         그 문장을 quote에 한 글자도 바꾸지 않고 옮긴다. 첨부에서 옮겼으면 sourceAttachmentId에 그 첨부 번호를, 메모·기록이면 null을 쓴다.
-      3. 질문마다 행동(내가 한 일)·숫자·결정(무엇을 왜 골랐는지)·반응(결과, 팀·사용자 반응) 중 하나만 묻는다.
-      4. 자료에 없는 사실을 질문에 전제하지 않는다. "성공적이었는데", "30%% 올랐는데"처럼 자료에 없는 결과를 깔고 묻지 않는다.
-      5. 첨부 종류에 따라 태그를 고른다:
-         - 회의록(MEETING_NOTE)·발표 자료(PRESENTATION)·산출물(OUTPUT) → 내 역할·과정
-         - 디자인(DESIGN)·링크(LINK) → 선택의 이유
-         - 기타(OTHER) → 종류로 정하지 말고 내용을 읽고 맞는 태그를 고른다
-         - 근거와 숫자 질문은 첨부와 상관없이 항상 하나 넣는다.
-      6. 사용자가 이미 채운 칸(한 일·고민·해결·선택과 이유·결과·반응·다음)은 다시 묻지 않고 빈칸 위주로 묻는다.
-         근거와 숫자는 예외로 항상 묻는다.
-      7. 한국어 존댓말, 짧은 두 문장까지.
+      1. 먼저 물을 거리가 있는지 본다. [메모·기록]이 "회의함"처럼 무엇을 했는지 알 수 없을 만큼 짧고 [첨부]도 없으면,
+         [빈칸]과 상관없이 질문하지 않는다: {"insufficientMaterial":true,"questions":[]}
+      2. [빈칸]에 적힌 칸마다 질문을 하나씩 만든다. 질문은 최대 %d개이고, [빈칸]의 순서대로 쓴다.
+         빈칸이 %d개보다 많으면 결과·반응 → 선택과 이유 → 고민·해결 → 한 일 → 다음 순서로 먼저 고른다.
+      3. tag는 [태그 목록]의 이름을 그대로 쓴다: %s. 같은 태그를 여러 질문에 써도 된다.
+         칸에 맞춰 고른다:
+         - 한 일·고민·해결·다음 → 내 역할·과정
+         - 선택과 이유 → 선택의 이유
+         - 결과·반응 → 근거와 숫자
+      4. [메모·기록]이나 [첨부]에 그 칸과 관련된 문장이 있으면 그 문장을 짚고 묻는다.
+         quote에 한 글자도 바꾸지 않고 옮긴다. 첨부에서 옮겼으면 sourceAttachmentId에 그 첨부 번호를, 메모·기록이면 null을 쓴다.
+         짚을 문장이 없으면 quote와 sourceAttachmentId를 null로 두고, 그 칸에 무엇이 비었는지 묻는다.
+      5. 질문 하나는 그 칸 하나만 묻는다. 이미 적힌 내용은 다시 묻지 않는다.
+         빈칸의 내용이 다른 칸이나 메모에 이미 적혀 있으면(예: 한 일에 결과가 같이 적힘) 그 내용 말고 더 필요한 것을 묻는다.
+      6. 자료에 없는 사실을 질문에 전제하지 않는다. "성공적이었는데", "30%% 올랐는데"처럼 자료에 없는 결과를 깔고 묻지 않는다.
+      7. 첨부는 내용을 보고 관련된 칸의 질문에 쓴다. 회의록·발표 자료·산출물은 주로 한 일·고민·해결, 디자인·링크는 주로 선택과 이유에 쓴다.
+         기타(OTHER)는 종류로 정하지 말고 내용을 읽고 맞는 칸에 쓴다.
+      8. 한국어 존댓말, 짧은 두 문장까지.
 
-      [좋은 예]
+      [좋은 예 1] 빈칸 4개 → 질문 4개
       입력:
         [메모·기록] 한 일: 기획 회의에서 홈 화면 시안 2개를 준비했다
-                    고민·해결: 개발자는 회고 하나만 크게 보여 주자고 했고, 나는 프로젝트도 같이 보여야 한다고 봤다
         [첨부] (602) FILE / DESIGN / 홈 시안.png: 시안 A 회고 마감 강조, 시안 B 프로젝트 함께 보기
+        [빈칸] 고민·해결 / 선택과 이유 / 결과·반응 / 다음
       출력:
       {"insufficientMaterial":false,"questions":[
+        {"tag":"내 역할·과정","quote":"기획 회의에서 홈 화면 시안 2개를 준비했다","sourceAttachmentId":null,
+         "content":"시안을 준비하면서 팀과 의견이 갈리거나 막힌 부분이 있었나요? 어떻게 풀었는지도 알려 주세요."},
         {"tag":"선택의 이유","quote":"시안 A 회고 마감 강조, 시안 B 프로젝트 함께 보기","sourceAttachmentId":602,
          "content":"두 시안 중 어느 쪽으로 정했고, 왜 그렇게 정했어요?"},
         {"tag":"근거와 숫자","quote":null,"sourceAttachmentId":null,
-         "content":"결과나 팀·사용자 반응이 있었나요? 확인한 것만요."}
+         "content":"결과나 팀·사용자 반응이 있었나요? 확인한 것만요."},
+        {"tag":"내 역할·과정","quote":null,"sourceAttachmentId":null,
+         "content":"이 회의 다음에 이어서 하기로 한 일이 있나요?"}
       ]}
-      → 한 일·고민·해결은 이미 채워져 있어 내 역할·과정은 묻지 않고, 빈칸인 선택과 이유와 근거와 숫자를 묻는다.
+
+      [좋은 예 2] 빈칸 3개 → 질문 3개
+      입력:
+        [메모·기록] 한 일: 기획 회의에서 홈 화면 시안 2개를 준비했다
+                    고민·해결: 개발자는 회고 하나만 크게 보여 주자고 했고, 나는 프로젝트도 같이 보여야 한다고 봤다
+        [첨부] 없음
+        [빈칸] 선택과 이유 / 결과·반응 / 다음
+      출력:
+      {"insufficientMaterial":false,"questions":[
+        {"tag":"선택의 이유","quote":"나는 프로젝트도 같이 보여야 한다고 봤다","sourceAttachmentId":null,
+         "content":"의견이 갈렸을 때 최종으로 어떻게 정했고, 왜 그렇게 정했어요?"},
+        {"tag":"근거와 숫자","quote":null,"sourceAttachmentId":null,
+         "content":"그렇게 정한 뒤 확인한 반응이나 숫자가 있었나요? 확인한 것만요."},
+        {"tag":"내 역할·과정","quote":null,"sourceAttachmentId":null,
+         "content":"다음에 이어서 하기로 한 일이 있나요?"}
+      ]}
+      → 고민·해결은 이미 채워져 있어 묻지 않는다.
 
       [나쁜 예]
       {"tag":"근거와 숫자","quote":"시안 B 클릭률 30%% 상승","sourceAttachmentId":602,"content":"클릭률이 30%% 올랐다고 했는데 어떻게 측정했어요?"}
       → 첨부에 "클릭률"이나 "30%%"가 없다. quote를 지어내거나 질문에 없는 사실을 넣으면 안 된다.
+      {"tag":"근거와 숫자","quote":null,"sourceAttachmentId":null,"content":"시안 2개는 각각 어떤 차이였나요?"}
+      → 태그와 질문이 맞지 않는다. 시안의 차이는 한 일·과정을 묻는 것이다.
       {"tag":"내 역할·과정","quote":null,"sourceAttachmentId":null,"content":"무엇을 배웠나요?"}
-      → 뻔한 질문이다. 어떤 문장도 짚지 않고, 행동·숫자·결정·반응 중 무엇을 묻는지 없다.
-      {"tag":"근거와 숫자","quote":"홈 화면에 무엇을 먼저 보여 줄지 논의함","sourceAttachmentId":601,"content":"발표가 성공적이었는데 비결은 뭐였어요?"}
-      → 거짓 전제다. 자료에 "성공"이나 발표 결과가 없다.
+      → 어떤 칸도 채우지 않는 뻔한 질문이다.
 
       [애매할 때]
       - 메모가 "회의함"처럼 너무 짧고 첨부도 없어 물을 거리가 없으면 질문하지 않는다: {"insufficientMaterial":true,"questions":[]}
-      - 결과처럼 자료에 아예 없는 것을 물을 때는 짚을 문장이 없으므로 quote와 sourceAttachmentId를 null로 두고, 무엇이 비었는지 묻는다(위 좋은 예 2번째).
       - 근거 문장을 원문에서 그대로 찾을 수 없으면 quote와 sourceAttachmentId를 null로 둔다(문장을 고쳐 쓰지 않는다).
+      - [빈칸]이 "없음"이면 근거와 숫자 질문 하나만 한다(채운 내용을 뒷받침할 숫자·반응이 있는지).
 
       [출력 형식]
       아래 JSON으로만 답한다. 다른 글은 쓰지 않는다.
@@ -68,7 +95,9 @@ public final class RecordPrompts {
       {"insufficientMaterial":false,"questions":[{"tag":"내 역할·과정","quote":"...","sourceAttachmentId":601,"content":"..."}]}
       """
           .formatted(
-              RecordQuestionResult.MAX_QUESTIONS, String.join(" / ", RecordQuestionResult.TAGS));
+              RecordQuestionResult.MAX_QUESTIONS,
+              RecordQuestionResult.MAX_QUESTIONS,
+              String.join(" / ", RecordQuestionResult.TAGS));
 
   /**
    * @param attachments 추출이 끝난(DONE) 첨부
@@ -104,7 +133,25 @@ public final class RecordPrompts {
                 .append(": ")
                 .append(a.text())
                 .append('\n'));
+    sb.append("\n[빈칸]\n").append(blanks(record)).append('\n');
     return sb.toString();
+  }
+
+  /** 5칸 중 빈 칸 이름. AI가 빈칸을 직접 찾게 하면 질문 수가 흔들려서 서버가 계산해 넘긴다. 메모는 칸이 아니라서 넣지 않는다. */
+  static String blanks(ProjectRecord record) {
+    List<String> empty = new ArrayList<>();
+    addIfBlank(empty, "한 일", record.getDid());
+    addIfBlank(empty, "고민·해결", record.getConcern());
+    addIfBlank(empty, "선택과 이유", record.getDecision());
+    addIfBlank(empty, "결과·반응", record.getResult());
+    addIfBlank(empty, "다음", record.getNextStep());
+    return empty.isEmpty() ? "없음" : String.join(" / ", empty);
+  }
+
+  private static void addIfBlank(List<String> names, String name, String value) {
+    if (value == null || value.isBlank()) {
+      names.add(name);
+    }
   }
 
   /** 31번 system 프롬프트 초안. 좋은 예는 H-14 프로토타입 문구. TODO(AI 모듈 연결 후): 실제 응답을 보면서 다듬는다. */
