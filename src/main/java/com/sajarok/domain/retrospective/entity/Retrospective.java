@@ -6,6 +6,7 @@ import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
+import java.util.stream.Stream;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -134,5 +135,16 @@ public class Retrospective extends BaseTimeEntity {
     if (draft.has("codeReview")) this.codeReview = draft.getCodeReview();
     if (draft.has("memo")) this.memo = draft.getMemo();
     this.lastSavedAt = now;
+  }
+
+  /** 17번: 질문을 만들 때의 자료 해시를 남긴다 */
+  public void recordQuestionInput(String hash) {
+    this.questionInputHash = hash;
+  }
+
+  /** 17번: 실습·과제·코드 리뷰·메모 중 하나라도 글이 있으면 true */
+  public boolean hasMaterial() {
+    return Stream.of(practiceContent, assignmentContent, codeReview, memo)
+        .anyMatch(v -> v != null && !v.isBlank());
   }
 }
