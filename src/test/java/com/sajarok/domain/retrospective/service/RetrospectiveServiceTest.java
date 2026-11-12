@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -23,6 +24,8 @@ import com.sajarok.domain.question.entity.QuestionStatus;
 import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.domain.retrospective.dto.HomeRetroSummary;
 import com.sajarok.domain.retrospective.dto.RetrospectiveCompleteResponse;
+import com.sajarok.domain.retrospective.dto.RetrospectiveCurrentResponse;
+import com.sajarok.domain.retrospective.dto.RetrospectiveCurrentResponse.OpenAssignment;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDraftRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
@@ -41,9 +44,15 @@ import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
 import com.sajarok.domain.storycard.entity.StoryCardStatus;
 import com.sajarok.domain.storycard.entity.StoryCardType;
 import com.sajarok.domain.storycard.service.StoryCardService;
+import com.sajarok.domain.user.entity.Part;
+import com.sajarok.domain.user.entity.User;
+import com.sajarok.domain.user.repository.UserRepository;
 import com.sajarok.domain.week.service.WeekService;
+import com.sajarok.domain.week.service.WeekService.CurrentWeek;
+import com.sajarok.domain.week.service.WeekService.WeekSchedule;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -74,6 +83,7 @@ class RetrospectiveServiceTest {
   @Mock private AiQuestionService aiQuestionService;
   @Mock private StoryCardService storyCardService;
   @Mock private WeekService weekService;
+  @Mock private UserRepository userRepository;
   @Mock private AttachmentService attachmentService;
 
   @InjectMocks private RetrospectiveService retrospectiveService;
@@ -381,7 +391,10 @@ class RetrospectiveServiceTest {
   @DisplayName("13번: 상세는 회고 자료와 이 회고의 질문·첨부·카드, 주차 번호를 한 번에 모아 준다")
   void detail_collectsQuestionsAttachmentsAndCard() {
     mySessionAtStep3();
-    when(weekService.findWeekNumbers(List.of(WEEK))).thenReturn(Map.of(WEEK, 10));
+    iAmBackend();
+    OffsetDateTime deadline = OffsetDateTime.parse("2026-11-08T23:59:00+09:00");
+    when(weekService.findSchedules(List.of(WEEK), Part.BACKEND))
+        .thenReturn(Map.of(WEEK, new WeekSchedule(WEEK, 10, "JPA 연관관계", deadline, null)));
     when(aiQuestionService.findAll(QuestionOwner.retrospective(101L)))
         .thenReturn(List.of(firstQuestion()));
     when(attachmentService.findAll(RETRO_101)).thenReturn(List.of(githubLink()));
@@ -397,6 +410,8 @@ class RetrospectiveServiceTest {
     assertThat(response.questions()).extracting(QuestionView::questionId).containsExactly(901L);
     assertThat(response.card().cardId()).isEqualTo(301L);
     assertThat(response.week().weekNumber()).isEqualTo(10);
+    assertThat(response.week().sessionTitle()).isEqualTo("JPA 연관관계");
+    assertThat(response.week().sessionDeadline()).isEqualTo(deadline);
     assertThat(response.attachments())
         .extracting(AttachmentView::attachmentId, AttachmentView::linkType)
         .containsExactly(org.assertj.core.groups.Tuple.tuple(501L, LinkType.GITHUB));
@@ -750,5 +765,116 @@ class RetrospectiveServiceTest {
 
     assertThat(response.weekNumber()).isEqualTo(10);
     assertThat(response.assignmentPending().weekNumber()).isEqualTo(10);
+  }
+
+  // ---------- 11번 이번 주 회고 ----------
+
+  /** 나는 백엔드 파트 회원 */
+  private void iAmBackend() {
+    User me = mock(User.class);
+    when(me.getPart()).thenReturn(Part.BACKEND);
+    when(userRepository.findById(ME)).thenReturn(Optional.of(me));
+  }
+
+  private static final OffsetDateTime NOW = OffsetDateTime.now(java.time.ZoneOffset.ofHours(9));
+
+  private void currentWeekIs10() {
+    when(weekService.findCurrentWeek(Part.BACKEND))
+        .thenReturn(
+            new CurrentWeek(WEEK, 10, "REGULAR_3", "JPA 연관관계", NOW.plusDays(1), NOW.plusDays(3)));
+  }
+
+  /** 과제를 정해 둔 세션 회고 (id, 주차, 과제 방식, 완료 여부) */
+  private static Retrospective sessionOf(long id, long weekId, AssignmentMode mode, boolean done) {
+    Retrospective r = retro(id, weekId, RetrospectiveType.SESSION, done);
+    ReflectionTestUtils.setField(r, "assignmentMode", mode);
+    return r;
+  }
+
+  @Test
+  @DisplayName(
+      "11번: 이번 주 회고가 없으면 session은 NOT_STARTED(id 등 null), 남은 과제가 없으면 openAssignments는 빈 목록")
+  void current_notStarted() {
+    iAmBackend();
+    currentWeekIs10();
+    when(retrospectiveRepository.findAllByUserId(ME)).thenReturn(List.of());
+
+    RetrospectiveCurrentResponse response = retrospectiveService.getCurrent(ME);
+
+    assertThat(response.week().weekId()).isEqualTo(WEEK);
+    assertThat(response.week().weekNumber()).isEqualTo(10);
+    assertThat(response.week().sessionTitle()).isEqualTo("JPA 연관관계");
+    assertThat(response.session().id()).isNull();
+    assertThat(response.session().state()).isEqualTo(RetrospectiveState.NOT_STARTED);
+    assertThat(response.session().currentStep()).isNull();
+    assertThat(response.openAssignments()).isEmpty();
+  }
+
+  @Test
+  @DisplayName(
+      "11번: LATER로 고른 주의 과제 회고를 주차 순으로 준다. 완료한 것도 남고, 시작 전이면 id null·NOT_STARTED, 마감 + 7일이 지난 주는 빠진다")
+  void current_openAssignments() {
+    iAmBackend();
+    currentWeekIs10();
+    Retrospective session10 = sessionOf(101L, 10L, AssignmentMode.LATER, false);
+    ReflectionTestUtils.setField(session10, "currentStep", 3);
+    Retrospective assignment9 = retro(95L, 9L, RetrospectiveType.ASSIGNMENT, true);
+    when(retrospectiveRepository.findAllByUserId(ME))
+        .thenReturn(
+            List.of(
+                session10,
+                sessionOf(91L, 9L, AssignmentMode.LATER, true),
+                assignment9,
+                sessionOf(81L, 8L, AssignmentMode.LATER, true),
+                sessionOf(71L, 7L, AssignmentMode.RECORD, true))); // 과제를 같이 기록한 주는 안 남는다
+    when(weekService.findSchedules(List.of(10L, 9L, 8L), Part.BACKEND))
+        .thenReturn(
+            Map.of(
+                10L, new WeekSchedule(10L, 10, "세션 10", NOW.plusDays(1), NOW.plusDays(3)),
+                9L, new WeekSchedule(9L, 9, "세션 9", NOW.minusDays(6), NOW.minusDays(2)),
+                8L, new WeekSchedule(8L, 8, "세션 8", NOW.minusDays(13), NOW.minusDays(10))));
+
+    RetrospectiveCurrentResponse response = retrospectiveService.getCurrent(ME);
+
+    assertThat(response.session().id()).isEqualTo(101L);
+    assertThat(response.session().state()).isEqualTo(RetrospectiveState.IN_PROGRESS);
+    assertThat(response.session().currentStep()).isEqualTo(3);
+    assertThat(response.session().assignmentMode()).isEqualTo(AssignmentMode.LATER);
+    assertThat(response.openAssignments())
+        .extracting(OpenAssignment::weekNumber, OpenAssignment::id, OpenAssignment::state)
+        .containsExactly(
+            org.assertj.core.groups.Tuple.tuple(9, 95L, RetrospectiveState.COMPLETED),
+            org.assertj.core.groups.Tuple.tuple(10, null, RetrospectiveState.NOT_STARTED));
+    assertThat(response.openAssignments().get(1).deadline()).isEqualTo(NOW.plusDays(3));
+  }
+
+  @Test
+  @DisplayName("11번: 파트 일정이 없어 과제 마감을 모르면 그 주 과제 회고를 남긴다")
+  void current_unknownDeadline_kept() {
+    iAmBackend();
+    currentWeekIs10();
+    when(retrospectiveRepository.findAllByUserId(ME))
+        .thenReturn(List.of(sessionOf(91L, 9L, AssignmentMode.LATER, true)));
+    when(weekService.findSchedules(List.of(9L), Part.BACKEND))
+        .thenReturn(Map.of(9L, new WeekSchedule(9L, 9, null, null, null)));
+
+    RetrospectiveCurrentResponse response = retrospectiveService.getCurrent(ME);
+
+    assertThat(response.openAssignments())
+        .extracting(OpenAssignment::weekNumber)
+        .containsExactly(9);
+    assertThat(response.openAssignments().get(0).deadline()).isNull();
+  }
+
+  @Test
+  @DisplayName("11번: 회원이 없으면 NOT_FOUND이고 주차를 묻지 않는다")
+  void current_noUser_notFound() {
+    when(userRepository.findById(ME)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> retrospectiveService.getCurrent(ME))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verifyNoInteractions(weekService);
   }
 }

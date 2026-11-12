@@ -125,4 +125,49 @@ public class WeekService {
 
   public record FootprintWeek(
       Long weekId, int weekNumber, String phase, boolean isPresentationWeek, String sessionTitle) {}
+
+  /**
+   * 주차·파트별 일정 (회고 11·13번, 권민찬 추가). 그 파트 일정이 없으면 제목·마감이 null이고, 없는 주차 ID는 key가 없다.
+   *
+   * <p>findCurrentWeek와 같은 표(week + week_part_schedule)를 주차 ID로 한 번에 읽는다.
+   */
+  public Map<Long, WeekSchedule> findSchedules(Collection<Long> weekIds, Part part) {
+    if (weekIds.isEmpty()) {
+      return Map.of();
+    }
+
+    return new NamedParameterJdbcTemplate(jdbcTemplate)
+        .query(
+            """
+                    SELECT w.id, w.week_number,
+                           s.session_title, s.session_deadline, s.assignment_deadline
+                    FROM week w
+                    LEFT JOIN week_part_schedule s
+                      ON s.week_id = w.id AND s.part = :part
+                    WHERE w.id IN (:ids)
+                    """,
+            Map.of("ids", weekIds, "part", part.name()),
+            rs -> {
+              Map<Long, WeekSchedule> schedules = new HashMap<>();
+              while (rs.next()) {
+                schedules.put(
+                    rs.getLong("id"),
+                    new WeekSchedule(
+                        rs.getLong("id"),
+                        rs.getInt("week_number"),
+                        rs.getString("session_title"),
+                        KstTime.toOffset(rs.getObject("session_deadline", LocalDateTime.class)),
+                        KstTime.toOffset(
+                            rs.getObject("assignment_deadline", LocalDateTime.class))));
+              }
+              return schedules;
+            });
+  }
+
+  public record WeekSchedule(
+      Long weekId,
+      int weekNumber,
+      String sessionTitle,
+      OffsetDateTime sessionDeadline,
+      OffsetDateTime assignmentDeadline) {}
 }
