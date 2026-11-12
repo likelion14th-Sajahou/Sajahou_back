@@ -9,6 +9,7 @@ import com.sajarok.domain.matching.entity.AnswerDraft.Source;
 import com.sajarok.domain.matching.entity.CoverLetterCardRole;
 import com.sajarok.domain.matching.entity.CoverLetterQuestion;
 import com.sajarok.domain.storycard.dto.CardSnapshot;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -19,7 +20,7 @@ import org.springframework.stereotype.Component;
 /**
  * 저장된 초안(AnswerDraft)을 37번 응답 모양으로 만든다. 37·39번이 같이 써서 두 응답 모양이 어긋나지 않게 한다.
  *
- * <p>DB를 읽지 않는다. 필요한 카드·역할·프로젝트 이름·역량 이름은 부르는 쪽이 한 번에 읽어서 넘긴다 (문항마다 읽지 않음, N+1 방지).
+ * <p>DB를 읽지 않는다. 필요한 카드·역할·프로젝트 이름·주차 번호·역량 이름은 부르는 쪽이 한 번에 읽어서 넘긴다 (문항마다 읽지 않음, N+1 방지).
  */
 @Component
 public class AnswerAssembler {
@@ -31,6 +32,7 @@ public class AnswerAssembler {
    * @param roles 이 문항의 카드 ID → 역할 (cover_letter_question_card)
    * @param liveCards 지금 공개된 내 카드 (카드 ID → 카드). 여기 없는 카드는 지워졌거나 비공개로 본다.
    * @param projectNames 프로젝트 ID → 이름
+   * @param weekNumbers 주차 ID → 주차 번호 (회고 카드의 weekNumber)
    * @param competencyNames 역량 ID → 이름 (missingCompetencies 이름). 없는 ID는 이름 null
    * @return 초안이 없으면 null
    */
@@ -39,6 +41,7 @@ public class AnswerAssembler {
       Map<Long, CoverLetterCardRole> roles,
       Map<Long, CardSnapshot> liveCards,
       Map<Long, String> projectNames,
+      Map<Long, Integer> weekNumbers,
       Map<Long, String> competencyNames) {
     AnswerDraft draft = question.getAnswerDraft();
     if (draft == null) {
@@ -63,7 +66,14 @@ public class AnswerAssembler {
     List<CardRef> cards =
         sources.stream()
             .filter(s -> CARD.equals(s.kind()) && liveCards.containsKey(s.cardId()))
-            .map(s -> toCardRef(s, roles.get(s.cardId()), liveCards.get(s.cardId()), projectNames))
+            .map(
+                s ->
+                    toCardRef(
+                        s,
+                        roles.get(s.cardId()),
+                        liveCards.get(s.cardId()),
+                        projectNames,
+                        weekNumbers))
             .toList();
 
     List<MissingCompetency> missing =
@@ -85,16 +95,27 @@ public class AnswerAssembler {
   }
 
   private CardRef toCardRef(
-      Source source, CoverLetterCardRole role, CardSnapshot card, Map<Long, String> projectNames) {
+      Source source,
+      CoverLetterCardRole role,
+      CardSnapshot card,
+      Map<Long, String> projectNames,
+      Map<Long, Integer> weekNumbers) {
     return new CardRef(
         source.no(),
         role,
         card.cardId(),
         card.type(),
         card.title(),
-        // TODO(주차 담당): 회고 카드면 weekId로 주차 번호를 채운다. 지금은 null.
-        null,
+        card.weekId() == null ? null : weekNumbers.get(card.weekId()),
         card.projectId() == null ? null : projectNames.get(card.projectId()));
+  }
+
+  /** 카드들의 주차 ID (회고 카드만 있음). 주차 번호를 한 번에 읽을 때 쓴다. */
+  public static Set<Long> weekIds(Collection<CardSnapshot> cards) {
+    return cards.stream()
+        .map(CardSnapshot::weekId)
+        .filter(Objects::nonNull)
+        .collect(Collectors.toSet());
   }
 
   /** 카드 목록 → 카드 ID로 찾는 맵. */

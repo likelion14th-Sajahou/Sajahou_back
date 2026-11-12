@@ -25,6 +25,7 @@ import com.sajarok.domain.matching.repository.JobPostingRepository;
 import com.sajarok.domain.project.service.ProjectService;
 import com.sajarok.domain.storycard.dto.CardSnapshot;
 import com.sajarok.domain.storycard.service.StoryCardService;
+import com.sajarok.domain.week.service.WeekService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.util.LinkedHashSet;
@@ -54,6 +55,7 @@ public class JobPostingService {
   private final PostingAnalyzer postingAnalyzer;
   private final AttachmentService attachmentService;
   private final CompetencyService competencyService;
+  private final WeekService weekService;
 
   /**
    * 36번: 공고·문항을 저장하고 AI로 공고가 원하는 역량과 문항별 역량을 찾는다.
@@ -184,7 +186,7 @@ public class JobPostingService {
   /**
    * 39번: 매칭 결과(공고 상세). 남의 공고거나 없으면 NOT_FOUND.
    *
-   * <p>문항·카드 연결·공개 카드·프로젝트 이름·역량별 카드 수·빠진 역량 이름을 각각 한 번씩만 읽는다 (문항 수만큼 늘지 않음, N+1 방지).
+   * <p>문항·카드 연결·공개 카드·프로젝트 이름·주차 번호·역량별 카드 수·빠진 역량 이름을 각각 한 번씩만 읽는다 (문항 수만큼 늘지 않음, N+1 방지).
    */
   public JobPostingDetailResponse getDetail(Long userId, Long jobPostingId) {
     JobPosting posting =
@@ -203,6 +205,8 @@ public class JobPostingService {
                 .map(CardSnapshot::projectId)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet()));
+    Map<Long, Integer> weekNumbers =
+        weekService.findWeekNumbers(AnswerAssembler.weekIds(liveCards.values()));
     Map<Long, Long> cardCounts = storyCardService.countByCompetency(userId);
     Map<Long, String> missingNames =
         competencyService.names(
@@ -227,6 +231,7 @@ public class JobPostingService {
                             rolesByQuestion.getOrDefault(q.getId(), Map.of()),
                             liveCards,
                             projectNames,
+                            weekNumbers,
                             missingNames),
                         q.getEditedAnswer()))
             .toList();
