@@ -6,7 +6,12 @@ import com.sajarok.domain.competency.repository.CompetencyRepository;
 import com.sajarok.domain.user.repository.UserRepository;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,5 +33,34 @@ public class CompetencyService {
     Scope userScope = Scope.valueOf(user.getPart().name());
     return competencyRepository.findAllByPartInOrderBySortOrderAscIdAsc(
         List.of(Scope.COMMON, userScope));
+  }
+
+  public Set<Long> validate(Long userId, Collection<Long> ids, boolean required) {
+    Set<Long> distinctIds = ids == null ? new LinkedHashSet<>() : new LinkedHashSet<>(ids);
+
+    if (distinctIds.size() > 3 || (required && distinctIds.isEmpty())) {
+      throw new BusinessException(ErrorCode.COMPETENCY_LIMIT);
+    }
+    if (distinctIds.isEmpty()) {
+      return distinctIds;
+    }
+
+    Set<Long> availableIds =
+        findForUser(userId).stream().map(Competency::getId).collect(Collectors.toSet());
+
+    if (!availableIds.containsAll(distinctIds)) {
+      throw new BusinessException(ErrorCode.VALIDATION_ERROR, "선택할 수 없는 역량 태그가 있어요.");
+    }
+
+    return distinctIds;
+  }
+
+  public Map<Long, String> names(Collection<Long> ids) {
+    if (ids.isEmpty()) {
+      return Map.of();
+    }
+
+    return competencyRepository.findAllById(ids).stream()
+        .collect(Collectors.toMap(Competency::getId, Competency::getName));
   }
 }
