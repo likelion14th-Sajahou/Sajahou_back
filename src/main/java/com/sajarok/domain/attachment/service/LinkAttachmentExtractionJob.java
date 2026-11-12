@@ -16,8 +16,9 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class LinkAttachmentExtractionJob {
 
+  // /tree/main 같은 경로가 붙어도 앞의 소유자와 저장소 이름만 사용한다.
   private static final Pattern REPOSITORY_PATH =
-      Pattern.compile("/([A-Za-z0-9-]+)/([A-Za-z0-9_.-]+)/?");
+          Pattern.compile("/([A-Za-z0-9-]+)/([A-Za-z0-9_.-]+?)(?:\\.git)?(?:/.*)?");
   private static final int MAX_README_BYTES = 128 * 1024;
 
   private final AttachmentService attachmentService;
