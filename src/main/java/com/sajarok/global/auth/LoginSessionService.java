@@ -14,7 +14,14 @@ public class LoginSessionService {
   private final HttpSessionSecurityContextRepository contextRepository =
       new HttpSessionSecurityContextRepository();
 
+  private static final String DEMO_SESSION_ATTRIBUTE = "SAJAROK_DEMO_SESSION";
+
   public void login(Long userId, HttpServletRequest request, HttpServletResponse response) {
+    login(userId, request, response, false);
+  }
+
+  public void login(
+      Long userId, HttpServletRequest request, HttpServletResponse response, boolean isDemo) {
     if (request.getSession(false) != null) {
       request.changeSessionId();
     }
@@ -24,5 +31,12 @@ public class LoginSessionService {
     context.setAuthentication(authentication);
     SecurityContextHolder.setContext(context);
     contextRepository.saveContext(context, request, response);
+
+    request.getSession().setAttribute(DEMO_SESSION_ATTRIBUTE, isDemo);
+  }
+
+  public boolean isDemo(HttpServletRequest request) {
+    var session = request.getSession(false);
+    return session != null && Boolean.TRUE.equals(session.getAttribute(DEMO_SESSION_ATTRIBUTE));
   }
 }
