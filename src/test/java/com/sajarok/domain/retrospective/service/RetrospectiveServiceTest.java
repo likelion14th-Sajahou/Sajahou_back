@@ -984,4 +984,54 @@ class RetrospectiveServiceTest {
 
     assertThat(retrospectiveService.complete(ME, 101L).isLate()).isFalse();
   }
+
+  // ---------- 14번 코드 리뷰는 프론트엔드만 ----------
+
+  private void iAm(Part part) {
+    User me = mock(User.class);
+    when(me.getPart()).thenReturn(part);
+    when(userRepository.findById(ME)).thenReturn(Optional.of(me));
+  }
+
+  private static RetrospectiveDraftRequest codeReview(String text) {
+    RetrospectiveDraftRequest request = new RetrospectiveDraftRequest();
+    request.setCodeReview(text);
+    return request;
+  }
+
+  @Test
+  @DisplayName("14번: 프론트엔드가 아닌 파트가 코드 리뷰를 쓰면 400 VALIDATION_ERROR이고, 아무것도 바뀌지 않는다")
+  void draft_codeReview_notFrontend_validationError() {
+    Retrospective session = mySessionAtStep3();
+    iAm(Part.BACKEND);
+
+    assertThatThrownBy(() -> retrospectiveService.saveDraft(ME, 101L, codeReview("리뷰 반영")))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.VALIDATION_ERROR);
+    assertThat(session.getCodeReview()).isNull();
+    assertThat(session.getLastSavedAt()).isNull();
+  }
+
+  @Test
+  @DisplayName("14번: 프론트엔드 파트는 코드 리뷰를 쓸 수 있다")
+  void draft_codeReview_frontend_saved() {
+    Retrospective session = mySessionAtStep3();
+    iAm(Part.FRONTEND);
+
+    retrospectiveService.saveDraft(ME, 101L, codeReview("useEffect 의존성 배열 리뷰 반영"));
+
+    assertThat(session.getCodeReview()).isEqualTo("useEffect 의존성 배열 리뷰 반영");
+  }
+
+  @Test
+  @DisplayName("14번: 코드 리뷰를 비우는 것(null)은 파트와 상관없이 된다")
+  void draft_codeReview_clear_anyPart() {
+    Retrospective session = mySessionAtStep3();
+    ReflectionTestUtils.setField(session, "codeReview", "예전 리뷰");
+
+    retrospectiveService.saveDraft(ME, 101L, codeReview(null));
+
+    assertThat(session.getCodeReview()).isNull();
+  }
 }
