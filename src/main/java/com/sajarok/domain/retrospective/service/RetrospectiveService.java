@@ -8,7 +8,12 @@ import com.sajarok.domain.question.entity.QuestionOwner;
 import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.domain.retrospective.dto.HomeRetroSummary;
 import com.sajarok.domain.retrospective.dto.RetrospectiveCompleteResponse;
+import com.sajarok.domain.retrospective.dto.RetrospectiveCurrentResponse;
+import com.sajarok.domain.retrospective.dto.RetrospectiveCurrentResponse.OpenAssignment;
+import com.sajarok.domain.retrospective.dto.RetrospectiveCurrentResponse.SessionView;
+import com.sajarok.domain.retrospective.dto.RetrospectiveCurrentResponse.WeekView;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
+import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse.WeekInfo;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDraftRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestResponse;
@@ -24,13 +29,21 @@ import com.sajarok.domain.retrospective.repository.RetrospectiveRepository;
 import com.sajarok.domain.storycard.dto.CardSnapshot;
 import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
 import com.sajarok.domain.storycard.service.StoryCardService;
+import com.sajarok.domain.user.entity.Part;
+import com.sajarok.domain.user.entity.User;
+import com.sajarok.domain.user.repository.UserRepository;
 import com.sajarok.domain.week.service.WeekService;
+import com.sajarok.domain.week.service.WeekService.CurrentWeek;
+import com.sajarok.domain.week.service.WeekService.WeekSchedule;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import com.sajarok.global.time.KstTime;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -47,6 +60,7 @@ public class RetrospectiveService {
   private final StoryCardService storyCardService;
   private final AttachmentService attachmentService;
   private final WeekService weekService;
+  private final UserRepository userRepository;
 
   /**
    * 홈(4번, 지윤님 HomeService가 부름): 이번 주 세션 회고 상태와 스티커(완료한 세션 회고의 주차 ID).
@@ -185,8 +199,19 @@ public class RetrospectiveService {
         attachmentService.findAll(AttachmentOwner.retrospective(retrospectiveId));
     StoryCardDetailResponse card =
         storyCardService.findDetailByRetrospective(retrospectiveId).orElse(null);
-    return RetrospectiveDetailResponse.of(
-        retrospective, questions, attachments, card, weekNumberOf(retrospective.getWeekId()));
+    Long weekId = retrospective.getWeekId();
+    WeekSchedule schedule =
+        userRepository
+            .findById(userId)
+            .map(User::getPart)
+            .map(part -> weekService.findSchedules(List.of(weekId), part).get(weekId))
+            .orElse(null);
+    WeekInfo week =
+        schedule == null
+            ? null
+            : new WeekInfo(
+                schedule.weekNumber(), schedule.sessionTitle(), schedule.sessionDeadline());
+    return RetrospectiveDetailResponse.of(retrospective, questions, attachments, card, week);
   }
 
   /** 14번: 임시저장. 완료한 회고도 고칠 수 있다 */
@@ -219,5 +244,64 @@ public class RetrospectiveService {
   /** 주차 ID → 주차 번호 (지윤님 WeekService). 주차 일정에 없으면 null */
   private Integer weekNumberOf(Long weekId) {
     return weekService.findWeekNumbers(List.of(weekId)).get(weekId);
+  }
+
+  /** 과제 회고는 마감 + 7일까지 이어 쓸 수 있고, 그동안 이번 주 화면의 openAssignments에 남는다 */
+  private static final int ASSIGNMENT_GRACE_DAYS = 7;
+
+  /**
+   * 11번: 이번 주 회고 화면. 이번 주 정보 + 이번 주 세션 회고 + 남은 과제 회고 목록.
+   *
+   * <p>openAssignments는 과제를 '나중에 쓸게요(LATER)'로 고른 세션 회고의 주차마다 하나씩, 과제 마감 + 7일 안이면 남긴다(완료한 것도
+   * COMPLETED로 남음, 11/11). 파트 일정이 없어 마감을 모르면 남긴다. 주차 순서.
+   */
+  public RetrospectiveCurrentResponse getCurrent(Long userId) {
+    Part part = partOf(userId);
+    CurrentWeek week = weekService.findCurrentWeek(part);
+    List<Retrospective> mine = retrospectiveRepository.findAllByUserId(userId);
+
+    Retrospective session =
+        mine.stream()
+            .filter(r -> r.getType() == RetrospectiveType.SESSION)
+            .filter(r -> r.getWeekId().equals(week.weekId()))
+            .findFirst()
+            .orElse(null);
+
+    List<Long> laterWeekIds =
+        mine.stream()
+            .filter(r -> r.getType() == RetrospectiveType.SESSION)
+            .filter(r -> r.getAssignmentMode() == AssignmentMode.LATER)
+            .map(Retrospective::getWeekId)
+            .distinct()
+            .toList();
+    Map<Long, Retrospective> assignmentsByWeek =
+        mine.stream()
+            .filter(r -> r.getType() == RetrospectiveType.ASSIGNMENT)
+            .collect(Collectors.toMap(Retrospective::getWeekId, r -> r, (a, b) -> a));
+    Map<Long, WeekSchedule> schedules = weekService.findSchedules(laterWeekIds, part);
+
+    OffsetDateTime now = OffsetDateTime.now(KstTime.OFFSET);
+    List<OpenAssignment> openAssignments =
+        laterWeekIds.stream()
+            .map(schedules::get)
+            .filter(Objects::nonNull)
+            .filter(
+                s ->
+                    s.assignmentDeadline() == null
+                        || now.isBefore(s.assignmentDeadline().plusDays(ASSIGNMENT_GRACE_DAYS)))
+            .sorted(Comparator.comparingInt(WeekSchedule::weekNumber))
+            .map(s -> OpenAssignment.of(assignmentsByWeek.get(s.weekId()), s))
+            .toList();
+
+    return new RetrospectiveCurrentResponse(
+        WeekView.from(week), SessionView.of(session), openAssignments);
+  }
+
+  /** 회원 파트. 회원이 없으면 NOT_FOUND */
+  private Part partOf(Long userId) {
+    return userRepository
+        .findById(userId)
+        .map(User::getPart)
+        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
   }
 }

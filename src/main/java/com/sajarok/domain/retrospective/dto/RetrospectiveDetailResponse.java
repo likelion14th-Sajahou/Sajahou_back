@@ -43,7 +43,7 @@ public record RetrospectiveDetailResponse(
       List<QuestionView> questions,
       List<AttachmentView> attachments,
       StoryCardDetailResponse card,
-      Integer weekNumber) {
+      WeekInfo week) {
     return new RetrospectiveDetailResponse(
         r.getId(),
         r.getType(),
@@ -52,7 +52,7 @@ public record RetrospectiveDetailResponse(
         r.getCurrentStep(),
         KstTime.toOffset(r.getLastSavedAt()),
         KstTime.toOffset(r.getCompletedAt()),
-        new WeekInfo(weekNumber, null, null), // TODO(주차 담당): sessionTitle, sessionDeadline
+        week,
         new Materials(
             r.getHasPractice(),
             r.getPracticeContent(),

@@ -23,6 +23,10 @@ import com.sajarok.domain.question.entity.QuestionStatus;
 import com.sajarok.domain.retrospective.dto.RetroQuestionMode;
 import com.sajarok.domain.retrospective.dto.RetrospectiveCompleteResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveCompleteResponse.AssignmentPending;
+import com.sajarok.domain.retrospective.dto.RetrospectiveCurrentResponse;
+import com.sajarok.domain.retrospective.dto.RetrospectiveCurrentResponse.OpenAssignment;
+import com.sajarok.domain.retrospective.dto.RetrospectiveCurrentResponse.SessionView;
+import com.sajarok.domain.retrospective.dto.RetrospectiveCurrentResponse.WeekView;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse.Materials;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDraftRequest;
@@ -594,5 +598,48 @@ class RetrospectiveControllerTest {
         .perform(post("/api/v1/retrospectives/101/review"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.error.code").value("EMPTY_MATERIAL"));
+  }
+
+  @Test
+  @DisplayName(
+      "11번: 이번 주 회고는 200과 명세 모양(week, session, openAssignments)을 주고, /current가 /{id}보다 먼저 잡힌다")
+  void current_returns200() throws Exception {
+    when(retrospectiveService.getCurrent(1L))
+        .thenReturn(
+            new RetrospectiveCurrentResponse(
+                new WeekView(
+                    10L,
+                    10,
+                    "아이디어톤 준비",
+                    KstTime.toOffset(LocalDateTime.of(2026, 11, 8, 23, 59)),
+                    KstTime.toOffset(LocalDateTime.of(2026, 11, 10, 23, 59))),
+                new SessionView(
+                    101L,
+                    RetrospectiveState.IN_PROGRESS,
+                    3,
+                    AssignmentMode.LATER,
+                    KstTime.toOffset(LocalDateTime.of(2026, 11, 5, 22, 40))),
+                List.of(
+                    new OpenAssignment(
+                        null,
+                        10,
+                        RetrospectiveState.NOT_STARTED,
+                        null,
+                        null,
+                        KstTime.toOffset(LocalDateTime.of(2026, 11, 10, 23, 59))))));
+
+    mockMvc
+        .perform(get("/api/v1/retrospectives/current"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.week.weekNumber").value(10))
+        .andExpect(jsonPath("$.data.week.sessionDeadline").value("2026-11-08T23:59:00+09:00"))
+        .andExpect(jsonPath("$.data.session.id").value(101))
+        .andExpect(jsonPath("$.data.session.state").value("IN_PROGRESS"))
+        .andExpect(jsonPath("$.data.session.assignmentMode").value("LATER"))
+        .andExpect(jsonPath("$.data.openAssignments[0].id").value(nullValue()))
+        .andExpect(jsonPath("$.data.openAssignments[0].state").value("NOT_STARTED"))
+        .andExpect(
+            jsonPath("$.data.openAssignments[0].deadline").value("2026-11-10T23:59:00+09:00"));
+    verify(retrospectiveService, org.mockito.Mockito.never()).getDetail(any(), any());
   }
 }

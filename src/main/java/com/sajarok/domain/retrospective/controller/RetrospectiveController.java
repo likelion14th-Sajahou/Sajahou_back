@@ -1,6 +1,7 @@
 package com.sajarok.domain.retrospective.controller;
 
 import com.sajarok.domain.retrospective.dto.RetrospectiveCompleteResponse;
+import com.sajarok.domain.retrospective.dto.RetrospectiveCurrentResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDraftRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
@@ -60,6 +61,12 @@ public class RetrospectiveController {
   public ApiResponse<RetrospectiveProgressResponse> reset(@PathVariable Long retrospectiveId) {
     return ApiResponse.ok(
         retrospectiveService.reset(currentUserProvider.getUserId(), retrospectiveId));
+  }
+
+  /** 11번: 이번 주 회고 화면 (이번 주 정보·세션 회고·남은 과제 회고) */
+  @GetMapping("/current")
+  public ApiResponse<RetrospectiveCurrentResponse> getCurrent() {
+    return ApiResponse.ok(retrospectiveService.getCurrent(currentUserProvider.getUserId()));
   }
 
   /** 13번: 회고 상세 */
