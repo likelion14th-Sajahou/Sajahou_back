@@ -44,4 +44,6 @@ public interface StoryCardRepository extends JpaRepository<StoryCard, Long> {
     """)
   List<CompetencyCount> countByCompetency(
       @Param("userId") Long userId, @Param("status") StoryCardStatus status);
+
+  void deleteAllByUserId(Long userId);
 }

@@ -277,6 +277,14 @@ public class AttachmentService {
     deleteAttachments(findAttachments(owner.kind(), List.of(owner.id())));
   }
 
+  @Transactional
+  public void deleteAllByUserId(Long userId) {
+    List<Attachment> attachments = attachmentRepository.findAllByUserIdOrderByIdAsc(userId);
+    if (!attachments.isEmpty()) {
+      deleteAttachments(attachments);
+    }
+  }
+
   private void deleteAttachments(List<Attachment> attachments) {
     List<String> s3Keys =
         attachments.stream()
