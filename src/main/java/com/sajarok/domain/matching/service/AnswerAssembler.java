@@ -19,7 +19,7 @@ import org.springframework.stereotype.Component;
 /**
  * 저장된 초안(AnswerDraft)을 37번 응답 모양으로 만든다. 37·39번이 같이 써서 두 응답 모양이 어긋나지 않게 한다.
  *
- * <p>DB를 읽지 않는다. 필요한 카드·역할·프로젝트 이름은 부르는 쪽이 한 번에 읽어서 넘긴다 (문항마다 읽지 않음, N+1 방지).
+ * <p>DB를 읽지 않는다. 필요한 카드·역할·프로젝트 이름·역량 이름은 부르는 쪽이 한 번에 읽어서 넘긴다 (문항마다 읽지 않음, N+1 방지).
  */
 @Component
 public class AnswerAssembler {
@@ -31,13 +31,15 @@ public class AnswerAssembler {
    * @param roles 이 문항의 카드 ID → 역할 (cover_letter_question_card)
    * @param liveCards 지금 공개된 내 카드 (카드 ID → 카드). 여기 없는 카드는 지워졌거나 비공개로 본다.
    * @param projectNames 프로젝트 ID → 이름
+   * @param competencyNames 역량 ID → 이름 (missingCompetencies 이름). 없는 ID는 이름 null
    * @return 초안이 없으면 null
    */
   public AnswerResponse assemble(
       CoverLetterQuestion question,
       Map<Long, CoverLetterCardRole> roles,
       Map<Long, CardSnapshot> liveCards,
-      Map<Long, String> projectNames) {
+      Map<Long, String> projectNames,
+      Map<Long, String> competencyNames) {
     AnswerDraft draft = question.getAnswerDraft();
     if (draft == null) {
       return null;
@@ -68,8 +70,7 @@ public class AnswerAssembler {
         draft.missingCompetencyIds() == null
             ? List.of()
             : draft.missingCompetencyIds().stream()
-                // TODO(역량 담당): competencyService.names로 이름을 채운다. 지금은 null.
-                .map(id -> new MissingCompetency(id, null))
+                .map(id -> new MissingCompetency(id, competencyNames.get(id)))
                 .toList();
 
     return new AnswerResponse(
