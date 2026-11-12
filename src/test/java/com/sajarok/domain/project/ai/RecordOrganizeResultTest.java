@@ -63,4 +63,19 @@ class RecordOrganizeResultTest {
             "[AI 질문 답]\n- 내 역할: 홈 시안 2개를 준비해서 비교 발표했어요.");
     assertThat(RecordPrompts.ORGANIZE_SYSTEM).contains("20%", "\"nextStep\":null");
   }
+
+  @Test
+  @DisplayName("31번 프롬프트: 첨부 글자는 하나당 6,000자까지만 넣는다")
+  void organizeUser_cutsLongAttachment() {
+    ProjectRecord record =
+        ProjectRecord.builder()
+            .project(Project.builder().userId(1L).name("사자록").build())
+            .status(ProjectRecordStatus.DRAFT)
+            .build();
+    String kept = "가".repeat(RecordPrompts.MAX_ATTACHMENT_CHARS);
+
+    String user = RecordPrompts.organizeUser(record, List.of(), List.of(kept + "뒷부분", "짧은 첨부"));
+
+    assertThat(user).contains("(1) " + kept + "\n", "(2) 짧은 첨부").doesNotContain("뒷부분");
+  }
 }
