@@ -18,8 +18,10 @@ import com.sajarok.domain.retrospective.dto.RetrospectiveState;
 import com.sajarok.domain.retrospective.dto.WeekRetroStatus;
 import com.sajarok.domain.retrospective.entity.AssignmentMode;
 import com.sajarok.domain.retrospective.entity.Retrospective;
+import com.sajarok.domain.retrospective.entity.RetrospectiveStatus;
 import com.sajarok.domain.retrospective.entity.RetrospectiveType;
 import com.sajarok.domain.retrospective.repository.RetrospectiveRepository;
+import com.sajarok.domain.storycard.dto.CardSnapshot;
 import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
 import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
@@ -27,7 +29,9 @@ import com.sajarok.global.exception.ErrorCode;
 import com.sajarok.global.time.KstTime;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,12 +46,69 @@ public class RetrospectiveService {
   private final StoryCardService storyCardService;
   private final AttachmentService attachmentService;
 
+  /**
+   * 홈(4번, 지윤님 HomeService가 부름): 이번 주 세션 회고 상태와 스티커(완료한 세션 회고의 주차 ID).
+   *
+   * <p>이번 주 칸(showThisWeekSlot)은 아직 이번 주 스티커를 받을 수 있을 때(시작 전·진행 중)만 띄운다. 완료면 이미 스티커가 있고, 휴회면 칸이 없다.
+   */
   public HomeRetroSummary homeSummary(Long userId, Long currentWeekId) {
-    return new HomeRetroSummary(null, RetrospectiveState.NOT_STARTED, List.of(), true); // TODO fake
+    Optional<Retrospective> thisWeek =
+        retrospectiveRepository.findByUserIdAndWeekIdAndType(
+            userId, currentWeekId, RetrospectiveType.SESSION);
+    RetrospectiveState state =
+        thisWeek.map(RetrospectiveState::of).orElse(RetrospectiveState.NOT_STARTED);
+
+    List<Long> stickerWeekIds =
+        retrospectiveRepository.findAllByUserId(userId).stream()
+            .filter(
+                r ->
+                    r.getType() == RetrospectiveType.SESSION
+                        && r.getStatus() == RetrospectiveStatus.COMPLETED)
+            .map(Retrospective::getWeekId)
+            .distinct()
+            .toList();
+
+    boolean showThisWeekSlot =
+        state == RetrospectiveState.NOT_STARTED || state == RetrospectiveState.IN_PROGRESS;
+
+    return new HomeRetroSummary(
+        thisWeek.map(Retrospective::getId).orElse(null), state, stickerWeekIds, showThisWeekSlot);
   }
 
+  /**
+   * 발자국(5번, 지윤님 FootprintService가 부름): 내 회고를 주차별로 묶어 세션·과제 상태와 공개 카드 수를 준다.
+   *
+   * <p>회고가 하나도 없는 주는 빠진다. 회고 전체와 공개 카드를 한 번씩만 조회한다(주차마다 묻지 않음).
+   */
   public List<WeekRetroStatus> footprints(Long userId) {
-    return List.of();
+    Map<Long, Long> cardCounts =
+        storyCardService.findPublished(userId).stream()
+            .filter(card -> card.weekId() != null)
+            .collect(Collectors.groupingBy(CardSnapshot::weekId, Collectors.counting()));
+
+    Map<Long, List<Retrospective>> byWeek =
+        retrospectiveRepository.findAllByUserId(userId).stream()
+            .collect(Collectors.groupingBy(Retrospective::getWeekId));
+
+    return byWeek.entrySet().stream()
+        .sorted(Map.Entry.comparingByKey())
+        .map(
+            e ->
+                new WeekRetroStatus(
+                    e.getKey(),
+                    stateOf(e.getValue(), RetrospectiveType.SESSION),
+                    stateOf(e.getValue(), RetrospectiveType.ASSIGNMENT),
+                    cardCounts.getOrDefault(e.getKey(), 0L).intValue()))
+        .toList();
+  }
+
+  /** 그 주 회고 중 해당 종류의 상태. 없으면 NOT_STARTED */
+  private static RetrospectiveState stateOf(List<Retrospective> retros, RetrospectiveType type) {
+    return retros.stream()
+        .filter(r -> r.getType() == type)
+        .findFirst()
+        .map(RetrospectiveState::of)
+        .orElse(RetrospectiveState.NOT_STARTED);
   }
 
   /** 12번: 회고 시작. 이미 있으면 그 회고를 그대로 돌려준다 */
