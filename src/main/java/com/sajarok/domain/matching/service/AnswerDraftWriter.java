@@ -11,6 +11,7 @@ import com.sajarok.domain.matching.repository.CoverLetterQuestionRepository;
 import com.sajarok.domain.project.service.ProjectService;
 import com.sajarok.domain.storycard.dto.CardSnapshot;
 import com.sajarok.domain.storycard.service.StoryCardService;
+import com.sajarok.domain.week.service.WeekService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.util.ArrayList;
@@ -38,6 +39,7 @@ public class AnswerDraftWriter {
   private final StoryCardService storyCardService;
   private final ProjectService projectService;
   private final CompetencyService competencyService;
+  private final WeekService weekService;
   private final AnswerAssembler answerAssembler;
 
   /**
@@ -79,9 +81,13 @@ public class AnswerDraftWriter {
                 .map(id -> liveCards.get(id).projectId())
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet()));
+    Map<Long, Integer> weekNumbers =
+        weekService.findWeekNumbers(
+            AnswerAssembler.weekIds(roles.keySet().stream().map(liveCards::get).toList()));
     Map<Long, String> competencyNames =
         competencyService.names(
             draft.missingCompetencyIds() == null ? List.of() : draft.missingCompetencyIds());
-    return answerAssembler.assemble(question, roles, liveCards, projectNames, competencyNames);
+    return answerAssembler.assemble(
+        question, roles, liveCards, projectNames, weekNumbers, competencyNames);
   }
 }

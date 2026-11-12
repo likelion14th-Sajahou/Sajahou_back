@@ -65,7 +65,8 @@ class AnswerAssemblerTest {
   void assemble_noDraft_returnsNull() {
     CoverLetterQuestion question = CoverLetterQuestion.builder().seq(1).content("협업 경험").build();
 
-    assertThat(assembler.assemble(question, Map.of(), Map.of(), Map.of(), Map.of())).isNull();
+    assertThat(assembler.assemble(question, Map.of(), Map.of(), Map.of(), Map.of(), Map.of()))
+        .isNull();
   }
 
   @Test
@@ -77,6 +78,7 @@ class AnswerAssemblerTest {
             Map.of(410L, CoverLetterCardRole.MAIN, 411L, CoverLetterCardRole.SUB),
             Map.of(410L, card(410L, 3L), 411L, card(411L, null)),
             Map.of(3L, "사자록"),
+            Map.of(),
             Map.of(4L, "갈등 조율"));
 
     assertThat(answer.questionId()).isEqualTo(55L);
@@ -106,6 +108,7 @@ class AnswerAssemblerTest {
             Map.of(410L, CoverLetterCardRole.MAIN, 411L, CoverLetterCardRole.SUB),
             Map.of(410L, card(410L, null)),
             Map.of(),
+            Map.of(),
             Map.of());
 
     assertThat(answer.cards()).extracting(AnswerResponse.CardRef::cardId).containsExactly(410L);
@@ -119,11 +122,42 @@ class AnswerAssemblerTest {
   @DisplayName("없는 역량의 이름을 이름표에서 못 찾으면(시드에서 지워진 역량 등) 이름만 null로 둔다")
   void assemble_unknownCompetency_nameNull() {
     AnswerResponse answer =
-        assembler.assemble(questionWithDraft(), Map.of(), Map.of(), Map.of(), Map.of());
+        assembler.assemble(questionWithDraft(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
 
     assertThat(answer.missingCompetencies())
         .extracting(
             AnswerResponse.MissingCompetency::competencyId, AnswerResponse.MissingCompetency::name)
         .containsExactly(tuple(4L, null));
+  }
+
+  @Test
+  @DisplayName("회고 카드는 주차 이름표에서 weekNumber를 채우고, 프로젝트 카드는 weekNumber를 null로 둔다")
+  void assemble_fillsWeekNumberForRetroCardOnly() {
+    CardSnapshot retro =
+        new CardSnapshot(
+            410L,
+            StoryCardType.SESSION,
+            10L,
+            null,
+            "카드 410",
+            null,
+            null,
+            null,
+            null,
+            null,
+            Set.of());
+
+    AnswerResponse answer =
+        assembler.assemble(
+            questionWithDraft(),
+            Map.of(410L, CoverLetterCardRole.MAIN, 411L, CoverLetterCardRole.SUB),
+            Map.of(410L, retro, 411L, card(411L, 3L)),
+            Map.of(3L, "사자록"),
+            Map.of(10L, 7),
+            Map.of());
+
+    assertThat(answer.cards())
+        .extracting(AnswerResponse.CardRef::cardId, AnswerResponse.CardRef::weekNumber)
+        .containsExactly(tuple(410L, 7), tuple(411L, null));
   }
 }

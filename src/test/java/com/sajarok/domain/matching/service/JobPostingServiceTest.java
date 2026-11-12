@@ -27,7 +27,10 @@ import com.sajarok.domain.matching.repository.CoverLetterQuestionCardRepository;
 import com.sajarok.domain.matching.repository.CoverLetterQuestionRepository;
 import com.sajarok.domain.matching.repository.JobPostingRepository;
 import com.sajarok.domain.project.service.ProjectService;
+import com.sajarok.domain.storycard.dto.CardSnapshot;
+import com.sajarok.domain.storycard.entity.StoryCardType;
 import com.sajarok.domain.storycard.service.StoryCardService;
+import com.sajarok.domain.week.service.WeekService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.util.List;
@@ -53,6 +56,7 @@ class JobPostingServiceTest {
   @Mock private AnswerAssembler answerAssembler;
   @Mock private AttachmentService attachmentService;
   @Mock private CompetencyService competencyService;
+  @Mock private WeekService weekService;
 
   @InjectMocks private JobPostingService jobPostingService;
 
@@ -85,7 +89,12 @@ class JobPostingServiceTest {
     AnswerResponse answer =
         new AnswerResponse(55L, List.of(), 0, 0, List.of(), false, List.of(), false);
     when(answerAssembler.assemble(
-            eq(q1), eq(Map.of(410L, CoverLetterCardRole.MAIN)), anyMap(), anyMap(), anyMap()))
+            eq(q1),
+            eq(Map.of(410L, CoverLetterCardRole.MAIN)),
+            anyMap(),
+            anyMap(),
+            anyMap(),
+            anyMap()))
         .thenReturn(answer);
 
     AttachmentView postingFile =
@@ -140,8 +149,41 @@ class JobPostingServiceTest {
     jobPostingService.getDetail(1L, 21L);
 
     verify(competencyService).names(Set.of(4L, 9L));
-    verify(answerAssembler).assemble(eq(q1), anyMap(), anyMap(), anyMap(), eq(names));
-    verify(answerAssembler).assemble(eq(q2), anyMap(), anyMap(), anyMap(), eq(names));
+    verify(answerAssembler).assemble(eq(q1), anyMap(), anyMap(), anyMap(), anyMap(), eq(names));
+    verify(answerAssembler).assemble(eq(q2), anyMap(), anyMap(), anyMap(), anyMap(), eq(names));
+  }
+
+  @Test
+  @DisplayName("39번: 공개 카드 중 회고 카드의 주차 ID를 모아 주차 번호를 한 번만 읽고, 문항마다 그 이름표를 넘긴다")
+  void getDetail_loadsWeekNumbersOnce() {
+    JobPosting posting = JobPosting.builder().userId(1L).company("카카오").build();
+    ReflectionTestUtils.setField(posting, "id", 21L);
+    when(jobPostingRepository.findByIdAndUserId(21L, 1L)).thenReturn(Optional.of(posting));
+    CoverLetterQuestion q1 = question(55L, 1);
+    CoverLetterQuestion q2 = question(56L, 2);
+    when(coverLetterQuestionRepository.findAllByJobPostingIdOrderBySeqAsc(21L))
+        .thenReturn(List.of(q1, q2));
+    when(storyCardService.findPublished(1L))
+        .thenReturn(
+            List.of(
+                snapshot(500L, StoryCardType.SESSION, 10L, null),
+                snapshot(501L, StoryCardType.ASSIGNMENT, 11L, null),
+                snapshot(410L, StoryCardType.PROJECT, null, 3L)));
+    Map<Long, Integer> weekNumbers = Map.of(10L, 7, 11L, 8);
+    when(weekService.findWeekNumbers(Set.of(10L, 11L))).thenReturn(weekNumbers);
+
+    jobPostingService.getDetail(1L, 21L);
+
+    verify(weekService).findWeekNumbers(Set.of(10L, 11L));
+    verify(answerAssembler)
+        .assemble(eq(q1), anyMap(), anyMap(), anyMap(), eq(weekNumbers), anyMap());
+    verify(answerAssembler)
+        .assemble(eq(q2), anyMap(), anyMap(), anyMap(), eq(weekNumbers), anyMap());
+  }
+
+  private static CardSnapshot snapshot(Long id, StoryCardType type, Long weekId, Long projectId) {
+    return new CardSnapshot(
+        id, type, weekId, projectId, "카드 " + id, null, null, null, null, null, Set.of());
   }
 
   private static AnswerDraft draftMissing(Long... competencyIds) {

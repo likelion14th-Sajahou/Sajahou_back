@@ -23,6 +23,7 @@ import com.sajarok.domain.project.service.ProjectService;
 import com.sajarok.domain.storycard.dto.CardSnapshot;
 import com.sajarok.domain.storycard.entity.StoryCardType;
 import com.sajarok.domain.storycard.service.StoryCardService;
+import com.sajarok.domain.week.service.WeekService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.util.List;
@@ -48,6 +49,7 @@ class AnswerDraftWriterTest {
   @Mock private StoryCardService storyCardService;
   @Mock private ProjectService projectService;
   @Mock private CompetencyService competencyService;
+  @Mock private WeekService weekService;
   @Mock private AnswerAssembler answerAssembler;
 
   @InjectMocks private AnswerDraftWriter answerDraftWriter;
@@ -83,7 +85,7 @@ class AnswerDraftWriterTest {
     AnswerResponse response =
         new AnswerResponse(55L, List.of(), 0, 0, List.of(), false, List.of(), false);
     when(answerAssembler.assemble(
-            eq(question), anyMap(), anyMap(), eq(Map.of(3L, "사자록")), anyMap()))
+            eq(question), anyMap(), anyMap(), eq(Map.of(3L, "사자록")), anyMap(), anyMap()))
         .thenReturn(response);
 
     AnswerResponse result = answerDraftWriter.save(1L, 55L, DRAFT, List.of(card(410L), card(300L)));
@@ -158,6 +160,50 @@ class AnswerDraftWriterTest {
 
     answerDraftWriter.save(1L, 55L, blankDraft, List.of());
 
-    verify(answerAssembler).assemble(eq(question), anyMap(), anyMap(), anyMap(), eq(names));
+    verify(answerAssembler)
+        .assemble(eq(question), anyMap(), anyMap(), anyMap(), anyMap(), eq(names));
+  }
+
+  @Test
+  @DisplayName("37번 저장: 연결한 회고 카드의 주차 ID만 모아 주차 번호를 한 번 읽어 응답에 넘긴다 (프로젝트 카드는 빼고)")
+  void save_passesWeekNumbersOfLinkedRetroCards() {
+    CoverLetterQuestion question = editedQuestion();
+    when(coverLetterQuestionRepository.findByIdAndUserId(55L, 1L))
+        .thenReturn(Optional.of(question));
+    CardSnapshot retro =
+        new CardSnapshot(
+            500L,
+            StoryCardType.SESSION,
+            10L,
+            null,
+            "카드 500",
+            null,
+            null,
+            null,
+            null,
+            null,
+            Set.of(3L));
+    CardSnapshot otherRetro =
+        new CardSnapshot(
+            501L,
+            StoryCardType.ASSIGNMENT,
+            11L,
+            null,
+            "카드 501",
+            null,
+            null,
+            null,
+            null,
+            null,
+            Set.of(3L));
+    when(storyCardService.findPublished(1L)).thenReturn(List.of(retro, card(410L), otherRetro));
+    Map<Long, Integer> weekNumbers = Map.of(10L, 7);
+    when(weekService.findWeekNumbers(Set.of(10L))).thenReturn(weekNumbers);
+
+    answerDraftWriter.save(1L, 55L, DRAFT, List.of(retro, card(410L)));
+
+    verify(weekService).findWeekNumbers(Set.of(10L));
+    verify(answerAssembler)
+        .assemble(eq(question), anyMap(), anyMap(), anyMap(), eq(weekNumbers), anyMap());
   }
 }
