@@ -3,6 +3,7 @@ package com.sajarok.domain.retrospective.dto;
 import com.sajarok.domain.retrospective.entity.AssignmentMode;
 import com.sajarok.domain.retrospective.entity.Retrospective;
 import com.sajarok.domain.retrospective.entity.RetrospectiveType;
+import com.sajarok.global.time.KstTime;
 import java.time.OffsetDateTime;
 
 /** 20번 회고 저장 응답 */
@@ -18,17 +19,25 @@ public record RetrospectiveCompleteResponse(
 
   /**
    * @param weekNumber 회고 주차 번호. 과제 회고도 같은 주차라 assignmentPending에도 쓴다
+   * @param deadline 이 회고의 마감(세션 회고면 세션 마감, 과제 회고면 과제 마감). 모르면 null이고 지각이 아니다
+   * @param assignmentDeadline 그 주 과제 회고 마감. assignmentPending에 쓴다
    */
-  public static RetrospectiveCompleteResponse of(Retrospective r, Long cardId, Integer weekNumber) {
+  public static RetrospectiveCompleteResponse of(
+      Retrospective r,
+      Long cardId,
+      Integer weekNumber,
+      OffsetDateTime deadline,
+      OffsetDateTime assignmentDeadline) {
     boolean assignmentLater =
         r.getType() == RetrospectiveType.SESSION && r.getAssignmentMode() == AssignmentMode.LATER;
+    // 처음 완료한 시각(completedAt은 다시 저장해도 안 바뀜)이 마감보다 늦으면 지각
+    OffsetDateTime completedAt = KstTime.toOffset(r.getCompletedAt());
+    boolean isLate = deadline != null && completedAt != null && completedAt.isAfter(deadline);
     return new RetrospectiveCompleteResponse(
         RetrospectiveState.of(r),
         cardId,
         weekNumber,
-        false, // TODO(주차 담당): completedAt이 파트별 마감보다 늦으면 true (주차+파트 마감 조회 필요)
-        assignmentLater
-            ? new AssignmentPending(weekNumber, null) // TODO(주차 담당): 과제 마감
-            : null);
+        isLate,
+        assignmentLater ? new AssignmentPending(weekNumber, assignmentDeadline) : null);
   }
 }
