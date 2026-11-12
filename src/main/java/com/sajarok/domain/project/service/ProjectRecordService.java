@@ -5,10 +5,12 @@ import com.sajarok.domain.attachment.dto.AttachmentView;
 import com.sajarok.domain.attachment.entity.Attachment;
 import com.sajarok.domain.attachment.entity.ExtractStatus;
 import com.sajarok.domain.attachment.service.AttachmentService;
+import com.sajarok.domain.competency.service.CompetencyService;
 import com.sajarok.domain.project.ai.RecordAttachment;
 import com.sajarok.domain.project.ai.RecordQuestionResult.Validated;
 import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
 import com.sajarok.domain.project.dto.ProjectRecordResponse;
+import com.sajarok.domain.project.dto.ProjectRecordResponse.CompetencyTag;
 import com.sajarok.domain.project.dto.ProjectRecordUpdateRequest;
 import com.sajarok.domain.project.dto.RecordOrganizeResponse;
 import com.sajarok.domain.project.dto.RecordQuestionsResponse;
@@ -32,7 +34,6 @@ import com.sajarok.infra.ai.AiLock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -57,6 +58,7 @@ public class ProjectRecordService {
   private final RecordQuestionWriter recordQuestionWriter;
   private final AttachmentService attachmentService;
   private final AiLock aiLock;
+  private final CompetencyService competencyService;
 
   /** 30번 결과. created면 201(새로 만듦), 아니면 200. */
   public record RecordQuestions(boolean created, RecordQuestionsResponse response) {}
@@ -100,9 +102,7 @@ public class ProjectRecordService {
             .aiOrganized(false)
             .build();
     checkMaterial(record, request.hasAttachments());
-    Set<Long> competencyIds = validateCompetencyCount(request.competencyIds());
-    // TODO(역량 담당): CompetencyService가 생기면 위 개수 확인을 지우고 이 호출로 바꾼다 (1~3·내 파트 확인).
-    // competencyService.validate(userId, competencyIds, true);
+    Set<Long> competencyIds = competencyService.validate(userId, request.competencyIds(), true);
 
     ProjectRecord saved = projectRecordRepository.save(record);
     // 남의 첨부거나 없는 ID면 NOT_FOUND가 나고, 같은 트랜잭션이라 기록 저장도 되돌아간다.
@@ -113,8 +113,7 @@ public class ProjectRecordService {
         storyCardService.createFromRecord(
             toCardSource(userId, saved, attachments.size()), competencyIds);
 
-    // TODO(역량 담당): competencyService.names(competencyIds)로 태그 이름을 채운다.
-    return ProjectRecordResponse.of(saved, cardId, List.of(), attachments);
+    return ProjectRecordResponse.of(saved, cardId, toCompetencyTags(competencyIds), attachments);
   }
 
   /**
@@ -151,28 +150,29 @@ public class ProjectRecordService {
         return ProjectRecordResponse.of(record, null, List.of(), attachments);
       }
       checkMaterial(record, hasAttachments);
-      Set<Long> competencyIds = validateCompetencyCount(request.competencyIds());
-      // TODO(역량 담당): competencyService.validate(userId, competencyIds, true);
+      Set<Long> competencyIds = competencyService.validate(userId, request.competencyIds(), true);
       record.markSaved();
       Long cardId =
           storyCardService.createFromRecord(
               toCardSource(userId, record, attachments.size()), competencyIds);
-      // TODO(역량 담당): competencyService.names(competencyIds)로 태그 이름을 채운다.
-      return ProjectRecordResponse.of(record, cardId, List.of(), attachments);
+      return ProjectRecordResponse.of(record, cardId, toCompetencyTags(competencyIds), attachments);
     }
 
     checkMaterial(record, hasAttachments);
     Set<Long> competencyIds =
-        request.competencyIds() == null ? null : validateCompetencyCount(request.competencyIds());
-    // TODO(역량 담당): competencyIds가 있으면 competencyService.validate(userId, competencyIds, true);
+        request.competencyIds() == null
+            ? null
+            : competencyService.validate(userId, request.competencyIds(), true);
 
     // memo도 source에 담겨 카드 전문에 반영된다. competencyIds가 null이면 카드 태그는 그대로.
     storyCardService.syncFromRecord(
         toCardSource(userId, record, attachments.size()), competencyIds);
     RecordCardInfo card = storyCardService.findByRecordIds(List.of(recordId)).get(recordId);
-    // TODO(역량 담당): card.competencyIds()로 competencyService.names를 불러 태그 이름을 채운다.
     return ProjectRecordResponse.of(
-        record, card == null ? null : card.cardId(), List.of(), attachments);
+        record,
+        card == null ? null : card.cardId(),
+        card == null ? List.of() : toCompetencyTags(card.competencyIds()),
+        attachments);
   }
 
   /** 첨부를 기록에 연결하고, 연결된 첨부 전체를 돌려준다. 기록이 내 것인지는 부르는 쪽이 먼저 확인한다. */
@@ -201,17 +201,13 @@ public class ProjectRecordService {
     }
   }
 
-  /**
-   * 역량 태그 개수 확인(1~3개, 같은 ID는 1개로 셈). 아니면 COMPETENCY_LIMIT.
-   *
-   * <p>CompetencyService.validate가 생기기 전까지 쓰는 임시 확인이다. 한 규칙이 두 곳에 있으면 어긋나므로, 생기면 지운다.
-   */
-  private Set<Long> validateCompetencyCount(List<Long> competencyIds) {
-    Set<Long> distinct = competencyIds == null ? Set.of() : new LinkedHashSet<>(competencyIds);
-    if (distinct.isEmpty() || distinct.size() > 3) {
-      throw new BusinessException(ErrorCode.COMPETENCY_LIMIT);
+  private List<CompetencyTag> toCompetencyTags(Collection<Long> competencyIds) {
+    if (competencyIds.isEmpty()) {
+      return List.of();
     }
-    return distinct;
+
+    Map<Long, String> names = competencyService.names(competencyIds);
+    return competencyIds.stream().map(id -> new CompetencyTag(id, names.get(id))).toList();
   }
 
   /** 카드 담당에게 넘기는 기록 내용. 27·28번이 같이 쓴다. */

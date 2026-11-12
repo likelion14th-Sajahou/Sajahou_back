@@ -135,7 +135,7 @@ class AiResultTest {
         MatchingPrompts.postingAnalysisUser(
             posting,
             List.of("우대: 협업 경험"),
-            List.of(new MatchingPrompts.CompetencyOption(3L, "협업")),
+            List.of(new MatchingPrompts.CompetencyOption(3L, "협업", "팀과 함께 일하며 결과를 만듦")),
             List.of("협업 경험"));
 
     assertThat(user)

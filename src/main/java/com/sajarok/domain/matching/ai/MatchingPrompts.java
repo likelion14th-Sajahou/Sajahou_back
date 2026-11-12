@@ -10,12 +10,8 @@ public final class MatchingPrompts {
 
   private MatchingPrompts() {}
 
-  /**
-   * 프롬프트에 넣는 역량 하나. 목록은 competency 테이블에서 받는다(하드코딩하지 않음, C-06).
-   *
-   * <p>TODO(역량 담당): 역량 서비스가 생기면 description을 더해 [역량 목록]에 같이 넣는다.
-   */
-  public record CompetencyOption(Long id, String name) {}
+  /** 프롬프트에 넣는 역량 하나. 목록은 competency 테이블에서 받는다(하드코딩하지 않음, C-06). */
+  public record CompetencyOption(Long id, String name, String description) {}
 
   /** 프롬프트에 넣는 공고 내용. */
   public record PostingText(
@@ -55,7 +51,15 @@ public final class MatchingPrompts {
     StringBuilder sb = new StringBuilder();
     sb.append("[역량 목록]\n");
     competencies.forEach(
-        c -> sb.append("- id ").append(c.id()).append(": ").append(c.name()).append('\n'));
+        competency ->
+            sb.append("- id ")
+                .append(competency.id())
+                .append(": ")
+                .append(competency.name())
+                .append(" — ")
+                .append(competency.description())
+                .append('\n'));
+    ;
     sb.append("\n[공고]\n").append(postingBody(posting));
     attachmentTexts.forEach(text -> line(sb, "공고 첨부", text));
     sb.append("\n[문항]\n");

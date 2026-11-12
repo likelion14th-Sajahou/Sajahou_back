@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -18,6 +19,9 @@ import com.sajarok.domain.attachment.entity.AttachmentCategory;
 import com.sajarok.domain.attachment.entity.ExtractStatus;
 import com.sajarok.domain.attachment.entity.LinkType;
 import com.sajarok.domain.attachment.service.AttachmentService;
+import com.sajarok.domain.competency.entity.Competency;
+import com.sajarok.domain.competency.service.CompetencyService;
+import com.sajarok.domain.matching.ai.MatchingPrompts.CompetencyOption;
 import com.sajarok.domain.matching.ai.PostingAnalysisResult;
 import com.sajarok.domain.matching.dto.JobPostingCreateRequest;
 import com.sajarok.domain.matching.dto.JobPostingCreateRequest.QuestionRequest;
@@ -58,6 +62,7 @@ class JobPostingServiceCreateTest {
   @Mock private JobPostingWriter jobPostingWriter;
   @Mock private PostingAnalyzer postingAnalyzer;
   @Mock private AttachmentService attachmentService;
+  @Mock private CompetencyService competencyService;
 
   @InjectMocks private JobPostingService jobPostingService;
 
@@ -179,6 +184,12 @@ class JobPostingServiceCreateTest {
   @Test
   @DisplayName("36번: 저장 → AI 분석 → 역량 저장 순서로 하고, 역량에 내 카드 수를 붙여 응답한다")
   void create_savesAnalyzesAndResponds() {
+    Competency competency = mock(Competency.class);
+    when(competency.getId()).thenReturn(3L);
+    when(competency.getName()).thenReturn("협업");
+    when(competency.getDescription()).thenReturn("팀과 함께 일하며 결과를 만듦");
+    when(competencyService.findForUser(1L)).thenReturn(List.of(competency));
+    List<CompetencyOption> options = List.of(new CompetencyOption(3L, "협업", "팀과 함께 일하며 결과를 만듦"));
     JobPosting posting = savedPosting();
     posting.applyCompetencies(List.of(new PostingCompetency(3L, "다양한 직군과 협업한 경험")));
     PostingAnalysisResult result =
@@ -186,11 +197,12 @@ class JobPostingServiceCreateTest {
             List.of(new PostingAnalysisResult.Competency(3L, "다양한 직군과 협업한 경험")),
             List.of(new PostingAnalysisResult.Question(1, List.of(3L))));
     when(jobPostingWriter.save(eq(1L), any())).thenReturn(posting);
-    when(postingAnalyzer.analyze(any(), anyList(), anyList(), eq(List.of("협업 경험을 써 주세요"))))
+    when(postingAnalyzer.analyze(any(), anyList(), eq(options), eq(List.of("협업 경험을 써 주세요"))))
         .thenReturn(result);
     when(jobPostingWriter.applyAnalysis(eq(1L), eq(21L), any(), eq(result)))
         .thenReturn(new JobPostingWriter.Applied(posting, List.of(question(posting, List.of(3L)))));
     when(storyCardService.countByCompetency(1L)).thenReturn(Map.of(3L, 2L));
+    when(competencyService.names(List.of(3L))).thenReturn(Map.of(3L, "협업"));
 
     JobPostingCreateResponse response = jobPostingService.create(1L, request("대규모 트래픽", null));
 
@@ -202,6 +214,7 @@ class JobPostingServiceCreateTest {
     assertThat(response.noCompetencyFound()).isFalse();
     assertThat(response.competencies()).hasSize(1);
     assertThat(response.competencies().get(0).competencyId()).isEqualTo(3L);
+    assertThat(response.competencies().get(0).name()).isEqualTo("협업");
     assertThat(response.competencies().get(0).evidenceQuote()).isEqualTo("다양한 직군과 협업한 경험");
     assertThat(response.competencies().get(0).cardCount()).isEqualTo(2L);
     assertThat(response.questions().get(0).questionId()).isEqualTo(55L);
