@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -102,4 +103,26 @@ public class WeekService {
               return phases;
             });
   }
+
+  public List<FootprintWeek> findFootprintWeeks(Part part) {
+    return jdbcTemplate.query(
+        """
+                SELECT w.id, w.week_number, w.phase, w.is_presentation_week, s.session_title
+                FROM week w
+                LEFT JOIN week_part_schedule s
+                  ON s.week_id = w.id AND s.part = ?
+                ORDER BY w.week_number
+                """,
+        (rs, rowNum) ->
+            new FootprintWeek(
+                rs.getLong("id"),
+                rs.getInt("week_number"),
+                rs.getString("phase"),
+                rs.getBoolean("is_presentation_week"),
+                rs.getString("session_title")),
+        part.name());
+  }
+
+  public record FootprintWeek(
+      Long weekId, int weekNumber, String phase, boolean isPresentationWeek, String sessionTitle) {}
 }
