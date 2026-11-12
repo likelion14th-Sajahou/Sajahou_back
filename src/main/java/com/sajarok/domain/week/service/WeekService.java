@@ -78,4 +78,27 @@ public class WeekService {
               return numbers;
             });
   }
+
+  public Map<Long, String> findPresentationPhases(Collection<Long> weekIds) {
+    if (weekIds.isEmpty()) {
+      return Map.of();
+    }
+
+    return new NamedParameterJdbcTemplate(jdbcTemplate)
+        .query(
+            """
+                    SELECT id, phase
+                    FROM week
+                    WHERE id IN (:ids)
+                      AND is_presentation_week = TRUE
+                    """,
+            Map.of("ids", weekIds),
+            rs -> {
+              Map<Long, String> phases = new HashMap<>();
+              while (rs.next()) {
+                phases.put(rs.getLong("id"), rs.getString("phase"));
+              }
+              return phases;
+            });
+  }
 }

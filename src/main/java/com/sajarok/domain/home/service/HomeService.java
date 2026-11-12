@@ -14,8 +14,6 @@ import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.util.Comparator;
 import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,12 +45,26 @@ public class HomeService {
     weekIds.remove(null);
     var weekNumbers = weekService.findWeekNumbers(weekIds);
 
-    var stickerWeekNumbers =
-        retrospective.stickerWeekIds().stream()
-            .map(weekNumbers::get)
-            .filter(Objects::nonNull)
+    var stickerWeekIds = retrospective.stickerWeekIds();
+    var presentationPhases = weekService.findPresentationPhases(stickerWeekIds);
+
+    var completedStickerWeekIds =
+        stickerWeekIds.stream().filter(weekNumbers::containsKey).distinct().toList();
+
+    var projectStickers =
+        completedStickerWeekIds.stream()
+            .filter(presentationPhases::containsKey)
+            .sorted(Comparator.comparing(weekNumbers::get))
+            .map(presentationPhases::get)
             .distinct()
+            .toList();
+
+    var recentWeekNumbers =
+        completedStickerWeekIds.stream()
+            .filter(id -> !presentationPhases.containsKey(id))
+            .map(weekNumbers::get)
             .sorted(Comparator.reverseOrder())
+            .limit(10)
             .toList();
 
     var recentCards =
@@ -71,9 +83,9 @@ public class HomeService {
         currentWeek,
         new SessionRetrospective(retrospective.sessionRetrospectiveId(), retrospective.state()),
         new Stickers(
-            stickerWeekNumbers.size(),
-            stickerWeekNumbers.stream().limit(10).toList(),
-            List.of(),
+            completedStickerWeekIds.size(),
+            recentWeekNumbers,
+            projectStickers,
             retrospective.showThisWeekSlot()),
         projectTiles.inProgressProjects(),
         projectTiles.doneProjects(),

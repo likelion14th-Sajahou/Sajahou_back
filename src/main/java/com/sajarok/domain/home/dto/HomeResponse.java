@@ -24,7 +24,7 @@ public record HomeResponse(
   public record Stickers(
       int totalCount,
       List<Integer> recentWeekNumbers,
-      List<Object> projectStickers,
+      List<String> projectStickers,
       boolean showThisWeekSlot) {}
 
   public record RecentCardItem(Long cardId, StoryCardType type, Integer weekNumber, String title) {}
