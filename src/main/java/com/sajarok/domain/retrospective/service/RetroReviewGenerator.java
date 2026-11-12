@@ -22,8 +22,15 @@ public class RetroReviewGenerator {
   private final AiClient aiClient;
   private final ObjectMapper objectMapper; // tools.jackson.databind.ObjectMapper (Jackson 3)
 
+  /**
+   * @param weekNumber 회고록 제목에 쓰는 주차 번호. 모르면 null
+   */
   public RetroCardDraft generate(
-      Retrospective r, Part part, List<RetroAttachment> attachments, List<QuestionView> answered) {
+      Retrospective r,
+      Integer weekNumber,
+      Part part,
+      List<RetroAttachment> attachments,
+      List<QuestionView> answered) {
     String user = RetroPrompts.reviewUser(r, part, attachments, answered);
     RetroReviewResult raw =
         aiClient.call(RetroPrompts.REVIEW_SYSTEM, user, RetroReviewResult.class);
@@ -44,7 +51,7 @@ public class RetroReviewGenerator {
         d.reason(),
         d.result(),
         d.learned(),
-        RetroPrompts.fullMarkdown(r, d.markdownBody()),
+        RetroPrompts.fullMarkdown(r, weekNumber, d.markdownBody()),
         objectMapper.writeValueAsString(d.evidence())); // Map → JSON 문자열
   }
 }

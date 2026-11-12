@@ -23,12 +23,14 @@ public record StoryCardListResponse(int totalCount, List<CardItem> cards) {
      * projectName·recordDate는 회고 카드면 null.
      *
      * @param competencyNames 목록 전체 카드의 역량 ID → 이름 (한 번에 가져온 것)
+     * @param weekNumber 회고 카드의 주차 번호. 프로젝트 카드는 null
      */
     public static CardItem of(
         StoryCard card,
         String projectName,
         LocalDate recordDate,
-        Map<Long, String> competencyNames) {
+        Map<Long, String> competencyNames,
+        Integer weekNumber) {
       List<StoryCardDetailResponse.CompetencyView> competencies =
           card.getCompetencyIds().stream()
               .sorted()
@@ -40,7 +42,7 @@ public record StoryCardListResponse(int totalCount, List<CardItem> cards) {
       return new CardItem(
           card.getId(),
           card.getType(),
-          null, // weekNumber는 null (TODO(주차 담당))
+          weekNumber,
           card.getProjectId(),
           projectName,
           card.getTitle(),

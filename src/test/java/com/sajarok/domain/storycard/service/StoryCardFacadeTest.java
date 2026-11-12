@@ -22,6 +22,7 @@ import com.sajarok.domain.storycard.entity.StoryCard;
 import com.sajarok.domain.storycard.entity.StoryCardStatus;
 import com.sajarok.domain.storycard.entity.StoryCardType;
 import com.sajarok.domain.storycard.repository.StoryCardRepository;
+import com.sajarok.domain.week.service.WeekService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.time.LocalDate;
@@ -52,6 +53,7 @@ class StoryCardFacadeTest {
   @Mock private ProjectRecordService projectRecordService;
   @Mock private ProjectService projectService;
   @Mock private CompetencyService competencyService;
+  @Mock private WeekService weekService;
 
   @InjectMocks private StoryCardFacade storyCardFacade;
 
@@ -371,5 +373,31 @@ class StoryCardFacadeTest {
     assertThat(response.cards().get(1).competencies())
         .containsExactly(new CompetencyView(5L, "문제 해결"));
     verify(competencyService).names(List.of(21L, 5L));
+  }
+
+  @Test
+  @DisplayName("22번: 회고 카드 상세에 주차 번호를 넣는다")
+  void detail_weekNumber() {
+    when(storyCardRepository.findByIdAndUserId(301L, ME))
+        .thenReturn(Optional.of(retrospectiveCard()));
+    when(weekService.findWeekNumbers(List.of(10L))).thenReturn(Map.of(10L, 10));
+
+    StoryCardDetailResponse response = storyCardFacade.getDetail(ME, 301L);
+
+    assertThat(response.weekNumber()).isEqualTo(10);
+  }
+
+  @Test
+  @DisplayName("21번: weekNumber로 거르고(프로젝트 카드는 주차가 없어 빠진다), 목록 카드에 주차 번호를 넣는다")
+  void list_filterByWeekNumber() {
+    twoPublishedCards();
+    when(weekService.findWeekNumbers(List.of(10L))).thenReturn(Map.of(10L, 10));
+
+    StoryCardListResponse week10 = storyCardFacade.getList(ME, null, null, 10, null);
+    StoryCardListResponse week9 = storyCardFacade.getList(ME, null, null, 9, null);
+
+    assertThat(week10.cards()).extracting(CardItem::cardId).containsExactly(301L);
+    assertThat(week10.cards().get(0).weekNumber()).isEqualTo(10);
+    assertThat(week9.totalCount()).isZero();
   }
 }

@@ -24,6 +24,7 @@ import com.sajarok.domain.retrospective.repository.RetrospectiveRepository;
 import com.sajarok.domain.storycard.dto.CardSnapshot;
 import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
 import com.sajarok.domain.storycard.service.StoryCardService;
+import com.sajarok.domain.week.service.WeekService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import com.sajarok.global.time.KstTime;
@@ -45,6 +46,7 @@ public class RetrospectiveService {
   private final AiQuestionService aiQuestionService;
   private final StoryCardService storyCardService;
   private final AttachmentService attachmentService;
+  private final WeekService weekService;
 
   /**
    * 홈(4번, 지윤님 HomeService가 부름): 이번 주 세션 회고 상태와 스티커(완료한 세션 회고의 주차 ID).
@@ -119,7 +121,8 @@ public class RetrospectiveService {
         retrospectiveRepository.findByUserIdAndWeekIdAndType(
             userId, request.weekId(), request.type());
     if (existing.isPresent()) {
-      return new StartResult(RetrospectiveStartResponse.from(existing.get()), false);
+      return new StartResult(
+          RetrospectiveStartResponse.from(existing.get(), weekNumberOf(request.weekId())), false);
     }
 
     if (request.type() == RetrospectiveType.ASSIGNMENT) {
@@ -138,7 +141,9 @@ public class RetrospectiveService {
             ? Retrospective.startRested(userId, request.weekId())
             : Retrospective.start(userId, request.weekId(), request.type());
     return new StartResult(
-        RetrospectiveStartResponse.from(retrospectiveRepository.save(retrospective)), true);
+        RetrospectiveStartResponse.from(
+            retrospectiveRepository.save(retrospective), weekNumberOf(request.weekId())),
+        true);
   }
 
   /** 응답과 '새로 만들었는지'를 같이 돌려준다. 컨트롤러가 201/200을 고른다 */
@@ -180,7 +185,8 @@ public class RetrospectiveService {
         attachmentService.findAll(AttachmentOwner.retrospective(retrospectiveId));
     StoryCardDetailResponse card =
         storyCardService.findDetailByRetrospective(retrospectiveId).orElse(null);
-    return RetrospectiveDetailResponse.of(retrospective, questions, attachments, card);
+    return RetrospectiveDetailResponse.of(
+        retrospective, questions, attachments, card, weekNumberOf(retrospective.getWeekId()));
   }
 
   /** 14번: 임시저장. 완료한 회고도 고칠 수 있다 */
@@ -206,6 +212,12 @@ public class RetrospectiveService {
     // TODO(주차 담당): 처음 완료하는데(completedAt == null) 마감 + 7일이 지났으면 409 DEADLINE_PASSED
     Long cardId = storyCardService.publishRetrospectiveCard(retrospectiveId);
     retrospective.complete(LocalDateTime.now(KstTime.OFFSET));
-    return RetrospectiveCompleteResponse.of(retrospective, cardId);
+    return RetrospectiveCompleteResponse.of(
+        retrospective, cardId, weekNumberOf(retrospective.getWeekId()));
+  }
+
+  /** 주차 ID → 주차 번호 (지윤님 WeekService). 주차 일정에 없으면 null */
+  private Integer weekNumberOf(Long weekId) {
+    return weekService.findWeekNumbers(List.of(weekId)).get(weekId);
   }
 }

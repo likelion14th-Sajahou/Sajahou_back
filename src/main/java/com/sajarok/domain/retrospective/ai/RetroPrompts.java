@@ -200,9 +200,14 @@ public final class RetroPrompts {
     return materialText(r) + "\n" + answers;
   }
 
-  /** 19번 회고록 전문: 서버가 # 제목을 붙인다. TODO(주차 담당): "10주차 세션 회고"처럼 주차를 넣는다. */
-  public static String fullMarkdown(Retrospective r, String markdownBody) {
-    String heading = r.getType() == RetrospectiveType.ASSIGNMENT ? "과제 회고" : "세션 회고";
+  /**
+   * 19번 회고록 전문: 서버가 # 제목("10주차 세션 회고")을 붙인다.
+   *
+   * @param weekNumber 주차 번호. 모르면 null(제목에서 주차를 뺀다)
+   */
+  public static String fullMarkdown(Retrospective r, Integer weekNumber, String markdownBody) {
+    String type = r.getType() == RetrospectiveType.ASSIGNMENT ? "과제 회고" : "세션 회고";
+    String heading = weekNumber == null ? type : weekNumber + "주차 " + type;
     return "# " + heading + "\n\n" + markdownBody.strip() + "\n";
   }
 
