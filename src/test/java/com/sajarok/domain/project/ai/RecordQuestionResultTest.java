@@ -107,6 +107,7 @@ class RecordQuestionResultTest {
             "[메모·기록]\n메모: " + MEMO,
             "[첨부]\n(601) FILE / MEETING_NOTE / 회의록.pdf: 본문");
     assertThat(RecordPrompts.QUESTIONS_SYSTEM)
-        .contains("1 ~ 4개", "디자인(DESIGN)·링크(LINK) → 선택의 이유", "기타(OTHER)", "30%");
+        .contains(
+            "1 ~ 4개", "디자인(DESIGN)·링크(LINK) → 선택의 이유", "기타(OTHER)", "30%", "이미 채운 칸", "빈칸 위주로 묻는다");
   }
 }

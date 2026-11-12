@@ -4,7 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -29,12 +32,14 @@ import com.sajarok.domain.question.entity.QuestionStatus;
 import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import com.sajarok.infra.ai.AiLock;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,6 +48,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -56,6 +62,13 @@ class ProjectFinishPortfolioDraftTest {
   @Mock private FinishQuestionGenerator finishQuestionGenerator;
   @Mock private PortfolioDrafter portfolioDrafter;
   @Mock private AttachmentService attachmentService;
+  @Spy private AiLock aiLock = new AiLock();
+
+  /** 기본은 내 것. 남의 것 테스트만 다시 정한다. */
+  @BeforeEach
+  void ownedByMe() {
+    lenient().when(projectRepository.findUserIdById(3L)).thenReturn(Optional.of(1L));
+  }
 
   @InjectMocks private ProjectFinishService projectFinishService;
 
@@ -201,5 +214,33 @@ class ProjectFinishPortfolioDraftTest {
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(code);
+  }
+
+  @Test
+  @DisplayName("33번: 같은 프로젝트에서 32번 질문 만들기가 돌고 있으면(같은 키 finish:{id}) AI_IN_PROGRESS이고 AI를 부르지 않는다")
+  void createPortfolioDraft_inProgress_throwsAiInProgress() {
+    assertThatThrownBy(
+            () ->
+                aiLock.run(
+                    "finish:3",
+                    () -> projectFinishService.createPortfolioDraft(1L, 3L, List.of(77L))))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.AI_IN_PROGRESS);
+    verify(projectRepository, never()).findByIdAndUserId(anyLong(), anyLong());
+    verifyNoInteractions(portfolioDrafter);
+  }
+
+  @Test
+  @DisplayName("33번: 남의 프로젝트거나 없으면 잠금을 잡지 않고 바로 NOT_FOUND (주인 ID만 읽음)")
+  void createPortfolioDraft_notMine_throwsNotFoundBeforeLock() {
+    when(projectRepository.findUserIdById(3L)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> projectFinishService.createPortfolioDraft(1L, 3L, List.of(77L)))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verify(aiLock, never()).run(anyString(), any());
+    verify(projectRepository, never()).findByIdAndUserId(anyLong(), anyLong());
   }
 }
