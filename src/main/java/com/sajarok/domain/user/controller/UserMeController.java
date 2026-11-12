@@ -1,9 +1,11 @@
 package com.sajarok.domain.user.controller;
 
 import com.sajarok.domain.user.repository.UserRepository;
+import com.sajarok.global.auth.LoginSessionService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import com.sajarok.global.response.ApiResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,9 +16,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserMeController {
 
   private final UserRepository userRepository;
+  private final LoginSessionService loginSessionService;
 
   @GetMapping("/api/v1/users/me")
-  public ApiResponse<UserMeResponse> me(@AuthenticationPrincipal Long userId) {
+  public ApiResponse<UserMeResponse> me(
+      @AuthenticationPrincipal Long userId, HttpServletRequest request) {
     var user =
         userRepository
             .findById(userId)
@@ -30,7 +34,8 @@ public class UserMeController {
             user.getStudentNo(),
             user.getDepartment(),
             user.getCohort(),
-            user.getPart().name()));
+            user.getPart().name(),
+            loginSessionService.isDemo(request)));
   }
 
   public record UserMeResponse(
@@ -40,5 +45,6 @@ public class UserMeController {
       String studentNo,
       String department,
       int cohort,
-      String part) {}
+      String part,
+      boolean isDemo) {}
 }
