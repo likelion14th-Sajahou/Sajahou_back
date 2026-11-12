@@ -77,7 +77,7 @@ class RecordQuestionGeneratorTest {
   }
 
   @Test
-  @DisplayName("AI가 목록 밖 태그를 주면 AI_FAILED")
+  @DisplayName("AI가 목록 밖 태그의 질문만 주면(쓸 수 있는 질문이 없으면) AI_FAILED")
   void generate_unknownTag_throwsAiFailed() {
     aiReturns(
         new RecordQuestionResult(false, List.of(new Question("배운 점", null, null, "무엇을 배웠나요?"))));
