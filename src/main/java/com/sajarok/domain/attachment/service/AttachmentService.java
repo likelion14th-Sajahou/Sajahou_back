@@ -25,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -303,5 +304,26 @@ public class AttachmentService {
             }
           }
         });
+  }
+
+  public List<Long> findExpiredUnlinkedIds(LocalDateTime cutoff, int limit) {
+    return attachmentRepository.findExpiredUnlinkedIds(cutoff, PageRequest.of(0, limit));
+  }
+
+  @Transactional
+  public boolean deleteExpiredUnlinked(Long attachmentId, LocalDateTime cutoff) {
+    var attachment = attachmentRepository.findByIdForUpdate(attachmentId).orElse(null);
+
+    if (attachment == null
+        || attachment.getRetrospectiveId() != null
+        || attachment.getProjectRecordId() != null
+        || attachment.getProjectId() != null
+        || attachment.getJobPostingId() != null
+        || !attachment.getUpdatedAt().isBefore(cutoff)) {
+      return false;
+    }
+
+    deleteAttachments(List.of(attachment));
+    return true;
   }
 }
