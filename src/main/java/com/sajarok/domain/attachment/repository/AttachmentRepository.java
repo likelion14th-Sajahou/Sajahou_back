@@ -29,6 +29,8 @@ public interface AttachmentRepository extends JpaRepository<Attachment, Long> {
 
   List<Attachment> findAllByJobPostingIdInOrderByIdAsc(Collection<Long> ids);
 
+  List<Attachment> findAllByUserIdOrderByIdAsc(Long userId);
+
   @Query(
       """
           select a.id from Attachment a
