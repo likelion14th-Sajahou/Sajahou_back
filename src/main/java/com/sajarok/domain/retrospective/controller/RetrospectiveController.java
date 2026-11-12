@@ -4,10 +4,13 @@ import com.sajarok.domain.retrospective.dto.RetrospectiveCompleteResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDraftRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
+import com.sajarok.domain.retrospective.dto.RetrospectiveQuestionsRequest;
+import com.sajarok.domain.retrospective.dto.RetrospectiveQuestionsResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartResponse;
+import com.sajarok.domain.retrospective.service.RetrospectiveAiService;
 import com.sajarok.domain.retrospective.service.RetrospectiveService;
 import com.sajarok.global.auth.CurrentUserProvider;
 import com.sajarok.global.response.ApiResponse;
@@ -29,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class RetrospectiveController {
 
   private final RetrospectiveService retrospectiveService;
+  private final RetrospectiveAiService retrospectiveAiService;
   private final CurrentUserProvider currentUserProvider;
 
   /** 12번: 회고 시작. 새로 만들면 201, 이미 있으면 200 */
@@ -77,5 +81,19 @@ public class RetrospectiveController {
   public ApiResponse<RetrospectiveCompleteResponse> complete(@PathVariable Long retrospectiveId) {
     return ApiResponse.ok(
         retrospectiveService.complete(currentUserProvider.getUserId(), retrospectiveId));
+  }
+
+  /** 17번: AI 질문 받기 (AI 호출, 최대 50초). 새로 만들면 201, 저장된 질문·자료 부족은 200, 자료가 바뀌었으면 409 */
+  @PostMapping("/{retrospectiveId}/questions")
+  public ResponseEntity<ApiResponse<RetrospectiveQuestionsResponse>> createQuestions(
+      @PathVariable Long retrospectiveId,
+      @RequestBody(required = false) RetrospectiveQuestionsRequest request) {
+    RetrospectiveAiService.QuestionsResult result =
+        retrospectiveAiService.createQuestions(
+            currentUserProvider.getUserId(),
+            retrospectiveId,
+            request == null ? null : request.mode());
+    return ResponseEntity.status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
+        .body(ApiResponse.ok(result.response()));
   }
 }
