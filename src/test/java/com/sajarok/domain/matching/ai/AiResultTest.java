@@ -143,4 +143,19 @@ class AiResultTest {
     assertThat(user).doesNotContain("부서:", "우대사항:");
     assertThat(MatchingPrompts.POSTING_ANALYSIS_SYSTEM).contains("최대 5개", "최대 3개");
   }
+
+  @Test
+  @DisplayName("36번 프롬프트: 공고 첨부 글자는 하나당 6,000자까지만 넣는다")
+  void postingAnalysisUser_cutsLongAttachment() {
+    String kept = "가".repeat(MatchingPrompts.MAX_ATTACHMENT_CHARS);
+
+    String user =
+        MatchingPrompts.postingAnalysisUser(
+            new MatchingPrompts.PostingText("카카오", null, null, null, null, null),
+            List.of(kept + "뒷부분"),
+            List.of(),
+            List.of("협업 경험"));
+
+    assertThat(user).contains("공고 첨부: " + kept + "\n").doesNotContain("뒷부분");
+  }
 }

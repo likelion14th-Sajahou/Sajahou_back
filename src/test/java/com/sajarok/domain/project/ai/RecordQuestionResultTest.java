@@ -146,4 +146,22 @@ class RecordQuestionResultTest {
     assertThat(RecordPrompts.blanks(partial)).isEqualTo("고민·해결 / 선택과 이유 / 다음");
     assertThat(RecordPrompts.blanks(full)).isEqualTo("없음");
   }
+
+  @Test
+  @DisplayName("30번 프롬프트: 첨부 글자는 하나당 6,000자까지만 넣는다")
+  void questionsUser_cutsLongAttachment() {
+    ProjectRecord record =
+        ProjectRecord.builder()
+            .project(Project.builder().userId(1L).name("사자록").build())
+            .status(ProjectRecordStatus.DRAFT)
+            .build();
+    String kept = "가".repeat(RecordPrompts.MAX_ATTACHMENT_CHARS);
+
+    String user =
+        RecordPrompts.questionsUser(
+            record,
+            List.of(new RecordAttachment(601L, "FILE", "MEETING_NOTE", "회의록.pdf", kept + "뒷부분")));
+
+    assertThat(user).contains(": " + kept + "\n").doesNotContain("뒷부분");
+  }
 }

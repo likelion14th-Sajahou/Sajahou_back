@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.sajarok.domain.matching.ai.MatchingPrompts;
@@ -18,6 +19,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -71,5 +73,30 @@ class PostingAnalyzerTest {
 
     assertThatThrownBy(this::analyze).extracting("errorCode").isEqualTo(ErrorCode.AI_FAILED);
     assertThatThrownBy(this::analyze).extracting("errorCode").isEqualTo(ErrorCode.AI_TIMEOUT);
+  }
+
+  @Test
+  @DisplayName("프롬프트에는 공고 첨부를 6,000자까지만 넣지만, evidenceQuote는 자르지 않은 전체 첨부 글에서 찾는다")
+  void analyze_longAttachment_checksEvidenceAgainstFullText() {
+    when(aiClient.call(
+            eq(MatchingPrompts.POSTING_ANALYSIS_SYSTEM),
+            anyString(),
+            eq(PostingAnalysisResult.class)))
+        .thenReturn(
+            new PostingAnalysisResult(List.of(new Competency(3L, "타 직군과 협업 경험 우대")), List.of()));
+
+    PostingAnalysisResult result =
+        analyzer.analyze(
+            POSTING,
+            List.of("가".repeat(6000) + "타 직군과 협업 경험 우대"),
+            COMPETENCIES,
+            List.of("협업 경험을 써 주세요"));
+
+    ArgumentCaptor<String> user = ArgumentCaptor.forClass(String.class);
+    verify(aiClient).call(anyString(), user.capture(), eq(PostingAnalysisResult.class));
+    assertThat(user.getValue()).doesNotContain("타 직군과 협업 경험 우대");
+    assertThat(result.competencies())
+        .extracting(Competency::evidenceQuote)
+        .containsExactly("타 직군과 협업 경험 우대");
   }
 }

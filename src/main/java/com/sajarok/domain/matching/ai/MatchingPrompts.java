@@ -10,6 +10,12 @@ public final class MatchingPrompts {
 
   private MatchingPrompts() {}
 
+  /**
+   * 공고 첨부 하나에서 프롬프트에 넣는 최대 글자 수 (회고 RetroPrompts와 같은 값). 긴 공고 PDF가 있어도 AI 응답이 50초 안에 오게 자른다.
+   * evidenceQuote 검증은 자르지 않은 전체 글로 한다(PostingAnalyzer).
+   */
+  static final int MAX_ATTACHMENT_CHARS = 6000;
+
   /** 프롬프트에 넣는 역량 하나. 목록은 competency 테이블에서 받는다(하드코딩하지 않음, C-06). */
   public record CompetencyOption(Long id, String name, String description) {}
 
@@ -61,7 +67,7 @@ public final class MatchingPrompts {
                 .append('\n'));
     ;
     sb.append("\n[공고]\n").append(postingBody(posting));
-    attachmentTexts.forEach(text -> line(sb, "공고 첨부", text));
+    attachmentTexts.forEach(text -> line(sb, "공고 첨부", head(text)));
     sb.append("\n[문항]\n");
     for (int i = 0; i < questions.size(); i++) {
       sb.append(i + 1).append(". ").append(questions.get(i)).append('\n');
@@ -184,5 +190,12 @@ public final class MatchingPrompts {
     if (value != null && !value.isBlank()) {
       sb.append(label).append(": ").append(value).append('\n');
     }
+  }
+
+  private static String head(String text) {
+    if (text == null) {
+      return null;
+    }
+    return text.length() <= MAX_ATTACHMENT_CHARS ? text : text.substring(0, MAX_ATTACHMENT_CHARS);
   }
 }

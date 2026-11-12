@@ -11,6 +11,12 @@ public final class RecordPrompts {
   private RecordPrompts() {}
 
   /**
+   * 첨부 하나에서 프롬프트에 넣는 최대 글자 수 (회고 RetroPrompts와 같은 값). 긴 회의록·발표 자료가 있어도 AI 응답이 50초 안에 오게 자른다. quote
+   * 검증은 자르지 않은 전체 글로 한다.
+   */
+  static final int MAX_ATTACHMENT_CHARS = 6000;
+
+  /**
    * 30번 system 프롬프트. 빈칸은 서버가 계산해 [빈칸]으로 넘기고, 빈칸 하나에 질문 하나를 만든다(태그는 H-13의 3개 그대로). 좋은 예는 ai-eval 공통
    * 자료(프로토타입 홈 시안 회의).
    */
@@ -131,7 +137,7 @@ public final class RecordPrompts {
                 .append(" / ")
                 .append(a.name())
                 .append(": ")
-                .append(a.text())
+                .append(head(a.text()))
                 .append('\n'));
     sb.append("\n[빈칸]\n").append(blanks(record)).append('\n');
     return sb.toString();
@@ -227,7 +233,7 @@ public final class RecordPrompts {
       sb.append("없음\n");
     }
     for (int i = 0; i < attachmentTexts.size(); i++) {
-      sb.append("(").append(i + 1).append(") ").append(attachmentTexts.get(i)).append('\n');
+      sb.append("(").append(i + 1).append(") ").append(head(attachmentTexts.get(i))).append('\n');
     }
 
     sb.append("\n[AI 질문 답]\n");
@@ -247,5 +253,12 @@ public final class RecordPrompts {
     if (value != null && !value.isBlank()) {
       sb.append(label).append(": ").append(value).append('\n');
     }
+  }
+
+  private static String head(String text) {
+    if (text == null) {
+      return "";
+    }
+    return text.length() <= MAX_ATTACHMENT_CHARS ? text : text.substring(0, MAX_ATTACHMENT_CHARS);
   }
 }
