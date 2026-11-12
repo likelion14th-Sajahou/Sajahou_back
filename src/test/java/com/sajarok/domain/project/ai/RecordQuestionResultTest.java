@@ -65,26 +65,80 @@ class RecordQuestionResultTest {
   }
 
   @Test
-  @DisplayName("30번 검증: 자료 부족(true)이면 질문이 비어야 하고 빈 결과로 통과한다")
+  @DisplayName("30번 검증: 자료 부족(true)이면 빈 결과로 통과하고, 질문이 같이 와도 자료 부족으로 본다")
   void validate_insufficient() {
     assertThat(
             new RecordQuestionResult(true, List.of())
                 .validate(MEMO, ATTACHMENTS)
                 .insufficientMaterial())
         .isTrue();
-    assertAiFailed(new RecordQuestionResult(true, List.of(q("근거와 숫자", null, null))));
+    Validated withQuestions =
+        new RecordQuestionResult(true, List.of(q("근거와 숫자", null, null)))
+            .validate(MEMO, ATTACHMENTS);
+    assertThat(withQuestions.insufficientMaterial()).isTrue();
+    assertThat(withQuestions.questions()).isEmpty();
   }
 
   @Test
-  @DisplayName("30번 검증: 질문 0개·5개 이상·목록 밖 태그·빈 질문·넘겨주지 않은 첨부 출처면 AI_FAILED")
-  void validate_invalid() {
+  @DisplayName("30번 검증: 쓸 수 있는 질문이 하나도 없으면(0개·목록 밖 태그만·빈 질문만) AI_FAILED")
+  void validate_nothingUsable() {
     assertAiFailed(new RecordQuestionResult(false, List.of()));
-    assertAiFailed(
-        new RecordQuestionResult(false, Collections.nCopies(5, q("근거와 숫자", null, null))));
+    assertAiFailed(new RecordQuestionResult(false, null));
     assertAiFailed(new RecordQuestionResult(false, List.of(q("느낀 점", null, null))));
     assertAiFailed(
         new RecordQuestionResult(false, List.of(new Question("근거와 숫자", null, null, " "))));
-    assertAiFailed(new RecordQuestionResult(false, List.of(q("선택의 이유", "시안", 999L))));
+  }
+
+  @Test
+  @DisplayName("30번 검증: 목록 밖 태그·빈 질문은 그 질문만 버리고 나머지는 살린다 (전에는 전체 실패)")
+  void validate_dropsOnlyBadQuestions() {
+    Validated v =
+        new RecordQuestionResult(
+                false,
+                List.of(
+                    q("느낀 점", null, null),
+                    new Question("근거와 숫자", null, null, " "),
+                    q("선택의 이유", null, null)))
+            .validate(MEMO, ATTACHMENTS);
+
+    assertThat(v.questions()).extracting(NewQuestion::tag).containsExactly("선택의 이유");
+  }
+
+  @Test
+  @DisplayName("30번 검증: 태그가 띄어쓰기·가운뎃점만 다르면 목록의 태그로 맞춘다")
+  void validate_normalizesTag() {
+    Validated v =
+        new RecordQuestionResult(
+                false,
+                List.of(
+                    q("내 역할 · 과정", null, null), q("내 역할ㆍ과정", null, null), q("근거와숫자", null, null)))
+            .validate(MEMO, ATTACHMENTS);
+
+    assertThat(v.questions())
+        .extracting(NewQuestion::tag)
+        .containsExactly("내 역할·과정", "내 역할·과정", "근거와 숫자");
+  }
+
+  @Test
+  @DisplayName("30번 검증: 질문이 4개를 넘으면 앞에서 4개만 쓴다 (전에는 전체 실패)")
+  void validate_limitsToFour() {
+    Validated v =
+        new RecordQuestionResult(false, Collections.nCopies(5, q("근거와 숫자", null, null)))
+            .validate(MEMO, ATTACHMENTS);
+
+    assertThat(v.questions()).hasSize(RecordQuestionResult.MAX_QUESTIONS);
+  }
+
+  @Test
+  @DisplayName("30번 검증: 넘겨주지 않은 첨부 번호면 출처(quote·첨부)만 지우고 질문은 살린다 (전에는 전체 실패)")
+  void validate_unknownAttachment_keepsQuestion() {
+    Validated v =
+        new RecordQuestionResult(false, List.of(q("선택의 이유", "시안", 999L)))
+            .validate(MEMO, ATTACHMENTS);
+
+    assertThat(v.questions())
+        .extracting(NewQuestion::tag, NewQuestion::quote, NewQuestion::sourceAttachmentId)
+        .containsExactly(tuple("선택의 이유", null, null));
   }
 
   @Test
