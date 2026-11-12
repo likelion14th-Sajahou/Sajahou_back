@@ -21,6 +21,7 @@ import com.sajarok.domain.question.dto.QuestionView;
 import com.sajarok.domain.question.entity.QuestionOwner;
 import com.sajarok.domain.question.entity.QuestionStatus;
 import com.sajarok.domain.question.service.AiQuestionService;
+import com.sajarok.domain.retrospective.dto.HomeRetroSummary;
 import com.sajarok.domain.retrospective.dto.RetrospectiveCompleteResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDraftRequest;
@@ -28,12 +29,14 @@ import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveState;
+import com.sajarok.domain.retrospective.dto.WeekRetroStatus;
 import com.sajarok.domain.retrospective.entity.AssignmentMode;
 import com.sajarok.domain.retrospective.entity.Retrospective;
 import com.sajarok.domain.retrospective.entity.RetrospectiveStatus;
 import com.sajarok.domain.retrospective.entity.RetrospectiveType;
 import com.sajarok.domain.retrospective.repository.RetrospectiveRepository;
 import com.sajarok.domain.retrospective.service.RetrospectiveService.StartResult;
+import com.sajarok.domain.storycard.dto.CardSnapshot;
 import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
 import com.sajarok.domain.storycard.entity.StoryCardStatus;
 import com.sajarok.domain.storycard.entity.StoryCardType;
@@ -42,6 +45,7 @@ import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -594,5 +598,124 @@ class RetrospectiveServiceTest {
         .extracting("errorCode")
         .isEqualTo(ErrorCode.NOT_FOUND);
     verifyNoInteractions(storyCardService);
+  }
+
+  // ---------- 홈·발자국 (지윤님 HomeService·FootprintService가 부름) ----------
+
+  private static final java.time.LocalDateTime DONE_AT =
+      java.time.LocalDateTime.of(2026, 11, 8, 21, 0);
+
+  /** 내 회고 하나. done이면 완료 처리한다 */
+  private static Retrospective retro(long id, long weekId, RetrospectiveType type, boolean done) {
+    Retrospective r = Retrospective.start(ME, weekId, type);
+    ReflectionTestUtils.setField(r, "id", id);
+    if (done) {
+      r.complete(DONE_AT);
+    }
+    return r;
+  }
+
+  private static CardSnapshot publishedCard(long cardId, Long weekId) {
+    return new CardSnapshot(
+        cardId, StoryCardType.SESSION, weekId, null, "카드", null, null, null, null, null, Set.of());
+  }
+
+  @Test
+  @DisplayName("홈: 이번 주 회고가 없으면 NOT_STARTED·id null·이번 주 칸 표시. 스티커는 완료한 '세션' 회고의 주차만")
+  void homeSummary_notStarted_stickersFromCompletedSessions() {
+    when(retrospectiveRepository.findByUserIdAndWeekIdAndType(ME, WEEK, RetrospectiveType.SESSION))
+        .thenReturn(Optional.empty());
+    when(retrospectiveRepository.findAllByUserId(ME))
+        .thenReturn(
+            List.of(
+                retro(81L, 8L, RetrospectiveType.SESSION, true),
+                retro(91L, 9L, RetrospectiveType.SESSION, true),
+                retro(92L, 9L, RetrospectiveType.ASSIGNMENT, true), // 과제 회고는 스티커가 아니다
+                retro(71L, 7L, RetrospectiveType.SESSION, false))); // 진행 중도 아니다
+
+    HomeRetroSummary summary = retrospectiveService.homeSummary(ME, WEEK);
+
+    assertThat(summary.sessionRetrospectiveId()).isNull();
+    assertThat(summary.state()).isEqualTo(RetrospectiveState.NOT_STARTED);
+    assertThat(summary.stickerWeekIds()).containsExactlyInAnyOrder(8L, 9L);
+    assertThat(summary.showThisWeekSlot()).isTrue();
+  }
+
+  @Test
+  @DisplayName("홈: 이번 주 세션 회고를 쓰는 중이면 IN_PROGRESS와 그 id, 이번 주 칸 표시")
+  void homeSummary_inProgress() {
+    Retrospective thisWeek = retro(101L, WEEK, RetrospectiveType.SESSION, false);
+    when(retrospectiveRepository.findByUserIdAndWeekIdAndType(ME, WEEK, RetrospectiveType.SESSION))
+        .thenReturn(Optional.of(thisWeek));
+    when(retrospectiveRepository.findAllByUserId(ME)).thenReturn(List.of(thisWeek));
+
+    HomeRetroSummary summary = retrospectiveService.homeSummary(ME, WEEK);
+
+    assertThat(summary.sessionRetrospectiveId()).isEqualTo(101L);
+    assertThat(summary.state()).isEqualTo(RetrospectiveState.IN_PROGRESS);
+    assertThat(summary.stickerWeekIds()).isEmpty();
+    assertThat(summary.showThisWeekSlot()).isTrue();
+  }
+
+  @Test
+  @DisplayName("홈: 이번 주를 완료했으면 COMPLETED이고 이번 주가 스티커에 들어가며, 빈 칸은 띄우지 않는다")
+  void homeSummary_completed() {
+    Retrospective thisWeek = retro(101L, WEEK, RetrospectiveType.SESSION, true);
+    when(retrospectiveRepository.findByUserIdAndWeekIdAndType(ME, WEEK, RetrospectiveType.SESSION))
+        .thenReturn(Optional.of(thisWeek));
+    when(retrospectiveRepository.findAllByUserId(ME)).thenReturn(List.of(thisWeek));
+
+    HomeRetroSummary summary = retrospectiveService.homeSummary(ME, WEEK);
+
+    assertThat(summary.state()).isEqualTo(RetrospectiveState.COMPLETED);
+    assertThat(summary.stickerWeekIds()).containsExactly(WEEK);
+    assertThat(summary.showThisWeekSlot()).isFalse();
+  }
+
+  @Test
+  @DisplayName("홈: 이번 주를 휴회했으면 RESTED이고 이번 주 칸을 띄우지 않는다")
+  void homeSummary_rested() {
+    Retrospective rested = Retrospective.startRested(ME, WEEK);
+    ReflectionTestUtils.setField(rested, "id", 101L);
+    when(retrospectiveRepository.findByUserIdAndWeekIdAndType(ME, WEEK, RetrospectiveType.SESSION))
+        .thenReturn(Optional.of(rested));
+    when(retrospectiveRepository.findAllByUserId(ME)).thenReturn(List.of(rested));
+
+    HomeRetroSummary summary = retrospectiveService.homeSummary(ME, WEEK);
+
+    assertThat(summary.state()).isEqualTo(RetrospectiveState.RESTED);
+    assertThat(summary.stickerWeekIds()).isEmpty();
+    assertThat(summary.showThisWeekSlot()).isFalse();
+  }
+
+  @Test
+  @DisplayName("발자국: 회고를 주차별로 묶어 세션·과제 상태와 그 주 공개 카드 수를 주고, 회고 없는 주는 빠진다 (주차 ID 순)")
+  void footprints_groupsByWeek() {
+    when(retrospectiveRepository.findAllByUserId(ME))
+        .thenReturn(
+            List.of(
+                retro(91L, 9L, RetrospectiveType.SESSION, true),
+                retro(92L, 9L, RetrospectiveType.ASSIGNMENT, false),
+                retro(81L, 8L, RetrospectiveType.SESSION, false)));
+    when(storyCardService.findPublished(ME))
+        .thenReturn(
+            List.of(publishedCard(301L, 9L), publishedCard(302L, 9L), publishedCard(412L, null)));
+
+    List<WeekRetroStatus> weeks = retrospectiveService.footprints(ME);
+
+    assertThat(weeks)
+        .containsExactly(
+            new WeekRetroStatus(
+                8L, RetrospectiveState.IN_PROGRESS, RetrospectiveState.NOT_STARTED, 0),
+            new WeekRetroStatus(
+                9L, RetrospectiveState.COMPLETED, RetrospectiveState.IN_PROGRESS, 2));
+  }
+
+  @Test
+  @DisplayName("발자국: 회고가 하나도 없으면 빈 목록")
+  void footprints_empty() {
+    when(retrospectiveRepository.findAllByUserId(ME)).thenReturn(List.of());
+
+    assertThat(retrospectiveService.footprints(ME)).isEmpty();
   }
 }
