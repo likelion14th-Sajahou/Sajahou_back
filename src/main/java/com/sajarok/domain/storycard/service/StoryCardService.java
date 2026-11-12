@@ -4,6 +4,7 @@ import com.sajarok.domain.storycard.dto.CardSnapshot;
 import com.sajarok.domain.storycard.dto.RecentCard;
 import com.sajarok.domain.storycard.dto.RecordCardInfo;
 import com.sajarok.domain.storycard.dto.RecordCardSource;
+import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
 import com.sajarok.domain.storycard.entity.StoryCard;
 import com.sajarok.domain.storycard.entity.StoryCardStatus;
 import com.sajarok.domain.storycard.entity.StoryCardType;
@@ -14,6 +15,7 @@ import com.sajarok.global.exception.ErrorCode;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +55,14 @@ public class StoryCardService {
     storyCardRepository.findByProjectRecordId(recordId).ifPresent(storyCardRepository::delete);
   }
 
+  /** 16번 처음부터: 회고의 카드 초안을 지운다. 없으면 아무것도 하지 않는다 */
+  @Transactional
+  public void deleteByRetrospective(Long retrospectiveId) {
+    storyCardRepository
+        .findByRetrospectiveId(retrospectiveId)
+        .ifPresent(storyCardRepository::delete);
+  }
+
   public Map<Long, RecordCardInfo> findByRecordIds(Collection<Long> recordIds) {
     if (recordIds.isEmpty()) {
       return Map.of();
@@ -84,5 +94,24 @@ public class StoryCardService {
         .stream()
         .map(RecentCard::from)
         .toList();
+  }
+
+  /** 13번 회고 상세용: 회고의 카드를 22번과 같은 모양으로. 4단계 전이면 비어 있다 */
+  public Optional<StoryCardDetailResponse> findDetailByRetrospective(Long retrospectiveId) {
+    return storyCardRepository
+        .findByRetrospectiveId(retrospectiveId)
+        .map(card -> StoryCardDetailResponse.of(card, null, null));
+  }
+
+  /** 20번 회고 저장: 회고의 카드 초안을 공개한다. 초안이 없으면 409(19번을 먼저), 태그가 1~3개가 아니면 400 */
+  @Transactional
+  public Long publishRetrospectiveCard(Long retrospectiveId) {
+    StoryCard card =
+        storyCardRepository
+            .findByRetrospectiveId(retrospectiveId)
+            .orElseThrow(
+                () -> new BusinessException(ErrorCode.INVALID_STATE, "회고록·카드 초안을 먼저 만들어 주세요."));
+    card.publish();
+    return card.getId();
   }
 }
