@@ -28,6 +28,7 @@ import com.sajarok.domain.storycard.dto.RecordCardSource;
 import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import com.sajarok.infra.ai.AiLock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -55,6 +56,7 @@ public class ProjectRecordService {
   private final RecordQuestionGenerator recordQuestionGenerator;
   private final RecordQuestionWriter recordQuestionWriter;
   private final AttachmentService attachmentService;
+  private final AiLock aiLock;
 
   /** 30번 결과. created면 201(새로 만듦), 아니면 200. */
   public record RecordQuestions(boolean created, RecordQuestionsResponse response) {}
@@ -324,8 +326,15 @@ public class ProjectRecordService {
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public RecordQuestions createQuestions(
       Long userId, Long recordId, RecordQuestionMode requestedMode) {
+    // 잠금 전에 소유부터 확인해 남의 ID로는 잠금을 잡지 않는다. 30·31번이 같은 키.
+    checkRecordOwner(userId, recordId);
+    return aiLock.run(
+        recordLockKey(recordId), () -> createQuestionsLocked(userId, recordId, requestedMode));
+  }
+
+  private RecordQuestions createQuestionsLocked(
+      Long userId, Long recordId, RecordQuestionMode requestedMode) {
     RecordQuestionMode mode = requestedMode == null ? RecordQuestionMode.AUTO : requestedMode;
-    // TODO(AI 모듈 담당): AiLock이 생기면 기록 단위로 감싼다. 진행 중이면 AI_IN_PROGRESS.
     ProjectRecord record =
         projectRecordRepository
             .findByIdAndUserId(recordId, userId)
@@ -399,7 +408,23 @@ public class ProjectRecordService {
    */
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public RecordOrganizeResponse organize(Long userId, Long recordId) {
-    // TODO(AI 모듈 담당): AiLock이 생기면 기록 단위로 감싼다. 진행 중이면 AI_IN_PROGRESS.
+    checkRecordOwner(userId, recordId);
+    return aiLock.run(recordLockKey(recordId), () -> organizeLocked(userId, recordId));
+  }
+
+  static String recordLockKey(Long recordId) {
+    return "record:" + recordId;
+  }
+
+  /** 주인 ID만 읽는 가벼운 확인. 남의 기록이거나 없으면 NOT_FOUND. */
+  private void checkRecordOwner(Long userId, Long recordId) {
+    projectRecordRepository
+        .findUserIdById(recordId)
+        .filter(userId::equals)
+        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+  }
+
+  private RecordOrganizeResponse organizeLocked(Long userId, Long recordId) {
     ProjectRecord record =
         projectRecordRepository
             .findByIdAndUserId(recordId, userId)

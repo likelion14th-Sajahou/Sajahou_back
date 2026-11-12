@@ -20,6 +20,7 @@ import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import com.sajarok.global.time.KstTime;
+import com.sajarok.infra.ai.AiLock;
 import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -40,6 +41,7 @@ public class ProjectFinishService {
   private final FinishQuestionGenerator finishQuestionGenerator;
   private final PortfolioDrafter portfolioDrafter;
   private final AttachmentService attachmentService;
+  private final AiLock aiLock;
 
   /** 32번 결과. created가 true면 새로 만듦(201), false면 진행 중이던 질문을 그대로 돌려줌(200). */
   public record FinishQuestions(boolean created, FinishQuestionsResponse response) {}
@@ -53,7 +55,25 @@ public class ProjectFinishService {
    * <p>남의 프로젝트거나 없으면 NOT_FOUND. 고른 기록 중 이 프로젝트의 SAVED 기록이 아닌 것이 있어도 NOT_FOUND.
    */
   public FinishQuestions createQuestions(Long userId, Long projectId, List<Long> recordIds) {
-    // TODO(AI 모듈 담당): AiLock이 생기면 프로젝트 단위로 감싼다. 진행 중이면 AI_IN_PROGRESS.
+    // 잠금 전에 소유부터 확인해 남의 ID로는 잠금을 잡지 않는다. 32·33번이 같은 키.
+    checkProjectOwner(userId, projectId);
+    return aiLock.run(
+        finishLockKey(projectId), () -> createQuestionsLocked(userId, projectId, recordIds));
+  }
+
+  static String finishLockKey(Long projectId) {
+    return "finish:" + projectId;
+  }
+
+  /** 주인 ID만 읽는 가벼운 확인. 남의 프로젝트거나 없으면 NOT_FOUND. */
+  private void checkProjectOwner(Long userId, Long projectId) {
+    projectRepository
+        .findUserIdById(projectId)
+        .filter(userId::equals)
+        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+  }
+
+  private FinishQuestions createQuestionsLocked(Long userId, Long projectId, List<Long> recordIds) {
     Project project =
         projectRepository
             .findByIdAndUserId(projectId, userId)
@@ -82,7 +102,13 @@ public class ProjectFinishService {
    */
   public PortfolioDraftResponse createPortfolioDraft(
       Long userId, Long projectId, List<Long> recordIds) {
-    // TODO(AI 모듈 담당): AiLock이 생기면 프로젝트 단위로 감싼다. 진행 중이면 AI_IN_PROGRESS.
+    checkProjectOwner(userId, projectId);
+    return aiLock.run(
+        finishLockKey(projectId), () -> createPortfolioDraftLocked(userId, projectId, recordIds));
+  }
+
+  private PortfolioDraftResponse createPortfolioDraftLocked(
+      Long userId, Long projectId, List<Long> recordIds) {
     Project project =
         projectRepository
             .findByIdAndUserId(projectId, userId)

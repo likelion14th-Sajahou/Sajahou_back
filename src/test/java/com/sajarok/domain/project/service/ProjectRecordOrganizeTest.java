@@ -4,7 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -24,10 +28,12 @@ import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import com.sajarok.infra.ai.AiLock;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,6 +42,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /** 31번 기록 AI 정리 서비스 테스트. AI(RecordOrganizer)는 가짜. */
@@ -48,6 +55,13 @@ class ProjectRecordOrganizeTest {
   @Mock private AiQuestionService aiQuestionService;
   @Mock private RecordOrganizer recordOrganizer;
   @Mock private AttachmentService attachmentService;
+  @Spy private AiLock aiLock = new AiLock();
+
+  /** 기본은 내 것. 남의 것 테스트만 다시 정한다. */
+  @BeforeEach
+  void ownedByMe() {
+    lenient().when(projectRecordRepository.findUserIdById(77L)).thenReturn(Optional.of(1L));
+  }
 
   @InjectMocks private ProjectRecordService projectRecordService;
 
@@ -167,5 +181,29 @@ class ProjectRecordOrganizeTest {
         .thenReturn(suggestion());
 
     assertThat(projectRecordService.organize(1L, 77L).did()).isEqualTo("AI가 쓴 한 일");
+  }
+
+  @Test
+  @DisplayName("31번: 같은 기록에서 30번 질문 만들기가 돌고 있으면(같은 키 record:{id}) AI_IN_PROGRESS이고 기록도 읽지 않는다")
+  void organize_inProgress_throwsAiInProgress() {
+    assertThatThrownBy(() -> aiLock.run("record:77", () -> projectRecordService.organize(1L, 77L)))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.AI_IN_PROGRESS);
+    verify(projectRecordRepository, never()).findByIdAndUserId(anyLong(), anyLong());
+    verifyNoInteractions(recordOrganizer);
+  }
+
+  @Test
+  @DisplayName("31번: 남의 기록이거나 없으면 잠금을 잡지 않고 바로 NOT_FOUND (주인 ID만 읽음)")
+  void organize_notMine_throwsNotFoundBeforeLock() {
+    when(projectRecordRepository.findUserIdById(77L)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> projectRecordService.organize(1L, 77L))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verify(aiLock, never()).run(anyString(), any());
+    verify(projectRecordRepository, never()).findByIdAndUserId(anyLong(), anyLong());
   }
 }

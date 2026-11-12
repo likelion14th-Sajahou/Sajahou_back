@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -36,9 +37,11 @@ import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import com.sajarok.infra.ai.AiLock;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,6 +49,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -62,6 +66,14 @@ class ProjectRecordQuestionsTest {
   @Mock private RecordOrganizer recordOrganizer;
   @Mock private RecordQuestionGenerator recordQuestionGenerator;
   @Mock private RecordQuestionWriter recordQuestionWriter;
+  @Spy private AiLock aiLock = new AiLock();
+
+  /** 기본은 내 것. 남의 것 테스트만 다시 정한다. */
+  @BeforeEach
+  void ownedByMe() {
+    lenient().when(projectRecordRepository.findUserIdById(77L)).thenReturn(Optional.of(1L));
+  }
+
   @Mock private AttachmentService attachmentService;
 
   @InjectMocks private ProjectRecordService projectRecordService;
@@ -292,5 +304,33 @@ class ProjectRecordQuestionsTest {
     assertThat(result.created()).isTrue();
     verify(attachmentService).readTexts(owner);
     verify(attachmentService, never()).getOwnedAttachment(1L, 602L);
+  }
+
+  @Test
+  @DisplayName("30번: 같은 기록에서 AI가 돌고 있으면(30·31번 같은 키 record:{id}) AI_IN_PROGRESS이고 기록도 읽지 않는다")
+  void createQuestions_inProgress_throwsAiInProgress() {
+    assertThatThrownBy(
+            () ->
+                aiLock.run(
+                    "record:77",
+                    () -> projectRecordService.createQuestions(1L, 77L, RecordQuestionMode.AUTO)))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.AI_IN_PROGRESS);
+    verify(projectRecordRepository, never()).findByIdAndUserId(anyLong(), anyLong());
+    verifyNoInteractions(recordQuestionGenerator);
+  }
+
+  @Test
+  @DisplayName("30번: 남의 기록이거나 없으면 잠금을 잡지 않고 바로 NOT_FOUND (주인 ID만 읽음)")
+  void createQuestions_notMine_throwsNotFoundBeforeLock() {
+    when(projectRecordRepository.findUserIdById(77L)).thenReturn(Optional.of(2L));
+
+    assertThatThrownBy(() -> projectRecordService.createQuestions(1L, 77L, RecordQuestionMode.AUTO))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verify(aiLock, never()).run(anyString(), any());
+    verify(projectRecordRepository, never()).findByIdAndUserId(anyLong(), anyLong());
   }
 }

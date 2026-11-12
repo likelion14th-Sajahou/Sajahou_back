@@ -73,9 +73,26 @@ class AiResultTest {
             List.of(new PostingAnalysisResult.Competency(3L, "협업을 중시")),
             List.of(new PostingAnalysisResult.Question(1, List.of(3L, 4L))));
 
-    assertThat(ok.validate(Set.of(3L, 4L), 1).competencies()).hasSize(1);
-    assertThat(new PostingAnalysisResult(null, null).validate(Set.of(3L), 1).competencies())
+    assertThat(ok.validate(Set.of(3L, 4L), 1, "협업을 중시").competencies()).hasSize(1);
+    assertThat(
+            new PostingAnalysisResult(null, null).validate(Set.of(3L), 1, "협업을 중시").competencies())
         .isEmpty();
+  }
+
+  @Test
+  @DisplayName("36번: evidenceQuote가 공고 원문에 그대로 있으면 두고, 없으면(지어냈거나 고쳐 씀) 역량은 살리고 null로 바꾼다")
+  void posting_evidenceNotInOriginal_nullsQuote() {
+    PostingAnalysisResult result =
+        new PostingAnalysisResult(
+                List.of(
+                    new PostingAnalysisResult.Competency(3L, "다양한 직군과   협업한 경험"),
+                    new PostingAnalysisResult.Competency(4L, "대용량 트래픽 경험 우대")),
+                List.of())
+            .validate(Set.of(3L, 4L), 1, "카카오\n다양한 직군과 협업한 경험이 있는 분");
+
+    assertThat(result.competencies())
+        .extracting(PostingAnalysisResult.Competency::evidenceQuote)
+        .containsExactly("다양한 직군과   협업한 경험", null);
   }
 
   @Test
@@ -86,7 +103,7 @@ class AiResultTest {
         () ->
             new PostingAnalysisResult(
                     List.of(new PostingAnalysisResult.Competency(99L, "q")), List.of())
-                .validate(allowed, 1));
+                .validate(allowed, 1, "협업을 중시"));
     assertAiFailed(
         () ->
             new PostingAnalysisResult(
@@ -94,18 +111,18 @@ class AiResultTest {
                         .map(id -> new PostingAnalysisResult.Competency(id, "q"))
                         .toList(),
                     List.of())
-                .validate(allowed, 1));
+                .validate(allowed, 1, "협업을 중시"));
     assertAiFailed(
         () ->
             new PostingAnalysisResult(
                     List.of(),
                     List.of(new PostingAnalysisResult.Question(1, List.of(1L, 2L, 3L, 4L))))
-                .validate(allowed, 1));
+                .validate(allowed, 1, "협업을 중시"));
     assertAiFailed(
         () ->
             new PostingAnalysisResult(
                     List.of(), List.of(new PostingAnalysisResult.Question(2, List.of(1L))))
-                .validate(allowed, 1));
+                .validate(allowed, 1, "협업을 중시"));
   }
 
   @Test
