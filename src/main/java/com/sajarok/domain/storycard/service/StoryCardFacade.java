@@ -1,5 +1,6 @@
 package com.sajarok.domain.storycard.service;
 
+import com.sajarok.domain.competency.service.CompetencyService;
 import com.sajarok.domain.project.service.ProjectRecordService;
 import com.sajarok.domain.project.service.ProjectService;
 import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
@@ -15,6 +16,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +29,7 @@ public class StoryCardFacade {
   private final StoryCardRepository storyCardRepository;
   private final ProjectRecordService projectRecordService;
   private final ProjectService projectService;
+  private final CompetencyService competencyService;
 
   /** 24번: 카드 삭제. 프로젝트 카드는 기록째 지운다 */
   @Transactional
@@ -50,6 +53,14 @@ public class StoryCardFacade {
   public StoryCardDetailResponse update(Long userId, Long cardId, StoryCardUpdateRequest request) {
     StoryCard card = findMyCard(userId, cardId);
 
+    // 태그 검사(개수·내 파트)를 먼저 해서, 실패하면 아무것도 바뀌지 않게 한다
+    if (request.competencyIds() != null) {
+      Set<Long> ids =
+          competencyService.validate(
+              userId, request.competencyIds(), card.getStatus() == StoryCardStatus.PUBLISHED);
+      card.changeCompetencies(ids);
+    }
+
     card.editContent(
         request.title(),
         request.situation(),
@@ -58,9 +69,6 @@ public class StoryCardFacade {
         request.result(),
         request.learned(),
         request.fullMarkdown());
-    if (request.competencyIds() != null) {
-      card.changeCompetencies(request.competencyIds());
-    }
     return toDetail(card);
   }
 
@@ -71,7 +79,7 @@ public class StoryCardFacade {
         .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
   }
 
-  /** 상세 응답. 프로젝트 카드면 프로젝트 이름과 기록 날짜를 붙인다 */
+  /** 상세 응답. 프로젝트 카드면 프로젝트 이름과 기록 날짜를, 모든 카드에 역량 이름을 붙인다 */
   private StoryCardDetailResponse toDetail(StoryCard card) {
     String projectName =
         card.getProjectId() == null
@@ -84,7 +92,8 @@ public class StoryCardFacade {
                 .findDates(List.of(card.getProjectRecordId()))
                 .get(card.getProjectRecordId());
 
-    return StoryCardDetailResponse.of(card, projectName, recordDate);
+    return StoryCardDetailResponse.of(
+        card, projectName, recordDate, competencyService.names(card.getCompetencyIds()));
   }
 
   /** 21번: 카드 목록. 공개 카드만 최신순, 조건은 모두 선택 */
@@ -104,13 +113,16 @@ public class StoryCardFacade {
                         || (card.getTitle() != null && card.getTitle().contains(q.strip())))
             .toList();
 
-    // 프로젝트 이름·기록 날짜는 카드마다 묻지 않고 한 번에 가져온다 (N+1 방지)
+    // 프로젝트 이름·기록 날짜·역량 이름은 카드마다 묻지 않고 한 번에 가져온다 (N+1 방지)
     Map<Long, String> projectNames =
         projectService.names(
             cards.stream().map(StoryCard::getProjectId).filter(Objects::nonNull).toList());
     Map<Long, LocalDate> recordDates =
         projectRecordService.findDates(
             cards.stream().map(StoryCard::getProjectRecordId).filter(Objects::nonNull).toList());
+    Map<Long, String> competencyNames =
+        competencyService.names(
+            cards.stream().flatMap(card -> card.getCompetencyIds().stream()).distinct().toList());
 
     List<StoryCardListResponse.CardItem> items =
         cards.stream()
@@ -121,7 +133,8 @@ public class StoryCardFacade {
                         card.getProjectId() == null ? null : projectNames.get(card.getProjectId()),
                         card.getProjectRecordId() == null
                             ? null
-                            : recordDates.get(card.getProjectRecordId())))
+                            : recordDates.get(card.getProjectRecordId()),
+                        competencyNames))
             .toList();
     return new StoryCardListResponse(items.size(), items);
   }

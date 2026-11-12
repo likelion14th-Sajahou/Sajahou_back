@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.competency.service.CompetencyService;
 import com.sajarok.domain.project.service.ProjectRecordService;
 import com.sajarok.domain.project.service.ProjectService;
 import com.sajarok.domain.storycard.dto.RecordCardSource;
@@ -40,7 +41,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 /**
  * 서비스 테스트: 카드 목록(21번), 상세(22번), 수정(23번), 삭제(24번)가 카드 종류에 따라 맞게 동작하는지 확인한다.
  *
- * <p>DB 없이 레포지토리와 희선님 프로젝트·기록 서비스를 가짜(@Mock)로 바꾼다.
+ * <p>DB 없이 레포지토리와 희선님 프로젝트·기록 서비스, 지윤님 역량 서비스를 가짜(@Mock)로 바꾼다.
  */
 @ExtendWith(MockitoExtension.class)
 class StoryCardFacadeTest {
@@ -50,6 +51,7 @@ class StoryCardFacadeTest {
   @Mock private StoryCardRepository storyCardRepository;
   @Mock private ProjectRecordService projectRecordService;
   @Mock private ProjectService projectService;
+  @Mock private CompetencyService competencyService;
 
   @InjectMocks private StoryCardFacade storyCardFacade;
 
@@ -146,6 +148,17 @@ class StoryCardFacadeTest {
   }
 
   @Test
+  @DisplayName("22번: 카드 상세의 역량에 이름을 붙인다 (역량 서비스 names)")
+  void detail_fillsCompetencyNames() {
+    when(storyCardRepository.findByIdAndUserId(412L, ME)).thenReturn(Optional.of(projectCard()));
+    when(competencyService.names(Set.of(21L))).thenReturn(Map.of(21L, "협업"));
+
+    StoryCardDetailResponse response = storyCardFacade.getDetail(ME, 412L);
+
+    assertThat(response.competencies()).containsExactly(new CompetencyView(21L, "협업"));
+  }
+
+  @Test
   @DisplayName("22번: 회고 카드 상세는 프로젝트·기록을 묻지 않고, 출처 기록 없이 빈 근거 요약을 준다")
   void retrospectiveCard_detail() {
     StoryCard card = retrospectiveCard();
@@ -198,22 +211,48 @@ class StoryCardFacadeTest {
   }
 
   @Test
-  @DisplayName("23번: 공개된 카드는 태그를 0개나 4개로 바꿀 수 없다 (COMPETENCY_LIMIT)")
-  void publishedCard_competencyLimit() {
+  @DisplayName("23번: 태그 검사는 역량 서비스에 맡긴다. 공개 카드면 required=true로 부르고, 검사를 통과한 태그로 바꾼다")
+  void update_validatesCompetenciesWithCompetencyService() {
     when(storyCardRepository.findByIdAndUserId(412L, ME)).thenReturn(Optional.of(projectCard()));
+    when(competencyService.validate(ME, Set.of(3L, 21L), true)).thenReturn(Set.of(3L, 21L));
+    when(competencyService.names(Set.of(3L, 21L))).thenReturn(Map.of(3L, "문제 해결", 21L, "협업"));
+
+    StoryCardDetailResponse response =
+        storyCardFacade.update(ME, 412L, request(null, null, null, null, Set.of(3L, 21L)));
+
+    assertThat(response.competencies())
+        .containsExactly(new CompetencyView(3L, "문제 해결"), new CompetencyView(21L, "협업"));
+  }
+
+  @Test
+  @DisplayName("23번: 개수가 틀리면(COMPETENCY_LIMIT) 그대로 나가고, 태그 검사를 먼저 해서 같이 보낸 제목도 바뀌지 않는다")
+  void update_competencyLimit_changesNothing() {
+    StoryCard card = projectCard();
+    when(storyCardRepository.findByIdAndUserId(412L, ME)).thenReturn(Optional.of(card));
+    when(competencyService.validate(ME, Set.of(), true))
+        .thenThrow(new BusinessException(ErrorCode.COMPETENCY_LIMIT));
 
     assertThatThrownBy(
-            () -> storyCardFacade.update(ME, 412L, request(null, null, null, null, Set.of())))
+            () -> storyCardFacade.update(ME, 412L, request("새 제목", null, null, null, Set.of())))
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(ErrorCode.COMPETENCY_LIMIT);
+    assertThat(card.getTitle()).isEqualTo("API 명세 확정");
+    assertThat(card.getCompetencyIds()).containsExactly(21L);
+  }
+
+  @Test
+  @DisplayName("23번: 내 파트 밖의 역량이면 역량 서비스의 400 VALIDATION_ERROR가 그대로 나간다")
+  void update_competencyOutsideMyPart_validationError() {
+    when(storyCardRepository.findByIdAndUserId(412L, ME)).thenReturn(Optional.of(projectCard()));
+    when(competencyService.validate(ME, Set.of(99L), true))
+        .thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "선택할 수 없는 역량 태그가 있어요."));
+
     assertThatThrownBy(
-            () ->
-                storyCardFacade.update(
-                    ME, 412L, request(null, null, null, null, Set.of(1L, 2L, 3L, 4L))))
+            () -> storyCardFacade.update(ME, 412L, request(null, null, null, null, Set.of(99L))))
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
-        .isEqualTo(ErrorCode.COMPETENCY_LIMIT);
+        .isEqualTo(ErrorCode.VALIDATION_ERROR);
   }
 
   @Test
@@ -223,6 +262,8 @@ class StoryCardFacadeTest {
     ReflectionTestUtils.setField(card, "status", StoryCardStatus.DRAFT);
     card.changeCompetencies(Set.of(5L));
     when(storyCardRepository.findByIdAndUserId(301L, ME)).thenReturn(Optional.of(card));
+    when(competencyService.validate(ME, Set.of(), false))
+        .thenReturn(Set.of()); // 초안은 required=false
 
     StoryCardDetailResponse response =
         storyCardFacade.update(ME, 301L, request(null, null, null, null, Set.of()));
@@ -314,5 +355,21 @@ class StoryCardFacadeTest {
 
     assertThat(found.cards()).extracting(CardItem::cardId).containsExactly(412L);
     assertThat(blank.totalCount()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("21번: 역량 이름은 카드마다 묻지 않고, 목록 전체 태그를 모아 한 번에 가져온다 (N+1 방지)")
+  void list_fillsCompetencyNamesAtOnce() {
+    twoPublishedCards();
+    projectLookups();
+    when(competencyService.names(List.of(21L, 5L))).thenReturn(Map.of(21L, "협업", 5L, "문제 해결"));
+
+    StoryCardListResponse response = storyCardFacade.getList(ME, null, null, null, null);
+
+    assertThat(response.cards().get(0).competencies())
+        .containsExactly(new CompetencyView(21L, "협업"));
+    assertThat(response.cards().get(1).competencies())
+        .containsExactly(new CompetencyView(5L, "문제 해결"));
+    verify(competencyService).names(List.of(21L, 5L));
   }
 }
