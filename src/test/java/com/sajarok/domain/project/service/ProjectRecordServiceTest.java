@@ -7,12 +7,19 @@ import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.attachment.dto.AttachmentOwner;
+import com.sajarok.domain.attachment.dto.AttachmentView;
+import com.sajarok.domain.attachment.entity.AttachmentCategory;
+import com.sajarok.domain.attachment.entity.AttachmentType;
+import com.sajarok.domain.attachment.entity.ExtractStatus;
+import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.project.dto.ProjectRecordCreateRequest;
 import com.sajarok.domain.project.dto.ProjectRecordResponse;
 import com.sajarok.domain.project.dto.ProjectRecordUpdateRequest;
@@ -54,12 +61,13 @@ class ProjectRecordServiceTest {
   @Mock private ProjectRepository projectRepository;
   @Mock private StoryCardService storyCardService;
   @Mock private AiQuestionService aiQuestionService;
+  @Mock private AttachmentService attachmentService;
 
   @InjectMocks private ProjectRecordService projectRecordService;
 
-  private static ProjectRecordCreateRequest draftRequest(String memo, List<Long> attachmentIds) {
+  private static ProjectRecordCreateRequest draftRequest(String did, List<Long> attachmentIds) {
     return new ProjectRecordCreateRequest(
-        true, memo, null, null, null, null, null, attachmentIds, List.of(3L, 21L));
+        true, null, did, null, null, null, null, attachmentIds, List.of(3L, 21L));
   }
 
   private Project myProject() {
@@ -67,7 +75,7 @@ class ProjectRecordServiceTest {
   }
 
   @Test
-  @DisplayName("27번 DRAFT: 메모가 있으면 DRAFT·AI 정리 전으로 저장하고, 카드·역량 없이 응답한다 (보낸 역량은 무시)")
+  @DisplayName("27번 DRAFT: 5칸이 하나라도 있으면 DRAFT·AI 정리 전으로 저장하고, 카드·역량 없이 응답한다 (보낸 역량은 무시)")
   void create_draft_savesDraftWithoutCard() {
     when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
     when(projectRecordRepository.save(any(ProjectRecord.class))).thenAnswer(i -> i.getArgument(0));
@@ -78,12 +86,12 @@ class ProjectRecordServiceTest {
     assertThat(response.status()).isEqualTo(ProjectRecordStatus.DRAFT);
     assertThat(response.isAiOrganized()).isFalse();
     assertThat(response.cardId()).isNull();
-    assertThat(response.memo()).isEqualTo("회의에서 API 명세 확정");
+    assertThat(response.did()).isEqualTo("회의에서 API 명세 확정");
     assertThat(response.competencies()).isEmpty();
   }
 
   @Test
-  @DisplayName("27번 DRAFT: 메모가 비어도 첨부가 있으면 저장한다")
+  @DisplayName("27번 DRAFT: 5칸이 모두 비어도 첨부가 있으면 저장한다")
   void create_draft_attachmentOnly_saves() {
     when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
     when(projectRecordRepository.save(any(ProjectRecord.class))).thenAnswer(i -> i.getArgument(0));
@@ -95,11 +103,27 @@ class ProjectRecordServiceTest {
   }
 
   @Test
-  @DisplayName("27번 DRAFT: 메모가 공백뿐이고 첨부도 없으면 EMPTY_MATERIAL이고 저장하지 않는다")
+  @DisplayName("27번 DRAFT: 5칸이 모두 비고 첨부도 없으면 EMPTY_MATERIAL이고 저장·연결하지 않는다 (11/12 기능명세)")
   void create_draft_noMaterial_throwsEmptyMaterial() {
     when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
 
-    assertThatThrownBy(() -> projectRecordService.create(1L, 3L, draftRequest("  ", List.of())))
+    assertThatThrownBy(() -> projectRecordService.create(1L, 3L, draftRequest("  ", null)))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.EMPTY_MATERIAL);
+    verify(projectRecordRepository, never()).save(any());
+    verifyNoInteractions(attachmentService);
+  }
+
+  @Test
+  @DisplayName("27번 DRAFT: 메모만 있고 첨부가 빈 배열이면 EMPTY_MATERIAL (메모는 화면에서 안 써서 자료로 안 침)")
+  void create_draft_memoOnly_throwsEmptyMaterial() {
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
+    ProjectRecordCreateRequest memoOnly =
+        new ProjectRecordCreateRequest(
+            true, "회의에서 API 명세 확정", null, null, null, null, null, List.of(), null);
+
+    assertThatThrownBy(() -> projectRecordService.create(1L, 3L, memoOnly))
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(ErrorCode.EMPTY_MATERIAL);
@@ -553,5 +577,125 @@ class ProjectRecordServiceTest {
 
     assertThat(projectRecordService.deleteExpiredDraft(77L, CUTOFF)).isFalse();
     verifyNoInteractions(storyCardService, aiQuestionService);
+  }
+
+  private static AttachmentView attachmentView(Long id) {
+    return new AttachmentView(
+        id,
+        AttachmentType.FILE,
+        AttachmentCategory.MEETING_NOTE,
+        "회의록.pdf",
+        null,
+        null,
+        "application/pdf",
+        10L,
+        ExtractStatus.DONE);
+  }
+
+  @Test
+  @DisplayName("27번 첨부: 저장한 기록에 첨부를 연결하고, 연결된 첨부를 응답에 넣고, 카드에 첨부 수를 넘긴다")
+  void create_saved_connectsAttachments() {
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
+    when(projectRecordRepository.save(any(ProjectRecord.class)))
+        .thenAnswer(
+            i -> {
+              ProjectRecord saved = i.getArgument(0);
+              ReflectionTestUtils.setField(saved, "id", 90L);
+              return saved;
+            });
+    List<AttachmentView> connected = List.of(attachmentView(601L), attachmentView(602L));
+    when(attachmentService.findAll(AttachmentOwner.projectRecord(90L))).thenReturn(connected);
+
+    ProjectRecordResponse response =
+        projectRecordService.create(
+            1L, 3L, savedRequest(null, "API 명세 확정", List.of(601L, 602L), List.of(3L)));
+
+    verify(attachmentService).connect(1L, List.of(601L, 602L), AttachmentOwner.projectRecord(90L));
+    assertThat(response.attachments()).isEqualTo(connected);
+    ArgumentCaptor<RecordCardSource> source = ArgumentCaptor.forClass(RecordCardSource.class);
+    verify(storyCardService).createFromRecord(source.capture(), any());
+    assertThat(source.getValue().attachmentCount()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("27번 첨부: 남의 첨부라 연결이 NOT_FOUND면 카드를 만들지 않는다 (같은 트랜잭션이라 기록 저장도 되돌아감)")
+  void create_notMyAttachment_throwsWithoutCard() {
+    when(projectRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(myProject()));
+    when(projectRecordRepository.save(any(ProjectRecord.class))).thenAnswer(i -> i.getArgument(0));
+    doThrow(new BusinessException(ErrorCode.NOT_FOUND))
+        .when(attachmentService)
+        .connect(eq(1L), eq(List.of(999L)), any());
+
+    assertThatThrownBy(
+            () ->
+                projectRecordService.create(
+                    1L, 3L, savedRequest(null, "API 명세 확정", List.of(999L), List.of(3L))))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verifyNoInteractions(storyCardService);
+  }
+
+  @Test
+  @DisplayName("28번 첨부: attachmentIds를 안 보내면 연결은 그대로 두고, 이미 연결된 첨부가 있으면 5칸을 다 비워도 저장한다")
+  void update_noAttachmentIds_keepsExistingAttachments() {
+    ProjectRecord record = record(ProjectRecordStatus.SAVED);
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+    when(attachmentService.findAll(AttachmentOwner.projectRecord(77L)))
+        .thenReturn(List.of(attachmentView(601L)));
+
+    ProjectRecordResponse response =
+        projectRecordService.update(1L, 77L, update(null, "", "", null, null));
+
+    verify(attachmentService, never()).connect(anyLong(), any(), any());
+    assertThat(response.attachments())
+        .extracting(AttachmentView::attachmentId)
+        .containsExactly(601L);
+  }
+
+  @Test
+  @DisplayName("28번 첨부: attachmentIds를 보내면 기존 연결을 모두 끊은 뒤 보낸 목록으로 연결한다 (통째로 교체)")
+  void update_withAttachmentIds_disconnectsThenConnects() {
+    ProjectRecord record = record(ProjectRecordStatus.SAVED);
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+
+    projectRecordService.update(1L, 77L, update(null, null, null, List.of(601L, 603L), null));
+
+    AttachmentOwner owner = AttachmentOwner.projectRecord(77L);
+    InOrder order = inOrder(attachmentService);
+    order.verify(attachmentService).disconnect(owner);
+    order.verify(attachmentService).connect(1L, List.of(601L, 603L), owner);
+    order.verify(attachmentService).findAll(owner);
+  }
+
+  @Test
+  @DisplayName("28번 첨부: 빈 배열을 보내면 모두 끊고, 5칸이 있으면 첨부 없이 저장한다")
+  void update_emptyAttachmentIds_disconnectsAll() {
+    ProjectRecord record = record(ProjectRecordStatus.SAVED);
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+
+    ProjectRecordResponse response =
+        projectRecordService.update(1L, 77L, update(null, null, null, List.of(), null));
+
+    verify(attachmentService).disconnect(AttachmentOwner.projectRecord(77L));
+    assertThat(response.attachments()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("28번 첨부: 새 목록에 남의 첨부가 있으면 connect의 NOT_FOUND를 그대로 던진다 (트랜잭션이라 끊기도 되돌려짐)")
+  void update_attachmentNotMine_throwsNotFound() {
+    ProjectRecord record = record(ProjectRecordStatus.SAVED);
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+    doThrow(new BusinessException(ErrorCode.NOT_FOUND))
+        .when(attachmentService)
+        .connect(1L, List.of(999L), AttachmentOwner.projectRecord(77L));
+
+    assertThatThrownBy(
+            () ->
+                projectRecordService.update(1L, 77L, update(null, null, null, List.of(999L), null)))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verifyNoInteractions(storyCardService);
   }
 }

@@ -10,6 +10,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @Slf4j
@@ -19,7 +20,9 @@ public class GlobalExceptionHandler {
   /** 서비스에서 던진 규칙 위반 (404, 409 등) */
   @ExceptionHandler(BusinessException.class)
   public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException e) {
-    return respond(e.getErrorCode(), e.getMessage(), null);
+    ErrorCode code = e.getErrorCode();
+    return ResponseEntity.status(code.getStatus())
+        .body(ApiResponse.fail(code.name(), e.getMessage(), null, e.getDetail()));
   }
 
   /**
@@ -64,5 +67,12 @@ public class GlobalExceptionHandler {
       ErrorCode code, String message, List<FieldError> fields) {
     return ResponseEntity.status(code.getStatus())
         .body(ApiResponse.fail(code.name(), message, fields));
+  }
+
+  @ExceptionHandler(MaxUploadSizeExceededException.class)
+  public ResponseEntity<ApiResponse<Void>> handleMaxUploadSizeExceeded(
+      MaxUploadSizeExceededException e) {
+    ErrorCode code = ErrorCode.FILE_TOO_LARGE;
+    return respond(code, code.getMessage(), null);
   }
 }

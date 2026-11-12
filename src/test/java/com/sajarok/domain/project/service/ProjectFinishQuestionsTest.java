@@ -4,12 +4,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.attachment.service.AttachmentService;
+import com.sajarok.domain.project.ai.FinishAttachments;
 import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
@@ -24,9 +29,11 @@ import com.sajarok.domain.question.entity.QuestionStatus;
 import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import com.sajarok.infra.ai.AiLock;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,6 +41,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /** 32번 마치기 질문 서비스 테스트. AI(FinishQuestionGenerator)와 질문 저장(AiQuestionService)은 가짜. */
@@ -46,6 +54,14 @@ class ProjectFinishQuestionsTest {
   @Mock private AiQuestionService aiQuestionService;
   @Mock private ProjectRecordRepository projectRecordRepository;
   @Mock private FinishQuestionGenerator finishQuestionGenerator;
+  @Mock private AttachmentService attachmentService;
+  @Spy private AiLock aiLock = new AiLock();
+
+  /** 기본은 내 것. 남의 것 테스트만 다시 정한다. */
+  @BeforeEach
+  void ownedByMe() {
+    lenient().when(projectRepository.findUserIdById(3L)).thenReturn(Optional.of(1L));
+  }
 
   @InjectMocks private ProjectFinishService projectFinishService;
 
@@ -123,7 +139,8 @@ class ProjectFinishQuestionsTest {
         .thenReturn(records);
     List<NewQuestion> questions =
         List.of(new NewQuestion("산출물 요청", "최종 산출물이 아직 첨부되지 않았어요", null, "산출물을 첨부해 주세요."));
-    when(finishQuestionGenerator.generate(project, records)).thenReturn(questions);
+    when(finishQuestionGenerator.generate(project, records, FinishAttachments.none()))
+        .thenReturn(questions);
     when(aiQuestionService.replace(OWNER, questions))
         .thenReturn(List.of(view(null, QuestionStatus.PENDING)));
 
@@ -147,7 +164,7 @@ class ProjectFinishQuestionsTest {
     when(projectRecordRepository.findAllByProjectIdAndStatusAndIdInOrderByCreatedAtAscIdAsc(
             eq(3L), eq(ProjectRecordStatus.SAVED), any()))
         .thenReturn(List.of(record(project)));
-    when(finishQuestionGenerator.generate(eq(project), anyList()))
+    when(finishQuestionGenerator.generate(eq(project), anyList(), any()))
         .thenThrow(new BusinessException(code));
 
     assertThatThrownBy(() -> projectFinishService.createQuestions(1L, 3L, List.of(71L)))
@@ -155,5 +172,32 @@ class ProjectFinishQuestionsTest {
         .extracting("errorCode")
         .isEqualTo(code);
     verify(aiQuestionService, never()).replace(any(), anyList());
+  }
+
+  @Test
+  @DisplayName("32번: 같은 프로젝트에서 AI가 돌고 있으면(32·33번 같은 키 finish:{id}) AI_IN_PROGRESS이고 AI를 부르지 않는다")
+  void createQuestions_inProgress_throwsAiInProgress() {
+    assertThatThrownBy(
+            () ->
+                aiLock.run(
+                    "finish:3", () -> projectFinishService.createQuestions(1L, 3L, List.of(77L))))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.AI_IN_PROGRESS);
+    verify(projectRepository, never()).findByIdAndUserId(anyLong(), anyLong());
+    verifyNoInteractions(finishQuestionGenerator);
+  }
+
+  @Test
+  @DisplayName("32번: 남의 프로젝트거나 없으면 잠금을 잡지 않고 바로 NOT_FOUND (주인 ID만 읽음)")
+  void createQuestions_notMine_throwsNotFoundBeforeLock() {
+    when(projectRepository.findUserIdById(3L)).thenReturn(Optional.of(2L));
+
+    assertThatThrownBy(() -> projectFinishService.createQuestions(1L, 3L, List.of(77L)))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verify(aiLock, never()).run(anyString(), any());
+    verify(projectRepository, never()).findByIdAndUserId(anyLong(), anyLong());
   }
 }

@@ -3,6 +3,11 @@ package com.sajarok.domain.project.ai;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.sajarok.domain.attachment.dto.AttachmentView;
+import com.sajarok.domain.attachment.entity.AttachmentCategory;
+import com.sajarok.domain.attachment.entity.AttachmentType;
+import com.sajarok.domain.attachment.entity.ExtractStatus;
+import com.sajarok.domain.attachment.entity.LinkType;
 import com.sajarok.domain.project.ai.FinishQuestionResult.Question;
 import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
@@ -58,7 +63,8 @@ class FinishQuestionResultTest {
   }
 
   @Test
-  @DisplayName("프롬프트: 태그 목록·프로젝트·기록(빈 칸은 빠짐)이 이름표 구역으로 들어가고, system에 태그 5개와 최대 개수가 들어간다")
+  @DisplayName(
+      "프롬프트: 태그 목록·프로젝트·기록(빈 칸은 빠짐)·첨부(종류·이름, 이름 없는 링크는 URL)가 이름표 구역으로 들어가고, system에 태그 5개와 최대 개수가 들어간다")
   void prompts_containSectionsAndTags() {
     Project project =
         Project.builder().userId(1L).name("사자록").roles(List.of(ProjectRole.BACKEND)).build();
@@ -69,10 +75,44 @@ class FinishQuestionResultTest {
             .did("팀 API 연동을 맡았다")
             .build();
 
-    String user = FinishPrompts.questionsUser(project, List.of(record));
+    AttachmentView artifact =
+        new AttachmentView(
+            610L,
+            AttachmentType.FILE,
+            AttachmentCategory.PRESENTATION,
+            "최종 발표.pdf",
+            null,
+            null,
+            "application/pdf",
+            10L,
+            ExtractStatus.DONE);
+    AttachmentView recordLink =
+        new AttachmentView(
+            601L,
+            AttachmentType.LINK,
+            AttachmentCategory.DESIGN,
+            null,
+            "https://figma.com/a",
+            LinkType.FIGMA,
+            null,
+            null,
+            ExtractStatus.SKIPPED);
+
+    String user =
+        FinishPrompts.questionsUser(
+            project,
+            List.of(record),
+            new FinishAttachments(List.of(artifact), List.of(recordLink)));
 
     assertThat(user)
-        .contains("[태그 목록]", "[프로젝트]", "이름: 사자록", "역할: BACKEND", "[기록]", "한 일: 팀 API 연동을 맡았다")
+        .contains(
+            "[태그 목록]",
+            "[프로젝트]",
+            "이름: 사자록",
+            "역할: BACKEND",
+            "[기록]",
+            "한 일: 팀 API 연동을 맡았다",
+            "[첨부]\n- 산출물 / PRESENTATION / 최종 발표.pdf\n- 기록 첨부 / DESIGN / https://figma.com/a")
         .doesNotContain("결과·반응:");
     assertThat(FinishPrompts.QUESTIONS_SYSTEM)
         .contains("내 역할 / 최종 결과 / 근거와 숫자 / 산출물 요청 / 배운 점", "최대 5개", "40%");

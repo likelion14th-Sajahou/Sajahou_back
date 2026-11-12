@@ -76,7 +76,7 @@ public class GoogleLoginController {
   public ApiResponse<DemoLoginResponse> demo(
       HttpServletRequest request, HttpServletResponse response) {
     UserSummary user = demoLoginService.getDemoUser();
-    loginSessionService.login(user.id(), request, response);
+    loginSessionService.login(user.id(), request, response, true);
     return ApiResponse.ok(new DemoLoginResponse(user));
   }
 

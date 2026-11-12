@@ -17,6 +17,10 @@ public interface CoverLetterQuestionRepository extends JpaRepository<CoverLetter
   Optional<CoverLetterQuestion> findByIdAndUserId(
       @Param("questionId") Long questionId, @Param("userId") Long userId);
 
+  /** 문항 주인 회원 ID(= 공고의 회원)만 읽는다. */
+  @Query("select q.jobPosting.userId from CoverLetterQuestion q where q.id = :questionId")
+  Optional<Long> findUserIdById(@Param("questionId") Long questionId);
+
   /** 내 문항을 공고와 함께 읽는다 (37번: 트랜잭션 밖에서 공고 내용을 쓰므로 한 번에 읽어 둠). */
   @Query(
       "select q from CoverLetterQuestion q join fetch q.jobPosting p"

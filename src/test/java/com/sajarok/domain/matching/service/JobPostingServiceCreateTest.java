@@ -13,6 +13,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.attachment.entity.Attachment;
+import com.sajarok.domain.attachment.entity.AttachmentCategory;
+import com.sajarok.domain.attachment.entity.ExtractStatus;
+import com.sajarok.domain.attachment.entity.LinkType;
+import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.matching.ai.PostingAnalysisResult;
 import com.sajarok.domain.matching.dto.JobPostingCreateRequest;
 import com.sajarok.domain.matching.dto.JobPostingCreateRequest.QuestionRequest;
@@ -52,6 +57,7 @@ class JobPostingServiceCreateTest {
   @Mock private AnswerAssembler answerAssembler;
   @Mock private JobPostingWriter jobPostingWriter;
   @Mock private PostingAnalyzer postingAnalyzer;
+  @Mock private AttachmentService attachmentService;
 
   @InjectMocks private JobPostingService jobPostingService;
 
@@ -65,6 +71,15 @@ class JobPostingServiceCreateTest {
         null,
         attachmentIds,
         List.of(new QuestionRequest("협업 경험을 써 주세요", 700)));
+  }
+
+  private static Attachment attachment(Long id, ExtractStatus status, String text) {
+    Attachment a =
+        Attachment.createLink(1L, AttachmentCategory.JOB_POSTING, "https://a.com", LinkType.OTHER);
+    ReflectionTestUtils.setField(a, "id", id);
+    ReflectionTestUtils.setField(a, "extractStatus", status);
+    ReflectionTestUtils.setField(a, "extractedText", text);
+    return a;
   }
 
   private static JobPosting savedPosting() {
@@ -102,14 +117,63 @@ class JobPostingServiceCreateTest {
     JobPosting posting = savedPosting();
     posting.applyCompetencies(List.of());
     when(jobPostingWriter.save(eq(1L), any())).thenReturn(posting);
-    when(postingAnalyzer.analyze(any(), anyList(), anyList()))
+    when(postingAnalyzer.analyze(any(), anyList(), anyList(), anyList()))
         .thenReturn(new PostingAnalysisResult(List.of(), List.of()));
-    when(jobPostingWriter.applyAnalysis(eq(21L), any()))
+    when(jobPostingWriter.applyAnalysis(eq(1L), eq(21L), any(), any()))
         .thenReturn(new JobPostingWriter.Applied(posting, List.of(question(posting, List.of()))));
+
+    when(attachmentService.getOwnedAttachment(1L, 701L))
+        .thenReturn(attachment(701L, ExtractStatus.DONE, "공고 첨부 내용"));
 
     jobPostingService.create(1L, request(null, List.of(701L)));
 
     verify(jobPostingWriter).save(eq(1L), any());
+  }
+
+  @Test
+  @DisplayName("36번 첨부: DONE 글자만 AI에 넘기고(FAILED 건너뜀), 첨부 연결은 AI 뒤 applyAnalysis에 ID를 넘겨서 한다")
+  void create_attachments_textsToAiAndConnectAfter() {
+    JobPosting posting = savedPosting();
+    posting.applyCompetencies(List.of());
+    when(attachmentService.getOwnedAttachment(1L, 701L))
+        .thenReturn(attachment(701L, ExtractStatus.DONE, "우대: 협업 경험"));
+    when(attachmentService.getOwnedAttachment(1L, 702L))
+        .thenReturn(attachment(702L, ExtractStatus.FAILED, null));
+    when(jobPostingWriter.save(eq(1L), any())).thenReturn(posting);
+    when(postingAnalyzer.analyze(any(), eq(List.of("우대: 협업 경험")), anyList(), anyList()))
+        .thenReturn(new PostingAnalysisResult(List.of(), List.of()));
+    when(jobPostingWriter.applyAnalysis(eq(1L), eq(21L), eq(List.of(701L, 702L)), any()))
+        .thenReturn(new JobPostingWriter.Applied(posting, List.of(question(posting, List.of()))));
+
+    jobPostingService.create(1L, request(null, List.of(701L, 702L)));
+
+    verify(jobPostingWriter).applyAnalysis(eq(1L), eq(21L), eq(List.of(701L, 702L)), any());
+  }
+
+  @Test
+  @DisplayName("36번 첨부: 아직 읽는 중(PENDING)이면 공고를 저장하지도 AI를 부르지도 않고 ATTACHMENT_PENDING")
+  void create_pendingAttachment_throwsBeforeSaving() {
+    when(attachmentService.getOwnedAttachment(1L, 701L))
+        .thenReturn(attachment(701L, ExtractStatus.PENDING, null));
+
+    assertThatThrownBy(() -> jobPostingService.create(1L, request(null, List.of(701L))))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.ATTACHMENT_PENDING);
+    verifyNoInteractions(jobPostingWriter, postingAnalyzer);
+  }
+
+  @Test
+  @DisplayName("36번 첨부: 남의 첨부면 NOT_FOUND이고 공고를 저장하지 않는다")
+  void create_notMyAttachment_throwsBeforeSaving() {
+    when(attachmentService.getOwnedAttachment(1L, 701L))
+        .thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
+    assertThatThrownBy(() -> jobPostingService.create(1L, request(null, List.of(701L))))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verifyNoInteractions(jobPostingWriter, postingAnalyzer);
   }
 
   @Test
@@ -122,8 +186,9 @@ class JobPostingServiceCreateTest {
             List.of(new PostingAnalysisResult.Competency(3L, "다양한 직군과 협업한 경험")),
             List.of(new PostingAnalysisResult.Question(1, List.of(3L))));
     when(jobPostingWriter.save(eq(1L), any())).thenReturn(posting);
-    when(postingAnalyzer.analyze(any(), anyList(), eq(List.of("협업 경험을 써 주세요")))).thenReturn(result);
-    when(jobPostingWriter.applyAnalysis(21L, result))
+    when(postingAnalyzer.analyze(any(), anyList(), anyList(), eq(List.of("협업 경험을 써 주세요"))))
+        .thenReturn(result);
+    when(jobPostingWriter.applyAnalysis(eq(1L), eq(21L), any(), eq(result)))
         .thenReturn(new JobPostingWriter.Applied(posting, List.of(question(posting, List.of(3L)))));
     when(storyCardService.countByCompetency(1L)).thenReturn(Map.of(3L, 2L));
 
@@ -131,8 +196,8 @@ class JobPostingServiceCreateTest {
 
     InOrder order = inOrder(jobPostingWriter, postingAnalyzer);
     order.verify(jobPostingWriter).save(eq(1L), any());
-    order.verify(postingAnalyzer).analyze(any(), anyList(), anyList());
-    order.verify(jobPostingWriter).applyAnalysis(21L, result);
+    order.verify(postingAnalyzer).analyze(any(), anyList(), anyList(), anyList());
+    order.verify(jobPostingWriter).applyAnalysis(eq(1L), eq(21L), any(), eq(result));
     assertThat(response.jobPostingId()).isEqualTo(21L);
     assertThat(response.noCompetencyFound()).isFalse();
     assertThat(response.competencies()).hasSize(1);
@@ -151,9 +216,9 @@ class JobPostingServiceCreateTest {
     JobPosting posting = savedPosting();
     posting.applyCompetencies(List.of());
     when(jobPostingWriter.save(eq(1L), any())).thenReturn(posting);
-    when(postingAnalyzer.analyze(any(), anyList(), anyList()))
+    when(postingAnalyzer.analyze(any(), anyList(), anyList(), anyList()))
         .thenReturn(new PostingAnalysisResult(List.of(), List.of()));
-    when(jobPostingWriter.applyAnalysis(eq(21L), any()))
+    when(jobPostingWriter.applyAnalysis(eq(1L), eq(21L), any(), any()))
         .thenReturn(new JobPostingWriter.Applied(posting, List.of(question(posting, List.of()))));
 
     JobPostingCreateResponse response = jobPostingService.create(1L, request("대규모 트래픽", null));
@@ -170,7 +235,7 @@ class JobPostingServiceCreateTest {
   @DisplayName("36번: AI가 실패하거나 시간 초과면 저장한 공고를 지우고 같은 에러를 돌려준다 (역량 저장은 안 함)")
   void create_aiFails_discardsPostingAndRethrows(ErrorCode code) {
     when(jobPostingWriter.save(eq(1L), any())).thenReturn(savedPosting());
-    when(postingAnalyzer.analyze(any(), anyList(), anyList()))
+    when(postingAnalyzer.analyze(any(), anyList(), anyList(), anyList()))
         .thenThrow(new BusinessException(code));
 
     assertThatThrownBy(() -> jobPostingService.create(1L, request("대규모 트래픽", null)))
@@ -178,14 +243,14 @@ class JobPostingServiceCreateTest {
         .extracting("errorCode")
         .isEqualTo(code);
     verify(jobPostingWriter).discard(21L);
-    verify(jobPostingWriter, never()).applyAnalysis(anyLong(), any());
+    verify(jobPostingWriter, never()).applyAnalysis(anyLong(), anyLong(), any(), any());
   }
 
   @Test
   @DisplayName("36번: 공고 삭제까지 실패해도 원래 AI 에러를 돌려준다 (삭제 실패는 suppressed로 남김)")
   void create_discardAlsoFails_keepsOriginalError() {
     when(jobPostingWriter.save(eq(1L), any())).thenReturn(savedPosting());
-    when(postingAnalyzer.analyze(any(), anyList(), anyList()))
+    when(postingAnalyzer.analyze(any(), anyList(), anyList(), anyList()))
         .thenThrow(new BusinessException(ErrorCode.AI_FAILED));
     doThrow(new IllegalStateException("DB 끊김")).when(jobPostingWriter).discard(21L);
 
