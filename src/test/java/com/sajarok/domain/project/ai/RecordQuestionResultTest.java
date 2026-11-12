@@ -88,7 +88,7 @@ class RecordQuestionResultTest {
   }
 
   @Test
-  @DisplayName("프롬프트: 태그 목록·메모·기록·첨부(번호·종류·이름·본문)가 이름표 구역으로 들어가고, system에 category 기준이 있다")
+  @DisplayName("프롬프트: 태그 목록·메모·기록·첨부(번호·종류·이름·본문)·빈칸이 이름표 구역으로 들어가고, system에 빈칸마다 질문하는 규칙이 있다")
   void questionsUser_containsSections() {
     ProjectRecord record =
         ProjectRecord.builder()
@@ -105,9 +105,45 @@ class RecordQuestionResultTest {
         .contains(
             "[태그 목록]\n내 역할·과정 / 선택의 이유 / 근거와 숫자",
             "[메모·기록]\n메모: " + MEMO,
-            "[첨부]\n(601) FILE / MEETING_NOTE / 회의록.pdf: 본문");
+            "[첨부]\n(601) FILE / MEETING_NOTE / 회의록.pdf: 본문",
+            "[빈칸]\n한 일 / 고민·해결 / 선택과 이유 / 결과·반응 / 다음");
     assertThat(RecordPrompts.QUESTIONS_SYSTEM)
         .contains(
-            "1 ~ 4개", "디자인(DESIGN)·링크(LINK) → 선택의 이유", "기타(OTHER)", "30%", "이미 채운 칸", "빈칸 위주로 묻는다");
+            "먼저 물을 거리가 있는지 본다",
+            "질문은 최대 4개",
+            "[빈칸]에 적힌 칸마다 질문을 하나씩",
+            "같은 태그를 여러 질문에 써도 된다",
+            "결과·반응 → 근거와 숫자",
+            "기타(OTHER)",
+            "30%",
+            "태그와 질문이 맞지 않는다");
+  }
+
+  @Test
+  @DisplayName("빈칸: 채운 칸은 빼고 순서대로, 공백뿐인 칸은 빈칸으로 보고, 메모는 칸이 아니라 넣지 않으며, 다 채웠으면 없음")
+  void blanks_listsEmptyFieldsOnly() {
+    Project project = Project.builder().userId(1L).name("사자록").build();
+    ProjectRecord partial =
+        ProjectRecord.builder()
+            .project(project)
+            .status(ProjectRecordStatus.DRAFT)
+            .memo(MEMO)
+            .did("시안 2개 준비")
+            .concern("  ")
+            .result("3명 모두 B안 선호")
+            .build();
+    ProjectRecord full =
+        ProjectRecord.builder()
+            .project(project)
+            .status(ProjectRecordStatus.DRAFT)
+            .did("a")
+            .concern("b")
+            .decision("c")
+            .result("d")
+            .nextStep("e")
+            .build();
+
+    assertThat(RecordPrompts.blanks(partial)).isEqualTo("고민·해결 / 선택과 이유 / 다음");
+    assertThat(RecordPrompts.blanks(full)).isEqualTo("없음");
   }
 }
