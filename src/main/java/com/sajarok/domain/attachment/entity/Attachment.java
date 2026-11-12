@@ -82,7 +82,7 @@ public class Attachment extends BaseTimeEntity {
     attachment.url = url;
     attachment.linkType = linkType;
     attachment.extractStatus =
-        linkType == LinkType.FIGMA ? ExtractStatus.SKIPPED : ExtractStatus.PENDING;
+        linkType == LinkType.GITHUB ? ExtractStatus.PENDING : ExtractStatus.SKIPPED;
     return attachment;
   }
 
