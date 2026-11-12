@@ -1,0 +1,82 @@
+package com.sajarok.domain.home.service;
+
+import com.sajarok.domain.home.dto.HomeResponse;
+import com.sajarok.domain.home.dto.HomeResponse.RecentCardItem;
+import com.sajarok.domain.home.dto.HomeResponse.SessionRetrospective;
+import com.sajarok.domain.home.dto.HomeResponse.Stickers;
+import com.sajarok.domain.home.dto.HomeResponse.UserSummary;
+import com.sajarok.domain.project.service.ProjectService;
+import com.sajarok.domain.retrospective.service.RetrospectiveService;
+import com.sajarok.domain.storycard.service.StoryCardService;
+import com.sajarok.domain.user.repository.UserRepository;
+import com.sajarok.domain.week.service.WeekService;
+import com.sajarok.global.exception.BusinessException;
+import com.sajarok.global.exception.ErrorCode;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class HomeService {
+
+  private final UserRepository userRepository;
+  private final WeekService weekService;
+  private final RetrospectiveService retrospectiveService;
+  private final ProjectService projectService;
+  private final StoryCardService storyCardService;
+
+  public HomeResponse getHome(Long userId) {
+    var user =
+        userRepository
+            .findById(userId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+
+    var currentWeek = weekService.findCurrentWeek(user.getPart());
+    var retrospective = retrospectiveService.homeSummary(userId, currentWeek.weekId());
+    var projectTiles = projectService.homeTiles(userId);
+    var cards = storyCardService.findRecentRetrospectiveCards(userId);
+
+    var weekIds = new HashSet<>(retrospective.stickerWeekIds());
+    cards.forEach(card -> weekIds.add(card.weekId()));
+    weekIds.remove(null);
+    var weekNumbers = weekService.findWeekNumbers(weekIds);
+
+    var stickerWeekNumbers =
+        retrospective.stickerWeekIds().stream()
+            .map(weekNumbers::get)
+            .filter(Objects::nonNull)
+            .distinct()
+            .sorted(Comparator.reverseOrder())
+            .toList();
+
+    var recentCards =
+        cards.stream()
+            .map(
+                card ->
+                    new RecentCardItem(
+                        card.cardId(),
+                        card.type(),
+                        card.weekId() == null ? null : weekNumbers.get(card.weekId()),
+                        card.title()))
+            .toList();
+
+    return new HomeResponse(
+        new UserSummary(user.getName(), user.getPart()),
+        currentWeek,
+        new SessionRetrospective(retrospective.sessionRetrospectiveId(), retrospective.state()),
+        new Stickers(
+            stickerWeekNumbers.size(),
+            stickerWeekNumbers.stream().limit(10).toList(),
+            List.of(),
+            retrospective.showThisWeekSlot()),
+        projectTiles.inProgressProjects(),
+        projectTiles.doneProjects(),
+        recentCards);
+  }
+}
