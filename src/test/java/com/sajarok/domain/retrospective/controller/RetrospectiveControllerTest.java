@@ -20,18 +20,22 @@ import com.sajarok.domain.attachment.entity.ExtractStatus;
 import com.sajarok.domain.attachment.entity.LinkType;
 import com.sajarok.domain.question.dto.QuestionView;
 import com.sajarok.domain.question.entity.QuestionStatus;
+import com.sajarok.domain.retrospective.dto.RetroQuestionMode;
 import com.sajarok.domain.retrospective.dto.RetrospectiveCompleteResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveCompleteResponse.AssignmentPending;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDetailResponse.Materials;
 import com.sajarok.domain.retrospective.dto.RetrospectiveDraftRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveProgressResponse;
+import com.sajarok.domain.retrospective.dto.RetrospectiveQuestionsResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveState;
 import com.sajarok.domain.retrospective.entity.AssignmentMode;
 import com.sajarok.domain.retrospective.entity.RetrospectiveType;
+import com.sajarok.domain.retrospective.service.RetrospectiveAiService;
+import com.sajarok.domain.retrospective.service.RetrospectiveAiService.QuestionsResult;
 import com.sajarok.domain.retrospective.service.RetrospectiveService;
 import com.sajarok.domain.retrospective.service.RetrospectiveService.StartResult;
 import com.sajarok.global.auth.CurrentUserProvider;
@@ -40,6 +44,7 @@ import com.sajarok.global.exception.ErrorCode;
 import com.sajarok.global.time.KstTime;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -63,6 +68,7 @@ class RetrospectiveControllerTest {
   @Autowired private MockMvc mockMvc;
 
   @MockitoBean private RetrospectiveService retrospectiveService;
+  @MockitoBean private RetrospectiveAiService retrospectiveAiService;
   @MockitoBean private CurrentUserProvider currentUserProvider;
 
   @BeforeEach
@@ -420,5 +426,118 @@ class RetrospectiveControllerTest {
         .perform(post("/api/v1/retrospectives/101/complete"))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.error.code").value("INVALID_STATE"));
+  }
+
+  private static QuestionView pendingQuestion() {
+    return new QuestionView(
+        901L,
+        1,
+        "근거와 숫자",
+        "N+1 문제를 fetch join으로 해결",
+        null,
+        "쿼리 수가 실제로 얼마나 줄었나요?",
+        null,
+        QuestionStatus.PENDING);
+  }
+
+  @Test
+  @DisplayName("17번: 질문을 새로 만들면 201과 명세 모양(insufficientMaterial, questions)을 준다")
+  void questions_created_returns201() throws Exception {
+    when(retrospectiveAiService.createQuestions(1L, 101L, RetroQuestionMode.AUTO))
+        .thenReturn(
+            new QuestionsResult(
+                true, RetrospectiveQuestionsResponse.of(List.of(pendingQuestion()))));
+
+    mockMvc
+        .perform(
+            post("/api/v1/retrospectives/101/questions")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"mode\": \"AUTO\"}"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.insufficientMaterial").value(false))
+        .andExpect(jsonPath("$.data.questions[0].questionId").value(901))
+        .andExpect(jsonPath("$.data.questions[0].seq").value(1))
+        .andExpect(jsonPath("$.data.questions[0].tag").value("근거와 숫자"))
+        .andExpect(jsonPath("$.data.questions[0].quote").value("N+1 문제를 fetch join으로 해결"))
+        .andExpect(jsonPath("$.data.questions[0].sourceAttachmentId").value(nullValue()))
+        .andExpect(jsonPath("$.data.questions[0].answer").value(nullValue()))
+        .andExpect(jsonPath("$.data.questions[0].status").value("PENDING"));
+  }
+
+  @Test
+  @DisplayName("17번: 본문 없이 보내면 mode null로 서비스를 부르고(서비스가 AUTO로 처리), 저장된 질문이면 200을 준다")
+  void questions_noBody_returns200() throws Exception {
+    when(retrospectiveAiService.createQuestions(1L, 101L, null))
+        .thenReturn(
+            new QuestionsResult(
+                false, RetrospectiveQuestionsResponse.of(List.of(pendingQuestion()))));
+
+    mockMvc
+        .perform(post("/api/v1/retrospectives/101/questions"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.questions.length()").value(1));
+    verify(retrospectiveAiService).createQuestions(1L, 101L, null);
+  }
+
+  @Test
+  @DisplayName("17번: mode를 REGENERATE로 보내면 그대로 서비스에 넘긴다")
+  void questions_regenerate_passesMode() throws Exception {
+    when(retrospectiveAiService.createQuestions(1L, 101L, RetroQuestionMode.REGENERATE))
+        .thenReturn(
+            new QuestionsResult(
+                true, RetrospectiveQuestionsResponse.of(List.of(pendingQuestion()))));
+
+    mockMvc
+        .perform(
+            post("/api/v1/retrospectives/101/questions")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"mode\": \"REGENERATE\"}"))
+        .andExpect(status().isCreated());
+    verify(retrospectiveAiService).createQuestions(1L, 101L, RetroQuestionMode.REGENERATE);
+  }
+
+  @Test
+  @DisplayName("17번: 자료가 부족하면 200과 insufficientMaterial=true, 빈 questions를 준다")
+  void questions_insufficient_returns200() throws Exception {
+    when(retrospectiveAiService.createQuestions(1L, 101L, null))
+        .thenReturn(new QuestionsResult(false, RetrospectiveQuestionsResponse.insufficient()));
+
+    mockMvc
+        .perform(post("/api/v1/retrospectives/101/questions"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.insufficientMaterial").value(true))
+        .andExpect(jsonPath("$.data.questions.length()").value(0));
+  }
+
+  @Test
+  @DisplayName("17번: 자료가 바뀌었으면 409 MATERIAL_CHANGED와 error.detail.answeredCount를 준다")
+  void questions_materialChanged_returns409WithDetail() throws Exception {
+    when(retrospectiveAiService.createQuestions(1L, 101L, null))
+        .thenThrow(
+            new BusinessException(
+                ErrorCode.MATERIAL_CHANGED,
+                "자료가 바뀌었어요. 질문을 새로 만들면 지금까지 쓴 답 3개가 사라져요.",
+                Map.of("answeredCount", 3L)));
+
+    mockMvc
+        .perform(post("/api/v1/retrospectives/101/questions"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value("MATERIAL_CHANGED"))
+        .andExpect(jsonPath("$.error.message").value("자료가 바뀌었어요. 질문을 새로 만들면 지금까지 쓴 답 3개가 사라져요."))
+        .andExpect(jsonPath("$.error.detail.answeredCount").value(3));
+  }
+
+  @Test
+  @DisplayName("17번: mode가 정해진 값이 아니면 400 VALIDATION_ERROR이고, 서비스는 부르지 않는다")
+  void questions_unknownMode_returns400() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/retrospectives/101/questions")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"mode\": \"FOO\"}"))
+        .andExpect(status().isBadRequest());
+    verifyNoInteractions(retrospectiveAiService);
   }
 }
