@@ -8,6 +8,7 @@ import com.sajarok.domain.retrospective.dto.RetrospectiveQuestionsRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveQuestionsResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveRestResponse;
+import com.sajarok.domain.retrospective.dto.RetrospectiveReviewResponse;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartRequest;
 import com.sajarok.domain.retrospective.dto.RetrospectiveStartResponse;
 import com.sajarok.domain.retrospective.service.RetrospectiveAiService;
@@ -95,5 +96,12 @@ public class RetrospectiveController {
             request == null ? null : request.mode());
     return ResponseEntity.status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
         .body(ApiResponse.ok(result.response()));
+  }
+
+  /** 19번: 회고록·카드 초안 만들기 */
+  @PostMapping("/{retrospectiveId}/review")
+  public ApiResponse<RetrospectiveReviewResponse> review(@PathVariable Long retrospectiveId) {
+    return ApiResponse.ok(
+        retrospectiveAiService.review(currentUserProvider.getUserId(), retrospectiveId));
   }
 }

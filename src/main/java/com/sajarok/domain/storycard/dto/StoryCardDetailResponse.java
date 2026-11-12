@@ -1,5 +1,6 @@
 package com.sajarok.domain.storycard.dto;
 
+import com.fasterxml.jackson.annotation.JsonRawValue;
 import com.sajarok.domain.storycard.entity.StoryCard;
 import com.sajarok.domain.storycard.entity.StoryCardStatus;
 import com.sajarok.domain.storycard.entity.StoryCardType;
@@ -22,7 +23,7 @@ public record StoryCardDetailResponse(
     List<String> blanks,
     List<CompetencyView> competencies,
     String fullMarkdown,
-    Object evidence,
+    @JsonRawValue String evidence, // DB의 JSON 문자열을 그대로 JSON 객체로 내보낸다 (19번)
     List<String> evidenceSummary,
     SourceRecord sourceRecord) {
 
@@ -58,7 +59,7 @@ public record StoryCardDetailResponse(
         card.blanks(),
         competencies,
         card.getFullMarkdown(),
-        null, // TODO(19번): 근거 JSON
+        card.getEvidence(),
         evidenceSummary,
         sourceRecord);
   }

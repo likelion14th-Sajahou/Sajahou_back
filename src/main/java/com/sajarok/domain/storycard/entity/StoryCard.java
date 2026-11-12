@@ -1,6 +1,7 @@
 package com.sajarok.domain.storycard.entity;
 
 import com.sajarok.domain.storycard.dto.RecordCardSource;
+import com.sajarok.domain.storycard.dto.RetroCardDraft;
 import com.sajarok.global.entity.BaseTimeEntity;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
@@ -201,5 +202,29 @@ public class StoryCard extends BaseTimeEntity {
   /** 23번 태그 바꾸기: 초안은 0~3개, 공개된 카드는 1~3개 */
   public void changeCompetencies(Set<Long> ids) {
     replaceCompetencies(ids, status == StoryCardStatus.PUBLISHED);
+  }
+
+  /** 19번: 회고로 카드 초안(DRAFT)을 만든다 */
+  public static StoryCard retrospectiveDraft(RetroCardDraft d) {
+    StoryCard c = new StoryCard();
+    c.userId = d.userId();
+    c.type = d.type();
+    c.retrospectiveId = d.retrospectiveId();
+    c.weekId = d.weekId();
+    c.status = StoryCardStatus.DRAFT;
+    c.applyRetrospectiveDraft(d);
+    return c;
+  }
+
+  /** 19번: 다시 만들면 내용만 덮어쓴다. 고른 역량 태그와 상태(공개 여부)는 그대로 둔다 (R-20) */
+  public void applyRetrospectiveDraft(RetroCardDraft d) {
+    this.title = d.title();
+    this.situation = d.situation();
+    this.action = d.action();
+    this.reason = d.reason();
+    this.result = d.result();
+    this.learned = d.learned();
+    this.fullMarkdown = d.fullMarkdown();
+    this.evidence = d.evidence();
   }
 }

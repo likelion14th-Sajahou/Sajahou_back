@@ -27,10 +27,16 @@ import com.sajarok.domain.question.service.AiQuestionService;
 import com.sajarok.domain.retrospective.ai.RetroAttachment;
 import com.sajarok.domain.retrospective.ai.RetroQuestionResult.Validated;
 import com.sajarok.domain.retrospective.dto.RetroQuestionMode;
+import com.sajarok.domain.retrospective.dto.RetrospectiveReviewResponse;
 import com.sajarok.domain.retrospective.entity.Retrospective;
 import com.sajarok.domain.retrospective.entity.RetrospectiveType;
 import com.sajarok.domain.retrospective.repository.RetrospectiveRepository;
 import com.sajarok.domain.retrospective.service.RetrospectiveAiService.QuestionsResult;
+import com.sajarok.domain.storycard.dto.RetroCardDraft;
+import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
+import com.sajarok.domain.storycard.entity.StoryCardStatus;
+import com.sajarok.domain.storycard.entity.StoryCardType;
+import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.domain.user.entity.Part;
 import com.sajarok.domain.user.entity.User;
 import com.sajarok.domain.user.repository.UserRepository;
@@ -50,7 +56,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
- * 서비스 테스트: 17번 회고 AI 질문의 mode 규칙(AUTO·CONTINUE·REGENERATE), 자료 해시, 자료 부족, 첨부 읽기, 잠금을 확인한다.
+ * 서비스 테스트: 17번 회고 AI 질문의 mode 규칙(AUTO·CONTINUE·REGENERATE), 자료 해시, 자료 부족, 첨부 읽기, 잠금과 19번 회고록·카드
+ * 초안(답한 질문만 쓰기, 자료 없음, 같은 잠금)을 확인한다.
  *
  * <p>AI는 Generator를 가짜(@Mock)로 바꿔서 부르지 않는다. 잠금(AiLock)은 진짜(@Spy)를 써서 동시 호출을 실제로 막는지 본다.
  */
@@ -68,6 +75,8 @@ class RetrospectiveAiServiceTest {
   @Mock private AiQuestionService aiQuestionService;
   @Mock private RetroQuestionGenerator retroQuestionGenerator;
   @Mock private RetroQuestionWriter retroQuestionWriter;
+  @Mock private StoryCardService storyCardService;
+  @Mock private RetroReviewGenerator retroReviewGenerator;
   @Spy private AiLock aiLock = new AiLock();
 
   @InjectMocks private RetrospectiveAiService retrospectiveAiService;
@@ -337,5 +346,122 @@ class RetrospectiveAiServiceTest {
     QuestionsResult retry = retrospectiveAiService.createQuestions(ME, RETRO, null);
 
     assertThat(retry.created()).isTrue();
+  }
+
+  // ---------- 19번 ----------
+
+  private static RetroCardDraft cardDraft() {
+    return new RetroCardDraft(
+        ME,
+        RETRO,
+        10L,
+        StoryCardType.SESSION,
+        "N+1 해결",
+        "상황",
+        "행동",
+        null,
+        "결과",
+        null,
+        "# 세션 회고\n\n## 실습",
+        "{}");
+  }
+
+  private static StoryCardDetailResponse savedCard() {
+    return new StoryCardDetailResponse(
+        301L,
+        StoryCardType.SESSION,
+        StoryCardStatus.DRAFT,
+        null,
+        null,
+        null,
+        "N+1 해결",
+        "상황",
+        "행동",
+        null,
+        "결과",
+        null,
+        List.of("reason", "learned"),
+        List.of(),
+        "# 세션 회고\n\n## 실습",
+        "{}",
+        List.of(),
+        null);
+  }
+
+  @Test
+  @DisplayName("19번: 답한(ANSWERED) 질문만 AI에 넘기고, 만든 초안을 카드로 저장해 { card }로 준다")
+  void review_usesAnsweredOnlyAndSavesCard() {
+    Retrospective r = myRetroWithMemo("N+1 문제를 fetch join으로 해결");
+    QuestionView answered = question(901L, QuestionStatus.ANSWERED);
+    when(aiQuestionService.findAll(QUESTIONS_OF_101))
+        .thenReturn(List.of(answered, question(902L, QuestionStatus.PENDING)));
+    RetroCardDraft draft = cardDraft();
+    when(retroReviewGenerator.generate(r, null, List.of(), List.of(answered))).thenReturn(draft);
+    when(storyCardService.saveRetrospectiveDraft(draft)).thenReturn(savedCard());
+
+    RetrospectiveReviewResponse response = retrospectiveAiService.review(ME, RETRO);
+
+    assertThat(response.card().cardId()).isEqualTo(301L);
+    assertThat(response.card().status()).isEqualTo(StoryCardStatus.DRAFT);
+  }
+
+  @Test
+  @DisplayName("19번: 메모가 비어도 답한 질문이 있으면 초안을 만든다")
+  void review_answersOnly_proceeds() {
+    Retrospective r = myRetroWithMemo(null);
+    QuestionView answered = question(901L, QuestionStatus.ANSWERED);
+    when(aiQuestionService.findAll(QUESTIONS_OF_101)).thenReturn(List.of(answered));
+    RetroCardDraft draft = cardDraft();
+    when(retroReviewGenerator.generate(r, null, List.of(), List.of(answered))).thenReturn(draft);
+    when(storyCardService.saveRetrospectiveDraft(draft)).thenReturn(savedCard());
+
+    assertThat(retrospectiveAiService.review(ME, RETRO).card()).isNotNull();
+  }
+
+  @Test
+  @DisplayName("19번: 회고 자료·첨부·답한 질문이 모두 없으면 400 EMPTY_MATERIAL이고, AI도 카드도 건드리지 않는다")
+  void review_noMaterial_emptyMaterial() {
+    myRetroWithMemo(" ");
+    when(aiQuestionService.findAll(QUESTIONS_OF_101))
+        .thenReturn(List.of(question(901L, QuestionStatus.PENDING)));
+
+    assertThatThrownBy(() -> retrospectiveAiService.review(ME, RETRO))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.EMPTY_MATERIAL);
+    verifyNoInteractions(retroReviewGenerator, storyCardService);
+  }
+
+  @Test
+  @DisplayName("19번: 없거나 남의 회고면 NOT_FOUND이고, 잠금을 잡지 않는다")
+  void review_notMine_notFound() {
+    when(retrospectiveRepository.findByIdAndUserId(999L, ME)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> retrospectiveAiService.review(ME, 999L))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verify(aiLock, never()).run(anyString(), any());
+    verifyNoInteractions(retroReviewGenerator, storyCardService);
+  }
+
+  @Test
+  @DisplayName("19번: 17번 질문 만들기가 도는 동안 초안을 부르면 409 AI_IN_PROGRESS (같은 잠금 키)")
+  void review_whileQuestionsRunning_aiInProgress() {
+    Retrospective r = myRetroWithMemo("메모");
+    when(retroQuestionGenerator.generate(r, null, List.of()))
+        .thenAnswer(
+            invocation -> {
+              assertThatThrownBy(() -> retrospectiveAiService.review(ME, RETRO))
+                  .isInstanceOf(BusinessException.class)
+                  .extracting("errorCode")
+                  .isEqualTo(ErrorCode.AI_IN_PROGRESS);
+              return new Validated(false, NEW_QUESTIONS);
+            });
+    when(retroQuestionWriter.replace(eq(RETRO), eq(NEW_QUESTIONS), anyString())).thenReturn(SAVED);
+
+    retrospectiveAiService.createQuestions(ME, RETRO, null);
+
+    verifyNoInteractions(retroReviewGenerator);
   }
 }

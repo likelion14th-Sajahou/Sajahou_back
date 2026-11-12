@@ -4,6 +4,7 @@ import com.sajarok.domain.storycard.dto.CardSnapshot;
 import com.sajarok.domain.storycard.dto.RecentCard;
 import com.sajarok.domain.storycard.dto.RecordCardInfo;
 import com.sajarok.domain.storycard.dto.RecordCardSource;
+import com.sajarok.domain.storycard.dto.RetroCardDraft;
 import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
 import com.sajarok.domain.storycard.entity.StoryCard;
 import com.sajarok.domain.storycard.entity.StoryCardStatus;
@@ -113,5 +114,20 @@ public class StoryCardService {
                 () -> new BusinessException(ErrorCode.INVALID_STATE, "회고록·카드 초안을 먼저 만들어 주세요."));
     card.publish();
     return card.getId();
+  }
+
+  /** 19번: 회고 카드 초안 저장. 있으면 덮어쓰고 없으면 만든다 */
+  @Transactional
+  public StoryCardDetailResponse saveRetrospectiveDraft(RetroCardDraft draft) {
+    StoryCard card =
+        storyCardRepository
+            .findByRetrospectiveId(draft.retrospectiveId())
+            .map(
+                existing -> {
+                  existing.applyRetrospectiveDraft(draft);
+                  return existing;
+                })
+            .orElseGet(() -> storyCardRepository.save(StoryCard.retrospectiveDraft(draft)));
+    return StoryCardDetailResponse.of(card, null, null);
   }
 }

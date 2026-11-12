@@ -11,8 +11,11 @@ import com.sajarok.domain.retrospective.ai.RetroAttachment;
 import com.sajarok.domain.retrospective.ai.RetroQuestionResult.Validated;
 import com.sajarok.domain.retrospective.dto.RetroQuestionMode;
 import com.sajarok.domain.retrospective.dto.RetrospectiveQuestionsResponse;
+import com.sajarok.domain.retrospective.dto.RetrospectiveReviewResponse;
 import com.sajarok.domain.retrospective.entity.Retrospective;
 import com.sajarok.domain.retrospective.repository.RetrospectiveRepository;
+import com.sajarok.domain.storycard.dto.RetroCardDraft;
+import com.sajarok.domain.storycard.service.StoryCardService;
 import com.sajarok.domain.user.entity.Part;
 import com.sajarok.domain.user.entity.User;
 import com.sajarok.domain.user.repository.UserRepository;
@@ -36,6 +39,8 @@ public class RetrospectiveAiService {
   private final RetroQuestionGenerator retroQuestionGenerator;
   private final RetroQuestionWriter retroQuestionWriter;
   private final AiLock aiLock;
+  private final StoryCardService storyCardService;
+  private final RetroReviewGenerator retroReviewGenerator;
 
   public record QuestionsResult(boolean created, RetrospectiveQuestionsResponse response) {}
 
@@ -121,5 +126,29 @@ public class RetrospectiveAiService {
   /** 17·19번이 같은 키. AI가 도는 동안 같은 회고에 AI를 또 부르지 못하게 */
   static String lockKey(Long retrospectiveId) {
     return "retrospective:" + retrospectiveId;
+  }
+
+  /** 19번: 회고록·카드 초안 (AI 호출, 최대 50초). 17번과 같은 잠금 키 */
+  @Transactional(propagation = Propagation.NOT_SUPPORTED)
+  public RetrospectiveReviewResponse review(Long userId, Long retrospectiveId) {
+    findMine(userId, retrospectiveId);
+    return aiLock.run(lockKey(retrospectiveId), () -> reviewLocked(userId, retrospectiveId));
+  }
+
+  private RetrospectiveReviewResponse reviewLocked(Long userId, Long retrospectiveId) {
+    Retrospective retrospective = findMine(userId, retrospectiveId);
+    List<RetroAttachment> attachments = readDoneAttachments(userId, retrospectiveId);
+    List<QuestionView> answered =
+        aiQuestionService.findAll(QuestionOwner.retrospective(retrospectiveId)).stream()
+            .filter(q -> q.status() == QuestionStatus.ANSWERED)
+            .toList();
+    if (!retrospective.hasMaterial() && attachments.isEmpty() && answered.isEmpty()) {
+      throw new BusinessException(ErrorCode.EMPTY_MATERIAL);
+    }
+
+    Part part = userRepository.findById(userId).map(User::getPart).orElse(null);
+    RetroCardDraft draft =
+        retroReviewGenerator.generate(retrospective, part, attachments, answered);
+    return new RetrospectiveReviewResponse(storyCardService.saveRetrospectiveDraft(draft));
   }
 }
