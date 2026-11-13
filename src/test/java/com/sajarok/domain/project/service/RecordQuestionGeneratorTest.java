@@ -20,6 +20,7 @@ import com.sajarok.domain.question.dto.NewQuestion;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import com.sajarok.infra.ai.AiClient;
+import com.sajarok.infra.ai.AttachmentBudget;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -101,11 +102,15 @@ class RecordQuestionGeneratorTest {
   }
 
   @Test
-  @DisplayName("프롬프트에는 첨부를 6,000자까지만 넣지만, quote는 자르지 않은 전체 첨부 글에서 찾는다")
+  @DisplayName("프롬프트에는 첨부를 4만 자까지만 넣지만, quote는 자르지 않은 전체 첨부 글에서 찾는다")
   void generate_longAttachment_checksQuoteAgainstFullText() {
     RecordAttachment longNote =
         new RecordAttachment(
-            601L, "FILE", "MEETING_NOTE", "회의록.pdf", "가".repeat(6000) + "시안 B로 정했다");
+            601L,
+            "FILE",
+            "MEETING_NOTE",
+            "회의록.pdf",
+            "가".repeat(AttachmentBudget.TOTAL_CHARS) + "시안 B로 정했다");
     aiReturns(
         new RecordQuestionResult(
             false, List.of(new Question("선택의 이유", "시안 B로 정했다", 601L, "왜 시안 B로 정했어요?"))));

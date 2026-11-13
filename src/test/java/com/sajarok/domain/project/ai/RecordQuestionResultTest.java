@@ -12,6 +12,7 @@ import com.sajarok.domain.project.entity.ProjectRecordStatus;
 import com.sajarok.domain.question.dto.NewQuestion;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import com.sajarok.infra.ai.AttachmentBudget;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -202,14 +203,14 @@ class RecordQuestionResultTest {
   }
 
   @Test
-  @DisplayName("30번 프롬프트: 첨부 글자는 하나당 6,000자까지만 넣는다")
+  @DisplayName("30번 프롬프트: 첨부 글자는 다 합쳐 4만 자까지만 넣는다")
   void questionsUser_cutsLongAttachment() {
     ProjectRecord record =
         ProjectRecord.builder()
             .project(Project.builder().userId(1L).name("사자록").build())
             .status(ProjectRecordStatus.DRAFT)
             .build();
-    String kept = "가".repeat(RecordPrompts.MAX_ATTACHMENT_CHARS);
+    String kept = "가".repeat(AttachmentBudget.TOTAL_CHARS);
 
     String user =
         RecordPrompts.questionsUser(

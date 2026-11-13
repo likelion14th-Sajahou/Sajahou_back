@@ -10,6 +10,7 @@ import com.sajarok.domain.question.dto.QuestionView;
 import com.sajarok.domain.question.entity.QuestionStatus;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import com.sajarok.infra.ai.AttachmentBudget;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -65,16 +66,17 @@ class RecordOrganizeResultTest {
   }
 
   @Test
-  @DisplayName("31번 프롬프트: 첨부 글자는 하나당 6,000자까지만 넣는다")
+  @DisplayName("31번 프롬프트: 첨부는 다 합쳐 4만 자까지, 짧은 첨부를 다 넣고 남은 만큼 긴 첨부를 넣는다")
   void organizeUser_cutsLongAttachment() {
     ProjectRecord record =
         ProjectRecord.builder()
             .project(Project.builder().userId(1L).name("사자록").build())
             .status(ProjectRecordStatus.DRAFT)
             .build();
-    String kept = "가".repeat(RecordPrompts.MAX_ATTACHMENT_CHARS);
+    String shortText = "짧은 첨부";
+    String kept = "가".repeat(AttachmentBudget.TOTAL_CHARS - shortText.length());
 
-    String user = RecordPrompts.organizeUser(record, List.of(), List.of(kept + "뒷부분", "짧은 첨부"));
+    String user = RecordPrompts.organizeUser(record, List.of(), List.of(kept + "가뒷부분", shortText));
 
     assertThat(user).contains("(1) " + kept + "\n", "(2) 짧은 첨부").doesNotContain("뒷부분");
   }
