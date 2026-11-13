@@ -15,11 +15,9 @@ import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -134,7 +132,11 @@ public class StoryCardFacade {
                     weekNumber == null
                         || (card.getWeekId() != null
                             && weekNumber.equals(weekNumbers.get(card.getWeekId()))))
-            .filter(card -> matchesKeyword(card, q))
+            .filter(
+                card ->
+                    q == null
+                        || q.isBlank()
+                        || (card.getTitle() != null && card.getTitle().contains(q.strip())))
             .toList();
 
     // 프로젝트 이름·기록 날짜·역량 이름은 카드마다 묻지 않고 한 번에 가져온다 (N+1 방지)
@@ -162,25 +164,5 @@ public class StoryCardFacade {
                         card.getWeekId() == null ? null : weekNumbers.get(card.getWeekId())))
             .toList();
     return new StoryCardListResponse(items.size(), items);
-  }
-
-  /**
-   * 21번 검색(q): 제목, 5칸(상황·행동·이유·결과·배운 점), 전문(회고록·기록 전문) 중 한 곳에라도 있으면 남긴다. 영문 대소문자는 가리지 않는다. q가 없거나
-   * 공백뿐이면 거르지 않는다.
-   */
-  private static boolean matchesKeyword(StoryCard card, String q) {
-    if (q == null || q.isBlank()) {
-      return true;
-    }
-    String keyword = q.strip().toLowerCase(Locale.ROOT);
-    return Stream.of(
-            card.getTitle(),
-            card.getSituation(),
-            card.getAction(),
-            card.getReason(),
-            card.getResult(),
-            card.getLearned(),
-            card.getFullMarkdown())
-        .anyMatch(text -> text != null && text.toLowerCase(Locale.ROOT).contains(keyword));
   }
 }

@@ -6,6 +6,7 @@ import com.sajarok.domain.project.dto.ProjectRecordUpdateRequest;
 import com.sajarok.domain.project.dto.RecordOrganizeResponse;
 import com.sajarok.domain.project.dto.RecordQuestionsRequest;
 import com.sajarok.domain.project.dto.RecordQuestionsResponse;
+import com.sajarok.domain.project.service.ProjectRecordFacade;
 import com.sajarok.domain.project.service.ProjectRecordService;
 import com.sajarok.domain.project.service.ProjectRecordService.RecordQuestions;
 import com.sajarok.global.auth.CurrentUserProvider;
@@ -34,23 +35,24 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProjectRecordController {
 
   private final ProjectRecordService projectRecordService;
+  private final ProjectRecordFacade projectRecordFacade;
   private final CurrentUserProvider currentUserProvider;
 
-  /** 27번: 기록 추가. 성공하면 201. */
+  /** 27번: 기록 추가. 성공하면 201. '이대로 저장'이면 카드 제목을 AI가 지을 때까지 기다린다. */
   @PostMapping("/projects/{projectId}/records")
   public ResponseEntity<ApiResponse<ProjectRecordResponse>> create(
       @PathVariable Long projectId, @Valid @RequestBody ProjectRecordCreateRequest request) {
     ProjectRecordResponse response =
-        projectRecordService.create(currentUserProvider.getUserId(), projectId, request);
+        projectRecordFacade.create(currentUserProvider.getUserId(), projectId, request);
     return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(response));
   }
 
-  /** 28번: 기록 수정. 보낸 필드만 바뀐다. */
+  /** 28번: 기록 수정. 보낸 필드만 바뀐다. DRAFT를 저장해 카드가 생기면 카드 제목을 AI가 지을 때까지 기다린다. */
   @PatchMapping("/project-records/{recordId}")
   public ApiResponse<ProjectRecordResponse> update(
       @PathVariable Long recordId, @Valid @RequestBody ProjectRecordUpdateRequest request) {
     return ApiResponse.ok(
-        projectRecordService.update(currentUserProvider.getUserId(), recordId, request));
+        projectRecordFacade.update(currentUserProvider.getUserId(), recordId, request));
   }
 
   /** 29번: 기록 삭제. 이 기록의 프로젝트 카드도 함께 지운다. 성공하면 204 (본문 없음). */

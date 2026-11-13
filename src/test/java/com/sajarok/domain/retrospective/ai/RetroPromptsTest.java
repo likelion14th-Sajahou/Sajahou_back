@@ -53,4 +53,31 @@ class RetroPromptsTest {
         .contains(": " + "가".repeat(20_000) + "\n", ": " + "나".repeat(20_000) + "\n")
         .doesNotContain("가".repeat(20_001), "나".repeat(20_001));
   }
+
+  @Test
+  @DisplayName("19번 카드 제목: 그 주차 내 파트의 세션명을 쓴다")
+  void cardTitle_usesSessionTitle() {
+    Retrospective session = Retrospective.start(1L, 37L, RetrospectiveType.SESSION);
+    Retrospective assignment = Retrospective.start(1L, 37L, RetrospectiveType.ASSIGNMENT);
+
+    assertThat(RetroPrompts.cardTitle(session, 10, " JPA 연관관계 ")).isEqualTo("JPA 연관관계");
+    assertThat(RetroPrompts.cardTitle(assignment, 10, "JPA 연관관계")).isEqualTo("JPA 연관관계");
+  }
+
+  @Test
+  @DisplayName("19번 카드 제목: 세션명을 모르면 회고록 제목(10주차 세션 회고)을 쓴다")
+  void cardTitle_withoutSessionTitle_usesHeading() {
+    Retrospective session = Retrospective.start(1L, 37L, RetrospectiveType.SESSION);
+    Retrospective assignment = Retrospective.start(1L, 37L, RetrospectiveType.ASSIGNMENT);
+
+    assertThat(RetroPrompts.cardTitle(session, 10, null)).isEqualTo("10주차 세션 회고");
+    assertThat(RetroPrompts.cardTitle(assignment, 10, " ")).isEqualTo("10주차 과제 회고");
+    assertThat(RetroPrompts.cardTitle(session, null, null)).isEqualTo("세션 회고");
+  }
+
+  @Test
+  @DisplayName("19번 system 프롬프트는 AI에게 제목을 쓰라고 하지 않는다 (서버가 세션명으로 붙임)")
+  void reviewSystem_doesNotAskForTitle() {
+    assertThat(RetroPrompts.REVIEW_SYSTEM).doesNotContain("\"title\"");
+  }
 }

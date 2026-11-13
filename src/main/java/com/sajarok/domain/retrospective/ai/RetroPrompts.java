@@ -116,17 +116,17 @@ public final class RetroPrompts {
          - reason(이유): 그 방법을 고른 이유, 다른 방법과 비교한 것
          - result(결과): 숫자·확인한 결과·받은 반응
          - learned(배운 점): 배운 것과 다음에 다르게 할 것
-      3. title은 이번 주에 한 가장 구체적인 일을 한 줄(30자 안팎)로 쓴다. "10주차 회고"처럼 뻔하게 쓰지 않는다.
-      4. 칸마다 1~3문장, 아기사자가 직접 쓴 것처럼 1인칭 평서문("~했다")으로 쓴다.
-      5. markdownBody는 노션에 붙여 넣을 회고록 본문이다. 아래 ## 제목 중 자료가 있는 것만 이 순서로 쓴다. 맨 위 # 제목은 쓰지 않는다.
+      3. 칸마다 1~3문장, 아기사자가 직접 쓴 것처럼 1인칭 평서문("~했다")으로 쓴다.
+      4. markdownBody는 노션에 붙여 넣을 회고록 본문이다. 아래 ## 제목 중 자료가 있는 것만 이 순서로 쓴다. 맨 위 # 제목은 쓰지 않는다.
          ## 세션 내용 정리 (세션 자료(SESSION_PDF)가 있을 때만. 핵심 개념 3~5개를 bullet로)
          ## 실습
          ## 과제
          ## 고민과 해결
          ## 배운 점
          ## 다음에 할 일
-      6. evidence에는 카드 칸마다 근거가 된 원문 문장을 넣는다. quote는 원문을 한 글자도 바꾸지 않고 옮긴다.
+      5. evidence에는 카드 칸마다 근거가 된 원문 문장을 넣는다. quote는 원문을 한 글자도 바꾸지 않고 옮긴다.
          첨부에서 옮겼으면 attachmentId에 그 첨부 번호를, 회고 자료나 질문 답에서 옮겼으면 null을 쓴다. 근거가 없는 칸은 넣지 않는다.
+      6. 카드 제목은 서버가 세션명으로 붙이므로 title은 쓰지 않는다.
       7. 한국어로 쓴다.
 
       [좋은 예]
@@ -136,8 +136,7 @@ public final class RetroPrompts {
                     A1. 게시글 20개 기준으로 쿼리 21개가 2개로 줄었어요
         [첨부] (502) FILE / SESSION_PDF / 7주차 JPA.pdf: 지연 로딩과 N+1 문제, fetch join, 배치 사이즈
       출력:
-      {"title":"게시글 목록 N+1 문제를 fetch join으로 해결",
-       "situation":"게시글 목록 API에서 N+1 문제가 생겼다.",
+      {"situation":"게시글 목록 API에서 N+1 문제가 생겼다.",
        "action":"fetch join으로 게시글과 작성자를 한 번에 가져오게 바꿨다.",
        "reason":null,
        "result":"게시글 20개 기준으로 쿼리가 21개에서 2개로 줄었다.",
@@ -154,7 +153,7 @@ public final class RetroPrompts {
 
       [출력 형식]
       아래 JSON으로만 답한다. 다른 글은 쓰지 않는다. 근거가 없는 칸은 null.
-      {"title":"...","situation":"...","action":"...","reason":null,"result":"...","learned":"...",
+      {"situation":"...","action":"...","reason":null,"result":"...","learned":"...",
        "markdownBody":"## 실습\\n...",
        "evidence":{"situation":[{"attachmentId":null,"quote":"..."}],"result":[{"attachmentId":502,"quote":"..."}]}}
       """;
@@ -204,9 +203,24 @@ public final class RetroPrompts {
    * @param weekNumber 주차 번호. 모르면 null(제목에서 주차를 뺀다)
    */
   public static String fullMarkdown(Retrospective r, Integer weekNumber, String markdownBody) {
+    return "# " + heading(r, weekNumber) + "\n\n" + markdownBody.strip() + "\n";
+  }
+
+  /**
+   * 19번 카드 제목: 그 주차 내 파트의 세션명(예: "JPA 연관관계"). 세션명을 모르면(파트·일정 없음) 회고록 제목("10주차 세션 회고")을 쓴다.
+   *
+   * @param sessionTitle 그 주차 내 파트의 세션명. 모르면 null
+   */
+  public static String cardTitle(Retrospective r, Integer weekNumber, String sessionTitle) {
+    if (sessionTitle != null && !sessionTitle.isBlank()) {
+      return sessionTitle.strip();
+    }
+    return heading(r, weekNumber);
+  }
+
+  private static String heading(Retrospective r, Integer weekNumber) {
     String type = r.getType() == RetrospectiveType.ASSIGNMENT ? "과제 회고" : "세션 회고";
-    String heading = weekNumber == null ? type : weekNumber + "주차 " + type;
-    return "# " + heading + "\n\n" + markdownBody.strip() + "\n";
+    return weekNumber == null ? type : weekNumber + "주차 " + type;
   }
 
   private static void appendHeader(StringBuilder sb, Retrospective r, Part part) {
