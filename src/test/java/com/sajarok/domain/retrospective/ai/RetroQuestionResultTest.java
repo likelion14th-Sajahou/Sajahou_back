@@ -59,7 +59,7 @@ class RetroQuestionResultTest {
   }
 
   @Test
-  @DisplayName("목록에 없는 태그·빈 질문은 그 질문만 버리고, 넘겨주지 않은 첨부 번호는 출처만 지운다")
+  @DisplayName("목록에 없는 태그·빈 질문은 그 질문만 버리고, 넘겨주지 않은 첨부 번호는 quote가 실제로 있는 곳(회고 자료)으로 바로잡는다")
   void dropsOnlyBadQuestions() {
     Validated v =
         validate(
@@ -69,7 +69,17 @@ class RetroQuestionResultTest {
                 new Question("빠진 칸", null, null, "  "),
                 new Question("느낀 점", MATERIAL, 999L, "무엇을 배웠나요?")));
 
-    assertThat(v.questions()).containsExactly(new NewQuestion("느낀 점", null, null, "무엇을 배웠나요?"));
+    assertThat(v.questions()).containsExactly(new NewQuestion("느낀 점", MATERIAL, null, "무엇을 배웠나요?"));
+  }
+
+  @Test
+  @DisplayName("AI가 출처를 비웠어도(회고 자료라고 했어도) quote가 첨부에 있으면 그 첨부를 출처로 저장한다")
+  void correctsSourceToAttachment() {
+    Validated v =
+        validate(false, List.of(new Question("세션과 연결", "지연 로딩과 N+1 문제", null, "세션과 어떻게 이어지나요?")));
+
+    assertThat(v.questions().get(0).quote()).isEqualTo("지연 로딩과 N+1 문제");
+    assertThat(v.questions().get(0).sourceAttachmentId()).isEqualTo(502L);
   }
 
   @Test
