@@ -347,7 +347,7 @@ class StoryCardFacadeTest {
   }
 
   @Test
-  @DisplayName("21번: q는 제목에서 찾고, 제목이 없는 카드에서도 터지지 않는다. 공백만 보내면 거르지 않는다")
+  @DisplayName("21번: q는 제목에서도 찾고, 글이 없는 카드에서도 터지지 않는다. 공백만 보내면 거르지 않는다")
   void list_searchByTitle() {
     twoPublishedCards();
     projectLookups();
@@ -357,6 +357,29 @@ class StoryCardFacadeTest {
 
     assertThat(found.cards()).extracting(CardItem::cardId).containsExactly(412L);
     assertThat(blank.totalCount()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("21번: q는 제목에 없어도 5칸이나 전문(회고록)에 있으면 찾고, 영문 대소문자는 가리지 않는다")
+  void list_searchByContentAndFullMarkdown() {
+    StoryCard retro = retrospectiveCard();
+    ReflectionTestUtils.setField(retro, "title", "목록 API 성능 개선");
+    ReflectionTestUtils.setField(retro, "situation", "페이징과 fetch join을 같이 쓰면 경고가 났다.");
+    ReflectionTestUtils.setField(
+        retro, "fullMarkdown", "# 10주차 세션 회고\n\n## 실습\nN+1 문제를 배치 사이즈로 풀었다.");
+    when(storyCardRepository.findAllByUserIdAndStatusOrderByCreatedAtDescIdDesc(
+            ME, StoryCardStatus.PUBLISHED))
+        .thenReturn(List.of(projectCard(), retro));
+
+    StoryCardListResponse bySituation = storyCardFacade.getList(ME, null, null, null, "페이징");
+    StoryCardListResponse byFullText = storyCardFacade.getList(ME, null, null, null, "배치 사이즈");
+    StoryCardListResponse ignoreCase = storyCardFacade.getList(ME, null, null, null, "n+1");
+    StoryCardListResponse none = storyCardFacade.getList(ME, null, null, null, "없는 단어");
+
+    assertThat(bySituation.cards()).extracting(CardItem::cardId).containsExactly(301L);
+    assertThat(byFullText.cards()).extracting(CardItem::cardId).containsExactly(301L);
+    assertThat(ignoreCase.cards()).extracting(CardItem::cardId).containsExactly(301L);
+    assertThat(none.totalCount()).isZero();
   }
 
   @Test
