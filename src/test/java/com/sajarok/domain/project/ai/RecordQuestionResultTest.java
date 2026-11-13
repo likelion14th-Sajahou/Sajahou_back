@@ -66,6 +66,16 @@ class RecordQuestionResultTest {
   }
 
   @Test
+  @DisplayName("30번 검증: quote에 '메모: ' 같은 칸 이름이 붙어 와도 떼고 출처로 남긴다")
+  void validate_stripsFieldLabel() {
+    Validated v =
+        new RecordQuestionResult(false, List.of(q("내 역할·과정", "메모: 나는 시안 2개 준비", null)))
+            .validate(MEMO, ATTACHMENTS);
+
+    assertThat(v.questions().get(0).quote()).isEqualTo("나는 시안 2개 준비");
+  }
+
+  @Test
   @DisplayName("30번 검증: 자료 부족(true)이면 빈 결과로 통과하고, 질문이 같이 와도 자료 부족으로 본다")
   void validate_insufficient() {
     assertThat(

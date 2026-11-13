@@ -6,6 +6,7 @@ import com.sajarok.infra.ai.EvidenceVerifier;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -86,8 +87,9 @@ public record RetroReviewResult(
       }
       List<Evidence> verified =
           items.stream()
-              .filter(e -> e != null && isQuoted(e, sourceText, attachmentTexts))
-              .map(e -> new Evidence(e.attachmentId(), e.quote().strip()))
+              .filter(Objects::nonNull)
+              .map(e -> verify(e, sourceText, attachmentTexts))
+              .filter(Objects::nonNull)
               .toList();
       if (!verified.isEmpty()) {
         checked.put(field, verified);
@@ -105,16 +107,16 @@ public record RetroReviewResult(
         checked);
   }
 
-  /** 넘겨준 첨부가 아니거나(지어낸 번호) 원문에 그대로 없으면 false */
-  private static boolean isQuoted(
-      Evidence e, String sourceText, Map<Long, String> attachmentTexts) {
+  /** 원문에 있는 근거면 저장할 근거("실습: " 같은 칸 이름은 뗀 것)를, 넘겨준 첨부가 아니거나(지어낸 번호) 원문에 없으면 null을 돌려준다. */
+  private static Evidence verify(Evidence e, String sourceText, Map<Long, String> attachmentTexts) {
     Long id = e.attachmentId();
     if (id != null && !attachmentTexts.containsKey(id)) {
       log.info("AI 회고록 근거가 넘겨주지 않은 첨부를 씀 attachmentId={} quote={}", id, e.quote());
-      return false;
+      return null;
     }
     String original = id == null ? sourceText : attachmentTexts.get(id);
-    return EvidenceVerifier.isQuoted(original, e.quote());
+    String quote = EvidenceVerifier.verified(original, e.quote());
+    return quote == null ? null : new Evidence(id, quote);
   }
 
   private static String clean(String value) {
