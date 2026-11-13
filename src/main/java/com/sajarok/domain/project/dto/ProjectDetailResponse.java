@@ -3,6 +3,7 @@ package com.sajarok.domain.project.dto;
 import com.sajarok.domain.attachment.dto.AttachmentView;
 import com.sajarok.domain.project.dto.ProjectRecordResponse.CompetencyTag;
 import com.sajarok.domain.project.entity.Project;
+import com.sajarok.domain.project.entity.ProjectCategory;
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRole;
 import com.sajarok.domain.project.entity.ProjectStatus;
@@ -19,6 +20,7 @@ public record ProjectDetailResponse(
     Long projectId,
     String name,
     String subtitle,
+    ProjectCategory category,
     List<ProjectRole> roles,
     ProjectStatus status,
     LocalDate startedOn,
@@ -100,6 +102,7 @@ public record ProjectDetailResponse(
         project.getId(),
         project.getName(),
         project.getSubtitle(),
+        project.getCategory(),
         List.copyOf(project.getRoles()),
         project.getStatus(),
         toDate(project.getCreatedAt()),

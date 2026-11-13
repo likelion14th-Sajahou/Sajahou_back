@@ -13,6 +13,7 @@ import com.sajarok.domain.project.dto.ProjectDetailResponse;
 import com.sajarok.domain.project.dto.ProjectListResponse;
 import com.sajarok.domain.project.dto.ProjectListResponse.ProjectSummary;
 import com.sajarok.domain.project.entity.Project;
+import com.sajarok.domain.project.entity.ProjectCategory;
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
 import com.sajarok.domain.project.entity.ProjectStatus;
@@ -28,6 +29,7 @@ import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.time.LocalDate;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -58,9 +60,17 @@ public class ProjectService {
             .userId(userId)
             .name(request.name())
             .subtitle(request.subtitle())
+            .category(request.category())
             .roles(request.roles().stream().distinct().toList())
             .build();
     return ProjectCreateResponse.from(projectRepository.save(project));
+  }
+
+  /** 발자국 스티커: 완료(DONE)한 내 프로젝트의 행사 종류. 같은 행사가 여러 개여도 하나로, 없으면 빈 Set. */
+  public Set<ProjectCategory> findCompletedCategories(Long userId) {
+    List<ProjectCategory> categories =
+        projectRepository.findCategoriesByUserIdAndStatus(userId, ProjectStatus.DONE);
+    return categories.isEmpty() ? Set.of() : EnumSet.copyOf(categories);
   }
 
   /** 43번: 내 프로젝트 목록. 진행 중·완료로 나누고, 각각 만든 순서 최신순. */
@@ -73,6 +83,7 @@ public class ProjectService {
                 p.getId(),
                 p.getName(),
                 p.getSubtitle(),
+                p.getCategory(),
                 List.copyOf(p.getRoles()),
                 recordCount(stats, p),
                 lastRecordDate(stats, p));

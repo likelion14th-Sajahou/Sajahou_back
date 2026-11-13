@@ -39,6 +39,11 @@ public class Project extends BaseTimeEntity {
   @Column(length = 100)
   private String subtitle;
 
+  /** 행사 종류 (아이디어톤·해커톤·중커톤). 완료하면 발자국에서 그 행사 발표 주에 스티커가 붙는다. */
+  @Enumerated(EnumType.STRING)
+  @Column(nullable = false)
+  private ProjectCategory category;
+
   /** 내 역할 배열. DB에는 JSON 배열(["PM", "BACKEND"])로 저장된다. */
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(nullable = false)
@@ -54,10 +59,16 @@ public class Project extends BaseTimeEntity {
   private LocalDateTime portfolioSavedAt;
 
   @Builder
-  private Project(Long userId, String name, String subtitle, List<ProjectRole> roles) {
+  private Project(
+      Long userId,
+      String name,
+      String subtitle,
+      ProjectCategory category,
+      List<ProjectRole> roles) {
     this.userId = userId;
     this.name = name;
     this.subtitle = subtitle;
+    this.category = category;
     this.roles = roles == null ? new ArrayList<>() : new ArrayList<>(roles);
     this.status = ProjectStatus.IN_PROGRESS;
   }

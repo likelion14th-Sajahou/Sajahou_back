@@ -29,6 +29,7 @@ import com.sajarok.domain.project.dto.ProjectListResponse;
 import com.sajarok.domain.project.dto.ProjectListResponse.ProjectSummary;
 import com.sajarok.domain.project.dto.ProjectRecordResponse.CompetencyTag;
 import com.sajarok.domain.project.entity.Project;
+import com.sajarok.domain.project.entity.ProjectCategory;
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
 import com.sajarok.domain.project.entity.ProjectRole;
@@ -79,7 +80,10 @@ class ProjectServiceTest {
     when(projectRepository.save(any(Project.class))).thenAnswer(inv -> inv.getArgument(0));
     ProjectCreateRequest request =
         new ProjectCreateRequest(
-            "사자록", "멋사 회고 서비스", List.of(ProjectRole.PM, ProjectRole.BACKEND, ProjectRole.PM));
+            "사자록",
+            "멋사 회고 서비스",
+            ProjectCategory.JUNGKATHON,
+            List.of(ProjectRole.PM, ProjectRole.BACKEND, ProjectRole.PM));
 
     ProjectCreateResponse response = projectService.create(1L, request);
 
@@ -88,6 +92,8 @@ class ProjectServiceTest {
     assertThat(saved.getValue().getUserId()).isEqualTo(1L);
     assertThat(saved.getValue().getStatus()).isEqualTo(ProjectStatus.IN_PROGRESS);
     assertThat(saved.getValue().getRoles()).containsExactly(ProjectRole.PM, ProjectRole.BACKEND);
+    assertThat(saved.getValue().getCategory()).isEqualTo(ProjectCategory.JUNGKATHON);
+    assertThat(response.category()).isEqualTo(ProjectCategory.JUNGKATHON);
     assertThat(response.name()).isEqualTo("사자록");
     assertThat(response.subtitle()).isEqualTo("멋사 회고 서비스");
     assertThat(response.roles()).containsExactly(ProjectRole.PM, ProjectRole.BACKEND);
@@ -109,10 +115,23 @@ class ProjectServiceTest {
     assertThat(response.inProgressProjects())
         .containsExactly(
             new ProjectSummary(
-                3L, "사자록", null, List.of(ProjectRole.BACKEND), 5, LocalDate.of(2026, 11, 4)));
+                3L,
+                "사자록",
+                null,
+                ProjectCategory.JUNGKATHON,
+                List.of(ProjectRole.BACKEND),
+                5,
+                LocalDate.of(2026, 11, 4)));
     assertThat(response.doneProjects())
         .containsExactly(
-            new ProjectSummary(1L, "아이디어톤", null, List.of(ProjectRole.BACKEND), 0, null));
+            new ProjectSummary(
+                1L,
+                "아이디어톤",
+                null,
+                ProjectCategory.JUNGKATHON,
+                List.of(ProjectRole.BACKEND),
+                0,
+                null));
   }
 
   @Test
@@ -171,10 +190,34 @@ class ProjectServiceTest {
     verify(projectRepository).findNamesByIdIn(anyCollection());
   }
 
+  @Test
+  @DisplayName("발자국 스티커: 완료한 프로젝트의 행사 종류를 겹치지 않게 돌려준다")
+  void findCompletedCategories_returnsDistinctCategories() {
+    when(projectRepository.findCategoriesByUserIdAndStatus(1L, ProjectStatus.DONE))
+        .thenReturn(List.of(ProjectCategory.HACKATHON, ProjectCategory.JUNGKATHON));
+
+    assertThat(projectService.findCompletedCategories(1L))
+        .containsExactlyInAnyOrder(ProjectCategory.HACKATHON, ProjectCategory.JUNGKATHON);
+  }
+
+  @Test
+  @DisplayName("발자국 스티커: 완료한 프로젝트가 없으면 빈 Set")
+  void findCompletedCategories_noneDone_returnsEmpty() {
+    when(projectRepository.findCategoriesByUserIdAndStatus(1L, ProjectStatus.DONE))
+        .thenReturn(List.of());
+
+    assertThat(projectService.findCompletedCategories(1L)).isEmpty();
+  }
+
   /** 테스트용 프로젝트. id와 상태는 DB나 엔티티 메서드가 정하므로 테스트에서는 직접 넣는다. */
   private static Project project(Long id, String name, ProjectStatus status) {
     Project project =
-        Project.builder().userId(1L).name(name).roles(List.of(ProjectRole.BACKEND)).build();
+        Project.builder()
+            .userId(1L)
+            .name(name)
+            .category(ProjectCategory.JUNGKATHON)
+            .roles(List.of(ProjectRole.BACKEND))
+            .build();
     ReflectionTestUtils.setField(project, "id", id);
     ReflectionTestUtils.setField(project, "status", status);
     return project;
@@ -188,6 +231,7 @@ class ProjectServiceTest {
             .userId(1L)
             .name("사자록")
             .subtitle("멋사 회고 서비스")
+            .category(ProjectCategory.JUNGKATHON)
             .roles(List.of(ProjectRole.BACKEND))
             .build();
     ReflectionTestUtils.setField(project, "id", 3L);
@@ -224,6 +268,7 @@ class ProjectServiceTest {
     ProjectDetailResponse response = projectService.getDetail(1L, 3L);
 
     assertThat(response.projectId()).isEqualTo(3L);
+    assertThat(response.category()).isEqualTo(ProjectCategory.JUNGKATHON);
     assertThat(response.startedOn()).isEqualTo(LocalDate.of(2026, 10, 20));
     assertThat(response.recordCount()).isEqualTo(2);
     assertThat(response.lastRecordDate()).isEqualTo(LocalDate.of(2026, 11, 4));
