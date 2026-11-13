@@ -84,6 +84,7 @@ public record RetroQuestionResult(Boolean insufficientMaterial, List<Question> q
     }
     Long source = q.sourceAttachmentId();
     if (source != null && !attachmentTexts.containsKey(source)) {
+      log.info("AI 회고 질문이 넘겨주지 않은 첨부를 출처로 씀 source={} quote={}", source, q.quote());
       return new NewQuestion(tag, null, null, q.content().strip());
     }
     String original = source == null ? materialText : attachmentTexts.get(source);

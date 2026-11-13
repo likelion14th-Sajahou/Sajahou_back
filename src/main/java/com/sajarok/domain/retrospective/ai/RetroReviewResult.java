@@ -6,6 +6,8 @@ import com.sajarok.infra.ai.EvidenceVerifier;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 19번 AI 응답: 카드 제목·5칸·회고록 본문·근거. {@link #validate}를 통과해야 저장한다.
@@ -21,6 +23,8 @@ public record RetroReviewResult(
     String learned,
     String markdownBody,
     Map<String, List<Evidence>> evidence) {
+
+  private static final Logger log = LoggerFactory.getLogger(RetroReviewResult.class);
 
   /** 카드 칸 key (evidence의 key). 22번 카드 상세의 칸과 같다. */
   public static final List<String> FIELDS =
@@ -106,6 +110,7 @@ public record RetroReviewResult(
       Evidence e, String sourceText, Map<Long, String> attachmentTexts) {
     Long id = e.attachmentId();
     if (id != null && !attachmentTexts.containsKey(id)) {
+      log.info("AI 회고록 근거가 넘겨주지 않은 첨부를 씀 attachmentId={} quote={}", id, e.quote());
       return false;
     }
     String original = id == null ? sourceText : attachmentTexts.get(id);
