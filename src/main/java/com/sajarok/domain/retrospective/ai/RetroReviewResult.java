@@ -1,5 +1,6 @@
 package com.sajarok.domain.retrospective.ai;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import com.sajarok.infra.ai.EvidenceVerifier;
@@ -9,13 +10,15 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * 19번 AI 응답: 카드 제목·5칸·회고록 본문·근거. {@link #validate}를 통과해야 저장한다.
+ * 19번 AI 응답: 카드 5칸·회고록 본문·근거. {@link #validate}를 통과해야 저장한다. 카드 제목은 AI가 쓰지 않고 서버가 세션명으로 붙인다.
  *
  * <p>근거 칸이 없는 칸은 null(카드 blanks로 보인다). 근거 quote는 원문에 그대로 있어야 남기고, 없으면 그 근거만 뺀다(칸 내용은 살린다). 근거의
  * attachmentId는 AI가 적은 번호가 아니라 quote가 실제로 있는 곳으로 정한다.
+ *
+ * <p>AI가 예전 습관대로 title 같은 칸을 더 보내도 실패로 보지 않고 버린다.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record RetroReviewResult(
-    String title,
     String situation,
     String action,
     String reason,
@@ -27,9 +30,6 @@ public record RetroReviewResult(
   /** 카드 칸 key (evidence의 key). 22번 카드 상세의 칸과 같다. */
   public static final List<String> FIELDS =
       List.of("situation", "action", "reason", "result", "learned");
-
-  /** story_card.title VARCHAR(200) */
-  static final int MAX_TITLE = 200;
 
   /**
    * @param attachmentId quote가 나온 첨부. 회고 자료·질문 답에서 나왔으면 null
@@ -44,7 +44,6 @@ public record RetroReviewResult(
    * @param evidence 칸 key → 확인된 근거. 근거가 남지 않은 칸은 key가 없다
    */
   public record Draft(
-      String title,
       String situation,
       String action,
       String reason,
@@ -54,18 +53,14 @@ public record RetroReviewResult(
       Map<String, List<Evidence>> evidence) {}
 
   /**
-   * 제목과 회고록 본문은 꼭 있어야 한다(없으면 AI_FAILED). 공백뿐인 칸은 null로 본다.
+   * 회고록 본문은 꼭 있어야 한다(없으면 AI_FAILED). 공백뿐인 칸은 null로 본다.
    *
    * @param sourceText 회고 자료와 질문 답을 이은 글 (attachmentId가 null인 quote를 대조)
    * @param attachmentTexts 첨부 ID → 추출 텍스트 전체
    */
   public Draft validate(String sourceText, Map<Long, String> attachmentTexts) {
-    if (isBlank(title) || isBlank(markdownBody)) {
+    if (isBlank(markdownBody)) {
       throw new BusinessException(ErrorCode.AI_FAILED);
-    }
-    String cleanTitle = title.strip();
-    if (cleanTitle.length() > MAX_TITLE) {
-      cleanTitle = cleanTitle.substring(0, MAX_TITLE);
     }
 
     Map<String, String> values = new LinkedHashMap<>();
@@ -94,7 +89,6 @@ public record RetroReviewResult(
     }
 
     return new Draft(
-        cleanTitle,
         values.get("situation"),
         values.get("action"),
         values.get("reason"),

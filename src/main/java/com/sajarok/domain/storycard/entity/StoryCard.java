@@ -92,6 +92,10 @@ public class StoryCard extends BaseTimeEntity {
     this.status = StoryCardStatus.PUBLISHED;
   }
 
+  /**
+   * 27·28번: 기록으로 프로젝트 카드를 만든다. 제목은 빈칸(null)으로 두고, 저장이 끝난 뒤 AI가 전문을 읽고 지어 붙인다({@link #nameByAi}).
+   * AI가 실패하면 빈칸 그대로다.
+   */
   public static StoryCard fromRecord(RecordCardSource src, Set<Long> competencyIds) {
     StoryCard c = new StoryCard();
     c.userId = src.userId();
@@ -99,7 +103,6 @@ public class StoryCard extends BaseTimeEntity {
     c.projectId = src.projectId();
     c.projectRecordId = src.recordId();
     c.status = StoryCardStatus.PUBLISHED;
-    c.title = titleOf(src);
     c.applyRecord(src);
     c.replaceCompetencies(competencyIds, true);
     return c;
@@ -120,35 +123,30 @@ public class StoryCard extends BaseTimeEntity {
     this.fullMarkdown = markdownOf(this.title, src);
   }
 
-  private static String titleOf(RecordCardSource src) {
-    String title = firstLine(src.did());
-    if (title == null) {
-      title = firstLine(src.memo());
-    }
-    if (title == null) {
-      title = src.date() + " 기록";
-    }
-    return title.length() <= 200 ? title : title.substring(0, 200);
-  }
-
-  private static String firstLine(String text) {
-    if (text == null) {
+  /** AI가 프로젝트 카드 제목을 지을 때 읽을 기록 전문. 회고 카드이거나, 이미 제목이 있거나, 쓴 내용(5칸·메모)이 없으면 null(지을 것이 없음). */
+  public String recordTextToName() {
+    if (type != StoryCardType.PROJECT || title != null || fullMarkdown == null) {
       return null;
     }
-    for (String line : text.split("\\R")) {
-      if (!line.isBlank()) {
-        return line.strip();
-      }
+    return fullMarkdown.contains("\n## ") ? fullMarkdown : null;
+  }
+
+  /** AI가 지은 제목을 붙이고 전문 맨 위에 # 제목을 단다. 그사이 제목이 생겼으면(사용자가 씀) 덮어쓰지 않는다. */
+  public void nameByAi(String aiTitle) {
+    if (type != StoryCardType.PROJECT || title != null) {
+      return;
     }
-    return null;
+    this.title = aiTitle;
+    this.fullMarkdown = withHeading(aiTitle, this.fullMarkdown);
   }
 
   private static String blankToNull(String s) {
     return (s == null || s.isBlank()) ? null : s;
   }
 
+  /** 프로젝트 카드 전문. 제목이 빈칸(null)이면 # 제목 줄 없이 날짜부터 쓴다. */
   private static String markdownOf(String title, RecordCardSource src) {
-    StringBuilder md = new StringBuilder("# ").append(title).append("\n\n");
+    StringBuilder md = new StringBuilder();
     md.append(src.date()).append(" 기록\n");
     section(md, "한 일", src.did());
     section(md, "고민·해결", src.concern());
@@ -156,7 +154,14 @@ public class StoryCard extends BaseTimeEntity {
     section(md, "결과·반응", src.result());
     section(md, "다음", src.nextStep());
     section(md, "메모", src.memo());
-    return md.toString();
+    return withHeading(title, md.toString());
+  }
+
+  private static String withHeading(String title, String body) {
+    if (title == null) {
+      return body;
+    }
+    return body == null ? "# " + title + "\n" : "# " + title + "\n\n" + body;
   }
 
   private static void section(StringBuilder md, String heading, String body) {

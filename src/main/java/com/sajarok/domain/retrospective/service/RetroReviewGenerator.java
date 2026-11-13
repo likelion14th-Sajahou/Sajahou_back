@@ -24,10 +24,12 @@ public class RetroReviewGenerator {
 
   /**
    * @param weekNumber 회고록 제목에 쓰는 주차 번호. 모르면 null
+   * @param sessionTitle 카드 제목에 쓰는 그 주차 내 파트의 세션명. 모르면 null(회고록 제목으로 대신함)
    */
   public RetroCardDraft generate(
       Retrospective r,
       Integer weekNumber,
+      String sessionTitle,
       Part part,
       List<RetroAttachment> attachments,
       List<QuestionView> answered) {
@@ -45,7 +47,7 @@ public class RetroReviewGenerator {
         r.getId(),
         r.getWeekId(),
         StoryCardType.valueOf(r.getType().name()),
-        d.title(),
+        RetroPrompts.cardTitle(r, weekNumber, sessionTitle),
         d.situation(),
         d.action(),
         d.reason(),

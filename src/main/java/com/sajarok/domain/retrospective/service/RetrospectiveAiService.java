@@ -149,12 +149,21 @@ public class RetrospectiveAiService {
     }
 
     Part part = userRepository.findById(userId).map(User::getPart).orElse(null);
-    Integer weekNumber =
-        weekService
-            .findWeekNumbers(List.of(retrospective.getWeekId()))
-            .get(retrospective.getWeekId());
+    Long weekId = retrospective.getWeekId();
+    Integer weekNumber = weekService.findWeekNumbers(List.of(weekId)).get(weekId);
     RetroCardDraft draft =
-        retroReviewGenerator.generate(retrospective, weekNumber, part, attachments, answered);
+        retroReviewGenerator.generate(
+            retrospective, weekNumber, sessionTitle(weekId, part), part, attachments, answered);
     return new RetrospectiveReviewResponse(storyCardService.saveRetrospectiveDraft(draft));
+  }
+
+  /** 19번 카드 제목에 쓰는 그 주차 내 파트의 세션명. 파트를 모르거나 그 주차 일정이 없으면 null. */
+  private String sessionTitle(Long weekId, Part part) {
+    if (part == null) {
+      return null;
+    }
+    WeekService.WeekSchedule schedule =
+        weekService.findSchedules(List.of(weekId), part).get(weekId);
+    return schedule == null ? null : schedule.sessionTitle();
   }
 }

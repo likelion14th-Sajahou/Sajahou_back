@@ -22,6 +22,7 @@ import com.sajarok.domain.project.dto.RecordOrganizeResponse;
 import com.sajarok.domain.project.dto.RecordQuestionsResponse;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
 import com.sajarok.domain.project.entity.RecordQuestionMode;
+import com.sajarok.domain.project.service.ProjectRecordFacade;
 import com.sajarok.domain.project.service.ProjectRecordService;
 import com.sajarok.domain.project.service.ProjectRecordService.RecordQuestions;
 import com.sajarok.domain.question.dto.QuestionView;
@@ -54,6 +55,7 @@ class ProjectRecordControllerTest {
   @Autowired private MockMvc mockMvc;
 
   @MockitoBean private ProjectRecordService projectRecordService;
+  @MockitoBean private ProjectRecordFacade projectRecordFacade;
   @MockitoBean private CurrentUserProvider currentUserProvider;
 
   @BeforeEach
@@ -64,7 +66,7 @@ class ProjectRecordControllerTest {
   @Test
   @DisplayName("27번: DRAFT로 만들면 201과 명세 필드(isAiOrganized 이름, date 형식, cardId null, 빈 배열)를 준다")
   void create_draft_returns201WithSpecFields() throws Exception {
-    when(projectRecordService.create(eq(1L), eq(3L), any(ProjectRecordCreateRequest.class)))
+    when(projectRecordFacade.create(eq(1L), eq(3L), any(ProjectRecordCreateRequest.class)))
         .thenReturn(
             new ProjectRecordResponse(
                 77L,
@@ -102,7 +104,7 @@ class ProjectRecordControllerTest {
   @Test
   @DisplayName("27번 '이대로 저장': 5칸·첨부가 다 없으면 400 EMPTY_MATERIAL")
   void create_emptyMaterial_returns400() throws Exception {
-    when(projectRecordService.create(eq(1L), eq(3L), any(ProjectRecordCreateRequest.class)))
+    when(projectRecordFacade.create(eq(1L), eq(3L), any(ProjectRecordCreateRequest.class)))
         .thenThrow(new BusinessException(ErrorCode.EMPTY_MATERIAL));
 
     mockMvc
@@ -118,7 +120,7 @@ class ProjectRecordControllerTest {
   @Test
   @DisplayName("27번: 역량 태그가 1~3개가 아니면 400 COMPETENCY_LIMIT")
   void create_competencyLimit_returns400() throws Exception {
-    when(projectRecordService.create(eq(1L), eq(3L), any(ProjectRecordCreateRequest.class)))
+    when(projectRecordFacade.create(eq(1L), eq(3L), any(ProjectRecordCreateRequest.class)))
         .thenThrow(new BusinessException(ErrorCode.COMPETENCY_LIMIT));
 
     mockMvc
@@ -142,13 +144,13 @@ class ProjectRecordControllerTest {
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
         .andExpect(jsonPath("$.error.fields[0].field").value("aiOrganize"));
-    verifyNoInteractions(projectRecordService);
+    verifyNoInteractions(projectRecordFacade, projectRecordService);
   }
 
   @Test
   @DisplayName("28번: 고치면 200과 명세 필드(status, isAiOrganized, memo 등)를 주고, 요청의 isAiOrganized를 읽는다")
   void update_returns200WithSpecFields() throws Exception {
-    when(projectRecordService.update(eq(1L), eq(77L), any(ProjectRecordUpdateRequest.class)))
+    when(projectRecordFacade.update(eq(1L), eq(77L), any(ProjectRecordUpdateRequest.class)))
         .thenAnswer(
             i -> {
               ProjectRecordUpdateRequest req = i.getArgument(2);
@@ -184,7 +186,7 @@ class ProjectRecordControllerTest {
   @Test
   @DisplayName("28번: 남의 기록이거나 없으면 404 NOT_FOUND")
   void update_notMine_returns404() throws Exception {
-    when(projectRecordService.update(eq(1L), eq(77L), any(ProjectRecordUpdateRequest.class)))
+    when(projectRecordFacade.update(eq(1L), eq(77L), any(ProjectRecordUpdateRequest.class)))
         .thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
 
     mockMvc

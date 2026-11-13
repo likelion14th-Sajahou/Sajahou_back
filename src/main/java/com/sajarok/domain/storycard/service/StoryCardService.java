@@ -51,6 +51,21 @@ public class StoryCardService {
     card.syncFromRecord(src, competencyIds);
   }
 
+  /**
+   * 프로젝트 카드 AI 제목 짓기에 넘길 기록 전문. 카드가 없거나, 이미 제목이 있거나, 쓴 내용이 없으면 null.
+   *
+   * <p>{@link ProjectCardTitler}가 AI를 부르기 전에 읽는다. 읽기만 하고 바로 트랜잭션을 끝낸다.
+   */
+  public String findRecordTextToName(Long cardId) {
+    return storyCardRepository.findById(cardId).map(StoryCard::recordTextToName).orElse(null);
+  }
+
+  /** AI가 지은 제목을 프로젝트 카드에 붙인다. 그사이 카드가 지워졌거나 제목이 생겼으면 아무것도 하지 않는다. */
+  @Transactional
+  public void nameProjectCard(Long cardId, String title) {
+    storyCardRepository.findById(cardId).ifPresent(card -> card.nameByAi(title));
+  }
+
   @Transactional
   public void deleteByRecord(Long recordId) {
     storyCardRepository.findByProjectRecordId(recordId).ifPresent(storyCardRepository::delete);

@@ -41,6 +41,7 @@ import com.sajarok.domain.user.entity.Part;
 import com.sajarok.domain.user.entity.User;
 import com.sajarok.domain.user.repository.UserRepository;
 import com.sajarok.domain.week.service.WeekService;
+import com.sajarok.domain.week.service.WeekService.WeekSchedule;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import com.sajarok.infra.ai.AiLock;
@@ -398,7 +399,7 @@ class RetrospectiveAiServiceTest {
     when(aiQuestionService.findAll(QUESTIONS_OF_101))
         .thenReturn(List.of(answered, question(902L, QuestionStatus.PENDING)));
     RetroCardDraft draft = cardDraft();
-    when(retroReviewGenerator.generate(r, null, null, List.of(), List.of(answered)))
+    when(retroReviewGenerator.generate(r, null, null, null, List.of(), List.of(answered)))
         .thenReturn(draft);
     when(storyCardService.saveRetrospectiveDraft(draft)).thenReturn(savedCard());
 
@@ -415,7 +416,7 @@ class RetrospectiveAiServiceTest {
     QuestionView answered = question(901L, QuestionStatus.ANSWERED);
     when(aiQuestionService.findAll(QUESTIONS_OF_101)).thenReturn(List.of(answered));
     RetroCardDraft draft = cardDraft();
-    when(retroReviewGenerator.generate(r, null, null, List.of(), List.of(answered)))
+    when(retroReviewGenerator.generate(r, null, null, null, List.of(), List.of(answered)))
         .thenReturn(draft);
     when(storyCardService.saveRetrospectiveDraft(draft)).thenReturn(savedCard());
 
@@ -475,11 +476,31 @@ class RetrospectiveAiServiceTest {
     Retrospective r = myRetroWithMemo("메모");
     when(weekService.findWeekNumbers(List.of(10L))).thenReturn(Map.of(10L, 10));
     RetroCardDraft draft = cardDraft();
-    when(retroReviewGenerator.generate(r, 10, null, List.of(), List.of())).thenReturn(draft);
+    when(retroReviewGenerator.generate(r, 10, null, null, List.of(), List.of())).thenReturn(draft);
     when(storyCardService.saveRetrospectiveDraft(draft)).thenReturn(savedCard());
 
     retrospectiveAiService.review(ME, RETRO);
 
-    verify(retroReviewGenerator).generate(r, 10, null, List.of(), List.of());
+    verify(retroReviewGenerator).generate(r, 10, null, null, List.of(), List.of());
+  }
+
+  @Test
+  @DisplayName("19번: 카드 제목에 쓰도록 그 주차 내 파트의 세션명을 찾아 Generator에 넘긴다")
+  void review_passesSessionTitleOfMyPart() {
+    Retrospective r = myRetroWithMemo("메모");
+    User me = mock(User.class);
+    when(me.getPart()).thenReturn(Part.BACKEND);
+    when(userRepository.findById(ME)).thenReturn(Optional.of(me));
+    when(weekService.findWeekNumbers(List.of(10L))).thenReturn(Map.of(10L, 10));
+    when(weekService.findSchedules(List.of(10L), Part.BACKEND))
+        .thenReturn(Map.of(10L, new WeekSchedule(10L, 10, "JPA 연관관계", null, null)));
+    RetroCardDraft draft = cardDraft();
+    when(retroReviewGenerator.generate(r, 10, "JPA 연관관계", Part.BACKEND, List.of(), List.of()))
+        .thenReturn(draft);
+    when(storyCardService.saveRetrospectiveDraft(draft)).thenReturn(savedCard());
+
+    retrospectiveAiService.review(ME, RETRO);
+
+    verify(retroReviewGenerator).generate(r, 10, "JPA 연관관계", Part.BACKEND, List.of(), List.of());
   }
 }

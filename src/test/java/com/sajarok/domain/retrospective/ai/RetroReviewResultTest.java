@@ -11,8 +11,9 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
-/** 19번 AI 응답 검증: 빈 칸은 null, 지어낸 근거는 빼고 칸 내용은 살린다, 제목·본문이 없으면 AI_FAILED. */
+/** 19번 AI 응답 검증: 빈 칸은 null, 지어낸 근거는 빼고 칸 내용은 살린다, 본문이 없으면 AI_FAILED. 제목은 서버가 붙인다. */
 class RetroReviewResultTest {
 
   private static final String SOURCE = "게시글 목록 API에서 N+1 문제를 fetch join으로 해결\n쿼리 21개가 2개로 줄었어요";
@@ -20,9 +21,8 @@ class RetroReviewResultTest {
       Map.of(502L, "지연 로딩과 N+1 문제, fetch join, 배치 사이즈");
 
   private static RetroReviewResult result(
-      String title, String reason, String markdownBody, Map<String, List<Evidence>> evidence) {
+      String reason, String markdownBody, Map<String, List<Evidence>> evidence) {
     return new RetroReviewResult(
-        title,
         "  N+1 문제가 생겼다.  ",
         "fetch join으로 바꿨다.",
         reason,
@@ -35,9 +35,8 @@ class RetroReviewResultTest {
   @Test
   @DisplayName("칸은 앞뒤 공백을 지우고, 공백뿐인 칸은 null(빈칸)로 본다")
   void cleansFields() {
-    Draft d = result("  N+1 해결  ", null, "## 실습\n해결했다", null).validate(SOURCE, ATTACHMENTS);
+    Draft d = result(null, "## 실습\n해결했다", null).validate(SOURCE, ATTACHMENTS);
 
-    assertThat(d.title()).isEqualTo("N+1 해결");
     assertThat(d.situation()).isEqualTo("N+1 문제가 생겼다.");
     assertThat(d.reason()).isNull();
     assertThat(d.learned()).isNull();
@@ -58,7 +57,7 @@ class RetroReviewResultTest {
             "reason", List.of(new Evidence(null, "배치 사이즈")),
             "result", List.of(new Evidence(999L, "쿼리 21개가 2개로 줄었어요")));
 
-    Draft d = result("N+1 해결", "배치 사이즈 대신 골랐다.", "## 실습", evidence).validate(SOURCE, ATTACHMENTS);
+    Draft d = result("배치 사이즈 대신 골랐다.", "## 실습", evidence).validate(SOURCE, ATTACHMENTS);
 
     assertThat(d.evidence().get("situation"))
         .containsExactly(new Evidence(null, "게시글 목록 API에서 N+1 문제를 fetch join으로 해결"));
@@ -77,7 +76,7 @@ class RetroReviewResultTest {
             "situation", List.of(new Evidence(null, "실습: 게시글 목록 API에서 N+1 문제를 fetch join으로 해결")),
             "result", List.of(new Evidence(null, "A1. 쿼리 21개가 2개로 줄었어요")));
 
-    Draft d = result("N+1 해결", null, "## 실습", evidence).validate(SOURCE, ATTACHMENTS);
+    Draft d = result(null, "## 실습", evidence).validate(SOURCE, ATTACHMENTS);
 
     assertThat(d.evidence().get("situation"))
         .containsExactly(new Evidence(null, "게시글 목록 API에서 N+1 문제를 fetch join으로 해결"));
@@ -92,29 +91,36 @@ class RetroReviewResultTest {
             "reason", List.of(new Evidence(null, "fetch join으로 해결")),
             "unknown", List.of(new Evidence(null, "fetch join으로 해결")));
 
-    Draft d = result("N+1 해결", null, "## 실습", evidence).validate(SOURCE, ATTACHMENTS);
+    Draft d = result(null, "## 실습", evidence).validate(SOURCE, ATTACHMENTS);
 
     assertThat(d.evidence()).isEmpty();
   }
 
   @Test
-  @DisplayName("제목이나 회고록 본문이 비면 AI_FAILED")
-  void missingTitleOrBody_aiFailed() {
-    assertThatThrownBy(() -> result(" ", null, "## 실습", null).validate(SOURCE, ATTACHMENTS))
+  @DisplayName("회고록 본문이 비면 AI_FAILED")
+  void missingBody_aiFailed() {
+    assertThatThrownBy(() -> result(null, null, null).validate(SOURCE, ATTACHMENTS))
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(ErrorCode.AI_FAILED);
-    assertThatThrownBy(() -> result("제목", null, null, null).validate(SOURCE, ATTACHMENTS))
+    assertThatThrownBy(() -> result(null, "  ", null).validate(SOURCE, ATTACHMENTS))
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(ErrorCode.AI_FAILED);
   }
 
   @Test
-  @DisplayName("제목은 200자(story_card.title)까지만 남긴다")
-  void truncatesTitle() {
-    Draft d = result("가".repeat(250), null, "## 실습", null).validate(SOURCE, ATTACHMENTS);
+  @DisplayName("AI가 예전처럼 title을 같이 보내도 읽기에 실패하지 않고 버린다")
+  void ignoresTitleFromAi() {
+    String json =
+        """
+        {"title":"N+1 해결","action":"fetch join으로 바꿨다.","markdownBody":"## 실습"}
+        """;
+    RetroReviewResult raw = JsonMapper.builder().build().readValue(json, RetroReviewResult.class);
 
-    assertThat(d.title()).hasSize(200);
+    Draft d = raw.validate(SOURCE, ATTACHMENTS);
+
+    assertThat(d.action()).isEqualTo("fetch join으로 바꿨다.");
+    assertThat(d.markdownBody()).isEqualTo("## 실습");
   }
 }
