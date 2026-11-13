@@ -19,6 +19,7 @@ import com.sajarok.domain.project.dto.ProjectCreateResponse;
 import com.sajarok.domain.project.dto.ProjectDetailResponse;
 import com.sajarok.domain.project.dto.ProjectListResponse;
 import com.sajarok.domain.project.dto.ProjectListResponse.ProjectSummary;
+import com.sajarok.domain.project.entity.ProjectCategory;
 import com.sajarok.domain.project.entity.ProjectRole;
 import com.sajarok.domain.project.entity.ProjectStatus;
 import com.sajarok.domain.project.service.ProjectService;
@@ -58,7 +59,7 @@ class ProjectControllerTest {
   }
 
   @Test
-  @DisplayName("25번: 생성하면 201과 명세의 data 필드(projectId, name, subtitle, roles, status)를 준다")
+  @DisplayName("25번: 생성하면 201과 명세의 data 필드(projectId, name, subtitle, category, roles, status)를 준다")
   void create_returns201WithSpecFields() throws Exception {
     when(projectService.create(eq(1L), any(ProjectCreateRequest.class)))
         .thenReturn(
@@ -66,6 +67,7 @@ class ProjectControllerTest {
                 3L,
                 "사자록",
                 null,
+                ProjectCategory.JUNGKATHON,
                 List.of(ProjectRole.PM, ProjectRole.BACKEND),
                 ProjectStatus.IN_PROGRESS));
 
@@ -75,7 +77,12 @@ class ProjectControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     """
-                    { "name": "사자록", "subtitle": null, "roles": ["PM", "BACKEND"] }
+                    {
+                      "name": "사자록",
+                      "subtitle": null,
+                      "category": "JUNGKATHON",
+                      "roles": ["PM", "BACKEND"]
+                    }
                     """))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.success").value(true))
@@ -83,13 +90,14 @@ class ProjectControllerTest {
         .andExpect(jsonPath("$.data.projectId").value(3))
         .andExpect(jsonPath("$.data.name").value("사자록"))
         .andExpect(jsonPath("$.data.subtitle").value(nullValue()))
+        .andExpect(jsonPath("$.data.category").value("JUNGKATHON"))
         .andExpect(jsonPath("$.data.roles[0]").value("PM"))
         .andExpect(jsonPath("$.data.roles[1]").value("BACKEND"))
         .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"));
   }
 
   @Test
-  @DisplayName("25번: 이름이 비고 역할이 없으면 400 VALIDATION_ERROR와 칸별 이유(fields)를 준다")
+  @DisplayName("25번: 이름이 비고 행사·역할이 없으면 400 VALIDATION_ERROR와 칸별 이유(fields)를 준다")
   void create_invalidInput_returnsValidationErrorWithFields() throws Exception {
     mockMvc
         .perform(
@@ -103,8 +111,9 @@ class ProjectControllerTest {
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.data").value(nullValue()))
         .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
-        .andExpect(jsonPath("$.error.fields.length()").value(2))
+        .andExpect(jsonPath("$.error.fields.length()").value(3))
         .andExpect(jsonPath("$.error.fields[?(@.field == 'name')].reason").exists())
+        .andExpect(jsonPath("$.error.fields[?(@.field == 'category')].reason").exists())
         .andExpect(jsonPath("$.error.fields[?(@.field == 'roles')].reason").exists());
 
     verifyNoInteractions(projectService);
@@ -119,7 +128,24 @@ class ProjectControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     """
-                    { "name": "사자록", "roles": ["CEO"] }
+                    { "name": "사자록", "category": "JUNGKATHON", "roles": ["CEO"] }
+                    """))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+
+    verifyNoInteractions(projectService);
+  }
+
+  @Test
+  @DisplayName("25번: 행사가 아이디어톤·해커톤·중커톤이 아니면(예: OTHER) 400 VALIDATION_ERROR를 준다")
+  void create_unknownCategory_returnsValidationError() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/projects")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    { "name": "사자록", "category": "OTHER", "roles": ["PM"] }
                     """))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
@@ -138,12 +164,19 @@ class ProjectControllerTest {
                         3L,
                         "사자록",
                         "멋사 회고 서비스",
+                        ProjectCategory.JUNGKATHON,
                         List.of(ProjectRole.PM, ProjectRole.BACKEND),
                         5,
                         LocalDate.of(2026, 11, 4))),
                 List.of(
                     new ProjectSummary(
-                        1L, "아이디어톤", "캠퍼스 중고마켓", List.of(ProjectRole.PLANNING), 0, null))));
+                        1L,
+                        "아이디어톤",
+                        "캠퍼스 중고마켓",
+                        ProjectCategory.IDEATHON,
+                        List.of(ProjectRole.PLANNING),
+                        0,
+                        null))));
 
     mockMvc
         .perform(get("/api/v1/projects"))
@@ -153,6 +186,7 @@ class ProjectControllerTest {
         .andExpect(jsonPath("$.data.inProgressProjects[0].projectId").value(3))
         .andExpect(jsonPath("$.data.inProgressProjects[0].name").value("사자록"))
         .andExpect(jsonPath("$.data.inProgressProjects[0].subtitle").value("멋사 회고 서비스"))
+        .andExpect(jsonPath("$.data.inProgressProjects[0].category").value("JUNGKATHON"))
         .andExpect(jsonPath("$.data.inProgressProjects[0].roles[0]").value("PM"))
         .andExpect(jsonPath("$.data.inProgressProjects[0].recordCount").value(5))
         .andExpect(jsonPath("$.data.inProgressProjects[0].lastRecordDate").value("2026-11-04"))
@@ -170,6 +204,7 @@ class ProjectControllerTest {
                 3L,
                 "사자록",
                 "멋사 회고 서비스",
+                ProjectCategory.JUNGKATHON,
                 List.of(ProjectRole.PM, ProjectRole.BACKEND),
                 ProjectStatus.DONE,
                 LocalDate.of(2026, 10, 20),
@@ -196,6 +231,7 @@ class ProjectControllerTest {
         .perform(get("/api/v1/projects/3"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.projectId").value(3))
+        .andExpect(jsonPath("$.data.category").value("JUNGKATHON"))
         .andExpect(jsonPath("$.data.roles[0]").value("PM"))
         .andExpect(jsonPath("$.data.status").value("DONE"))
         .andExpect(jsonPath("$.data.startedOn").value("2026-10-20"))
@@ -220,6 +256,7 @@ class ProjectControllerTest {
                 3L,
                 "사자록",
                 null,
+                ProjectCategory.JUNGKATHON,
                 List.of(ProjectRole.BACKEND),
                 ProjectStatus.IN_PROGRESS,
                 LocalDate.of(2026, 10, 20),

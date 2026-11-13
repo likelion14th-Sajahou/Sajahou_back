@@ -1,6 +1,8 @@
 package com.sajarok.domain.project.repository;
 
 import com.sajarok.domain.project.entity.Project;
+import com.sajarok.domain.project.entity.ProjectCategory;
+import com.sajarok.domain.project.entity.ProjectStatus;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -25,4 +27,11 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
       "select new com.sajarok.domain.project.repository.ProjectName(p.id, p.name)"
           + " from Project p where p.id in :projectIds")
   List<ProjectName> findNamesByIdIn(@Param("projectIds") Collection<Long> projectIds);
+
+  /** 이 상태인 내 프로젝트들의 행사 종류 (겹치면 하나). 발자국 스티커용으로 완료(DONE)를 넘긴다. */
+  @Query(
+      "select distinct p.category from Project p"
+          + " where p.userId = :userId and p.status = :status")
+  List<ProjectCategory> findCategoriesByUserIdAndStatus(
+      @Param("userId") Long userId, @Param("status") ProjectStatus status);
 }
