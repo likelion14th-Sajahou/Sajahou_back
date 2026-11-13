@@ -67,6 +67,21 @@ class RetroReviewResultTest {
   }
 
   @Test
+  @DisplayName("근거 quote에 '실습: '·'A1. ' 같은 칸 이름이 붙어 와도 떼고 남긴다")
+  void stripsFieldLabelFromEvidence() {
+    Map<String, List<Evidence>> evidence =
+        Map.of(
+            "situation", List.of(new Evidence(null, "실습: 게시글 목록 API에서 N+1 문제를 fetch join으로 해결")),
+            "result", List.of(new Evidence(null, "A1. 쿼리 21개가 2개로 줄었어요")));
+
+    Draft d = result("N+1 해결", null, "## 실습", evidence).validate(SOURCE, ATTACHMENTS);
+
+    assertThat(d.evidence().get("situation"))
+        .containsExactly(new Evidence(null, "게시글 목록 API에서 N+1 문제를 fetch join으로 해결"));
+    assertThat(d.evidence().get("result")).containsExactly(new Evidence(null, "쿼리 21개가 2개로 줄었어요"));
+  }
+
+  @Test
   @DisplayName("빈 칸(null)의 근거와 모르는 key는 버린다")
   void dropsEvidenceOfBlankField() {
     Map<String, List<Evidence>> evidence =

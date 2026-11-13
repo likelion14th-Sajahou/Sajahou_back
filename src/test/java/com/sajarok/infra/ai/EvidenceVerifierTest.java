@@ -51,4 +51,26 @@ class EvidenceVerifierTest {
     assertThat(EvidenceVerifier.isQuoted(PDF_TEXT, "“…”")).isFalse();
     assertThat(EvidenceVerifier.isQuoted(null, "팀마다")).isFalse();
   }
+
+  @Test
+  @DisplayName("AI가 프롬프트의 칸 이름까지 옮긴 인용문은 칸 이름을 떼고 남긴다 (실습:·한 일:·A1.)")
+  void stripsFieldLabel() {
+    String material = "우리 팀 프로젝트의 기록 추가 화면을 사용성 테스트했다.\n설문은 8명에게 받았어요.";
+
+    assertThat(EvidenceVerifier.verified(material, "실습: 우리 팀 프로젝트의 기록 추가 화면을 사용성 테스트했다."))
+        .isEqualTo("우리 팀 프로젝트의 기록 추가 화면을 사용성 테스트했다.");
+    assertThat(EvidenceVerifier.verified(material, "고민·해결: 설문은 8명에게 받았어요"))
+        .isEqualTo("설문은 8명에게 받았어요");
+    assertThat(EvidenceVerifier.verified(material, "A1. 설문은 8명에게 받았어요."))
+        .isEqualTo("설문은 8명에게 받았어요.");
+  }
+
+  @Test
+  @DisplayName("그대로 있으면 칸 이름처럼 보여도 떼지 않고, 칸 이름을 떼도 없으면 떨어진다")
+  void keepsLabelWhenInOriginal_rejectsServerHint() {
+    assertThat(EvidenceVerifier.verified("결론: B안으로 간다.", " 결론: B안으로 간다. "))
+        .isEqualTo("결론: B안으로 간다.");
+    // 서버가 프롬프트에 넣는 안내 문구는 사용자 글이 아니라서 떨어져야 한다
+    assertThat(EvidenceVerifier.verified("우리 팀 프로젝트를 테스트했다.", "과제: 과제 회고에서 따로 씀")).isNull();
+  }
 }

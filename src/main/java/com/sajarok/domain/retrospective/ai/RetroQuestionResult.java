@@ -88,9 +88,9 @@ public record RetroQuestionResult(Boolean insufficientMaterial, List<Question> q
       return new NewQuestion(tag, null, null, q.content().strip());
     }
     String original = source == null ? materialText : attachmentTexts.get(source);
-    boolean quoted = EvidenceVerifier.isQuoted(original, q.quote());
-    return quoted
-        ? new NewQuestion(tag, q.quote().strip(), source, q.content().strip())
+    String quote = EvidenceVerifier.verified(original, q.quote()); // "실습: " 같은 칸 이름은 떼고 남긴다
+    return quote != null
+        ? new NewQuestion(tag, quote, source, q.content().strip())
         : new NewQuestion(tag, null, null, q.content().strip());
   }
 

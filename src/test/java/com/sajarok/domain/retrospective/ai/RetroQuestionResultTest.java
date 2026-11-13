@@ -42,6 +42,15 @@ class RetroQuestionResultTest {
   }
 
   @Test
+  @DisplayName("quote에 '실습: ' 같은 칸 이름이 붙어 와도 떼고 출처로 남긴다")
+  void stripsFieldLabelFromQuote() {
+    Validated v =
+        validate(false, List.of(new Question("근거와 숫자", "실습: " + MATERIAL, null, "숫자가 있나요?")));
+
+    assertThat(v.questions().get(0).quote()).isEqualTo(MATERIAL);
+  }
+
+  @Test
   @DisplayName("태그가 띄어쓰기·가운뎃점만 다르면 목록의 태그로 맞춘다")
   void normalizesTag() {
     Validated v = validate(false, List.of(new Question("근거와숫자", null, null, "숫자가 있나요?")));
