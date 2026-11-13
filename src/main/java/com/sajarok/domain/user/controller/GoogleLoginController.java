@@ -5,6 +5,7 @@ import com.sajarok.domain.user.dto.GoogleLoginResponse;
 import com.sajarok.domain.user.dto.GoogleLoginResponse.UserSummary;
 import com.sajarok.domain.user.dto.SignupRequest;
 import com.sajarok.domain.user.service.DemoLoginService;
+import com.sajarok.domain.user.service.DemoSessionCleanup;
 import com.sajarok.domain.user.service.GoogleLoginService;
 import com.sajarok.domain.user.service.SignupService;
 import com.sajarok.domain.user.service.SignupTokenService;
@@ -75,9 +76,15 @@ public class GoogleLoginController {
   @PostMapping("/demo")
   public ApiResponse<DemoLoginResponse> demo(
       HttpServletRequest request, HttpServletResponse response) {
-    UserSummary user = demoLoginService.getDemoUser();
-    loginSessionService.login(user.id(), request, response, true);
-    return ApiResponse.ok(new DemoLoginResponse(user));
+    var session = request.getSession();
+    synchronized (session) {
+      Long existingUserId =
+          loginSessionService.isDemo(request) ? DemoSessionCleanup.getUserId(session) : null;
+      UserSummary user = demoLoginService.getOrCreateDemoUser(existingUserId);
+      loginSessionService.login(user.id(), request, response, true);
+      DemoSessionCleanup.track(session, user.id());
+      return ApiResponse.ok(new DemoLoginResponse(user));
+    }
   }
 
   public record DemoLoginResponse(UserSummary user) {}
