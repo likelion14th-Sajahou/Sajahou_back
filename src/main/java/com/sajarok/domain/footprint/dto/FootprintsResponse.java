@@ -18,5 +18,6 @@ public record FootprintsResponse(int currentWeekNumber, List<WeekItem> weeks) {
       boolean isCurrent,
       boolean isPresentationWeek,
       String sessionTitle,
-      List<Long> cardIds) {}
+      List<Long> cardIds,
+      List<String> stickers) {}
 }

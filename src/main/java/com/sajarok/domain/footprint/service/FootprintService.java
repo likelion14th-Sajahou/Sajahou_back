@@ -3,6 +3,7 @@ package com.sajarok.domain.footprint.service;
 import com.sajarok.domain.footprint.dto.FootprintsResponse;
 import com.sajarok.domain.footprint.dto.FootprintsResponse.Status;
 import com.sajarok.domain.footprint.dto.FootprintsResponse.WeekItem;
+import com.sajarok.domain.project.service.ProjectService;
 import com.sajarok.domain.retrospective.dto.RetrospectiveState;
 import com.sajarok.domain.retrospective.service.RetrospectiveService;
 import com.sajarok.domain.storycard.dto.CardSnapshot;
@@ -28,6 +29,7 @@ public class FootprintService {
   private final WeekService weekService;
   private final RetrospectiveService retrospectiveService;
   private final StoryCardService storyCardService;
+  private final ProjectService projectService;
 
   public FootprintsResponse getFootprints(Long userId) {
     var user =
@@ -54,6 +56,11 @@ public class FootprintService {
                     CardSnapshot::weekId,
                     Collectors.mapping(CardSnapshot::cardId, Collectors.toList())));
 
+    Set<String> completedEvents =
+        projectService.findCompletedCategories(userId).stream()
+            .map(Enum::name)
+            .collect(Collectors.toSet());
+
     List<WeekItem> weeks =
         weekService.findFootprintWeeks(user.getPart()).stream()
             .map(
@@ -70,11 +77,19 @@ public class FootprintService {
                       week.weekNumber() == currentWeekNumber,
                       week.isPresentationWeek(),
                       status == Status.UPCOMING ? null : week.sessionTitle(),
-                      cardIdsByWeek.getOrDefault(week.weekId(), List.of()));
+                      cardIdsByWeek.getOrDefault(week.weekId(), List.of()),
+                      stickersOf(week, completedEvents));
                 })
             .toList();
 
     return new FootprintsResponse(currentWeekNumber, weeks);
+  }
+
+  private static List<String> stickersOf(
+      WeekService.FootprintWeek week, Set<String> completedEvents) {
+    return week.isPresentationWeek() && completedEvents.contains(week.phase())
+        ? List.of(week.phase())
+        : List.of();
   }
 
   private static Status resolveStatus(int weekNumber, int currentWeekNumber, boolean completed) {
