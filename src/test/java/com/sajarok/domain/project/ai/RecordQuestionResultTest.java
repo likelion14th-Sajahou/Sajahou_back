@@ -141,15 +141,28 @@ class RecordQuestionResultTest {
   }
 
   @Test
-  @DisplayName("30번 검증: 넘겨주지 않은 첨부 번호면 출처(quote·첨부)만 지우고 질문은 살린다 (전에는 전체 실패)")
+  @DisplayName("30번 검증: 넘겨주지 않은 첨부 번호여도 질문은 살리고, 출처는 quote가 실제로 있는 곳으로 바로잡는다 (어디에도 없으면 null)")
   void validate_unknownAttachment_keepsQuestion() {
     Validated v =
-        new RecordQuestionResult(false, List.of(q("선택의 이유", "시안", 999L)))
+        new RecordQuestionResult(
+                false, List.of(q("선택의 이유", "시안", 999L), q("근거와 숫자", "지어낸 문장", 999L)))
             .validate(MEMO, ATTACHMENTS);
 
     assertThat(v.questions())
         .extracting(NewQuestion::tag, NewQuestion::quote, NewQuestion::sourceAttachmentId)
-        .containsExactly(tuple("선택의 이유", null, null));
+        .containsExactly(tuple("선택의 이유", "시안", null), tuple("근거와 숫자", null, null));
+  }
+
+  @Test
+  @DisplayName("30번 검증: AI가 출처를 비웠어도(메모라고 했어도) quote가 첨부에 있으면 그 첨부를 출처로 저장한다")
+  void validate_correctsSourceToAttachment() {
+    Validated v =
+        new RecordQuestionResult(false, List.of(q("내 역할·과정", "먼저 보여 줄지 논의함", null)))
+            .validate(MEMO, ATTACHMENTS);
+
+    assertThat(v.questions())
+        .extracting(NewQuestion::quote, NewQuestion::sourceAttachmentId)
+        .containsExactly(tuple("먼저 보여 줄지 논의함", 601L));
   }
 
   @Test

@@ -43,7 +43,8 @@ public record RetroQuestionResult(Boolean insufficientMaterial, List<Question> q
    * <ul>
    *   <li>질문 글이 비었으면 버린다
    *   <li>태그는 띄어쓰기·가운뎃점만 다르면 목록의 태그로 맞추고, 그래도 목록에 없으면 버린다
-   *   <li>넘겨주지 않은 첨부 번호거나 quote가 원문에 그대로 없으면 quote·sourceAttachmentId를 null로 바꾼다(질문은 살린다)
+   *   <li>출처(sourceAttachmentId)는 AI가 적은 번호가 아니라 quote가 실제로 있는 곳으로 정한다(회고 자료면 null, 첨부면 그 번호)
+   *   <li>quote가 회고 자료·첨부 어디에도 없으면 quote·sourceAttachmentId를 null로 바꾼다(질문은 살린다)
    * </ul>
    *
    * 남은 질문이 없으면 AI_FAILED, 5개가 넘으면 앞에서 5개만 쓴다.
@@ -82,15 +83,10 @@ public record RetroQuestionResult(Boolean insufficientMaterial, List<Question> q
     if (tag == null) {
       return null;
     }
-    Long source = q.sourceAttachmentId();
-    if (source != null && !attachmentTexts.containsKey(source)) {
-      log.info("AI 회고 질문이 넘겨주지 않은 첨부를 출처로 씀 source={} quote={}", source, q.quote());
-      return new NewQuestion(tag, null, null, q.content().strip());
-    }
-    String original = source == null ? materialText : attachmentTexts.get(source);
-    String quote = EvidenceVerifier.verified(original, q.quote()); // "실습: " 같은 칸 이름은 떼고 남긴다
-    return quote != null
-        ? new NewQuestion(tag, quote, source, q.content().strip())
+    EvidenceVerifier.Located found =
+        EvidenceVerifier.locate(q.quote(), q.sourceAttachmentId(), materialText, attachmentTexts);
+    return found != null
+        ? new NewQuestion(tag, found.quote(), found.attachmentId(), q.content().strip())
         : new NewQuestion(tag, null, null, q.content().strip());
   }
 

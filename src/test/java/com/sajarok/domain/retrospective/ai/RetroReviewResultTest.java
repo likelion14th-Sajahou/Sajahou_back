@@ -46,7 +46,7 @@ class RetroReviewResultTest {
   }
 
   @Test
-  @DisplayName("원문(회고 자료·답, 첨부)에 그대로 있는 근거만 남긴다. 지어낸 quote나 모르는 첨부 번호는 그 근거만 뺀다")
+  @DisplayName("원문(회고 자료·답, 첨부)에 그대로 있는 근거만 남긴다. 지어낸 quote는 그 근거만 빼고, 출처 번호는 실제로 있는 곳으로 바로잡는다")
   void keepsOnlyQuotedEvidence() {
     Map<String, List<Evidence>> evidence =
         Map.of(
@@ -55,15 +55,18 @@ class RetroReviewResultTest {
                     new Evidence(null, "게시글 목록 API에서 N+1 문제를 fetch join으로 해결"),
                     new Evidence(null, "응답 속도가 3배 빨라짐")),
             "action", List.of(new Evidence(502L, " fetch join ")),
+            "reason", List.of(new Evidence(null, "배치 사이즈")),
             "result", List.of(new Evidence(999L, "쿼리 21개가 2개로 줄었어요")));
 
-    Draft d = result("N+1 해결", null, "## 실습", evidence).validate(SOURCE, ATTACHMENTS);
+    Draft d = result("N+1 해결", "배치 사이즈 대신 골랐다.", "## 실습", evidence).validate(SOURCE, ATTACHMENTS);
 
     assertThat(d.evidence().get("situation"))
         .containsExactly(new Evidence(null, "게시글 목록 API에서 N+1 문제를 fetch join으로 해결"));
     assertThat(d.evidence().get("action")).containsExactly(new Evidence(502L, "fetch join"));
-    assertThat(d.evidence()).doesNotContainKey("result"); // 넘겨주지 않은 첨부 번호
-    assertThat(d.result()).isEqualTo("쿼리가 21개에서 2개로 줄었다."); // 칸 내용은 살린다
+    // 출처를 비웠지만 첨부에 있음 → 첨부 번호로
+    assertThat(d.evidence().get("reason")).containsExactly(new Evidence(502L, "배치 사이즈"));
+    // 넘겨주지 않은 첨부 번호지만 회고 자료에 있음 → null(회고 자료)로
+    assertThat(d.evidence().get("result")).containsExactly(new Evidence(null, "쿼리 21개가 2개로 줄었어요"));
   }
 
   @Test

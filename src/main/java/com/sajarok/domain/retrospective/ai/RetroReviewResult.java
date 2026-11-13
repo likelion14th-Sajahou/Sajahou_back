@@ -7,13 +7,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * 19번 AI 응답: 카드 제목·5칸·회고록 본문·근거. {@link #validate}를 통과해야 저장한다.
  *
- * <p>근거 칸이 없는 칸은 null(카드 blanks로 보인다). 근거 quote는 원문에 그대로 있어야 남기고, 없으면 그 근거만 뺀다(칸 내용은 살린다).
+ * <p>근거 칸이 없는 칸은 null(카드 blanks로 보인다). 근거 quote는 원문에 그대로 있어야 남기고, 없으면 그 근거만 뺀다(칸 내용은 살린다). 근거의
+ * attachmentId는 AI가 적은 번호가 아니라 quote가 실제로 있는 곳으로 정한다.
  */
 public record RetroReviewResult(
     String title,
@@ -24,8 +23,6 @@ public record RetroReviewResult(
     String learned,
     String markdownBody,
     Map<String, List<Evidence>> evidence) {
-
-  private static final Logger log = LoggerFactory.getLogger(RetroReviewResult.class);
 
   /** 카드 칸 key (evidence의 key). 22번 카드 상세의 칸과 같다. */
   public static final List<String> FIELDS =
@@ -107,16 +104,11 @@ public record RetroReviewResult(
         checked);
   }
 
-  /** 원문에 있는 근거면 저장할 근거("실습: " 같은 칸 이름은 뗀 것)를, 넘겨준 첨부가 아니거나(지어낸 번호) 원문에 없으면 null을 돌려준다. */
+  /** 회고 자료·답·첨부 어딘가에 있는 근거면 실제 출처로 고친 근거를, 어디에도 없으면 null을 돌려준다. */
   private static Evidence verify(Evidence e, String sourceText, Map<Long, String> attachmentTexts) {
-    Long id = e.attachmentId();
-    if (id != null && !attachmentTexts.containsKey(id)) {
-      log.info("AI 회고록 근거가 넘겨주지 않은 첨부를 씀 attachmentId={} quote={}", id, e.quote());
-      return null;
-    }
-    String original = id == null ? sourceText : attachmentTexts.get(id);
-    String quote = EvidenceVerifier.verified(original, e.quote());
-    return quote == null ? null : new Evidence(id, quote);
+    EvidenceVerifier.Located found =
+        EvidenceVerifier.locate(e.quote(), e.attachmentId(), sourceText, attachmentTexts);
+    return found == null ? null : new Evidence(found.attachmentId(), found.quote());
   }
 
   private static String clean(String value) {
