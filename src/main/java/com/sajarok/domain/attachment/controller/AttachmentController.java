@@ -70,7 +70,7 @@ public class AttachmentController {
     String extension = name.substring(name.lastIndexOf('.') + 1);
 
     switch (extension) {
-      case "txt", "md", "pdf", "zip" ->
+      case "txt", "md", "pdf", "zip", "jpg", "png" ->
           extractionJob.run(attachment.getId(), attachment.getS3Key(), extension);
       default -> {
         // 현재 추출을 지원하는 형식만 작업을 시작한다.

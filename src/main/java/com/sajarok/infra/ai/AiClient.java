@@ -9,6 +9,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,6 +49,18 @@ public class AiClient {
   }
 
   public <T> T call(String system, String user, Class<T> resultType) {
+    return send(system, user + "\n\nRespond with a single JSON object.", resultType);
+  }
+
+  public <T> T callWithImage(String system, String user, String imageDataUrl, Class<T> resultType) {
+    var content =
+        List.of(
+            Map.of("type", "input_text", "text", user + "\n\nRespond with a single JSON object."),
+            Map.of("type", "input_image", "image_url", imageDataUrl, "detail", "high"));
+    return send(system, List.of(Map.of("role", "user", "content", content)), resultType);
+  }
+
+  private <T> T send(String system, Object input, Class<T> resultType) {
     if (apiKey.isBlank() || model.isBlank()) {
       throw new BusinessException(ErrorCode.AI_FAILED);
     }
@@ -61,7 +74,7 @@ public class AiClient {
                   "instructions",
                   system + "\nRespond with a single JSON object.",
                   "input",
-                  user + "\n\nRespond with a single JSON object.",
+                  input,
                   "store",
                   false,
                   "text",

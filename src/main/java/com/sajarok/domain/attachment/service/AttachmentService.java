@@ -204,6 +204,12 @@ public class AttachmentService {
         == 1;
   }
 
+  @Transactional
+  public void saveImageWithoutText(Long attachmentId) {
+    attachmentRepository.updateExtractionResult(
+        attachmentId, null, ExtractStatus.SKIPPED, ExtractStatus.PENDING, LocalDateTime.now());
+  }
+
   @Transactional(propagation = Propagation.NOT_SUPPORTED)
   public Attachment registerFile(Long userId, MultipartFile file, AttachmentCategory category) {
     String name = file.getOriginalFilename();
@@ -223,12 +229,6 @@ public class AttachmentService {
       throw new BusinessException(ErrorCode.UNSUPPORTED_FILE);
     }
 
-    ExtractStatus initialStatus =
-        switch (extension) {
-          case "png", "jpg" -> ExtractStatus.SKIPPED;
-          default -> ExtractStatus.PENDING;
-        };
-
     String key = "attachments/" + UUID.randomUUID();
     String contentType = file.getContentType();
     if (contentType == null || contentType.isBlank() || contentType.length() > 100) {
@@ -237,7 +237,7 @@ public class AttachmentService {
 
     Attachment attachment =
         Attachment.createFile(
-            userId, category, name, key, contentType, file.getSize(), initialStatus);
+            userId, category, name, key, contentType, file.getSize(), ExtractStatus.PENDING);
 
     boolean uploaded = false;
     try (var input = file.getInputStream()) {

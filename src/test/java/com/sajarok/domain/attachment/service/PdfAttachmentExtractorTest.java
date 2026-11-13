@@ -1,11 +1,16 @@
 package com.sajarok.domain.attachment.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -16,7 +21,8 @@ import org.junit.jupiter.api.Test;
 
 class PdfAttachmentExtractorTest {
 
-  private final PdfAttachmentExtractor extractor = new PdfAttachmentExtractor();
+  private final ImageAttachmentExtractor imageExtractor = mock(ImageAttachmentExtractor.class);
+  private final PdfAttachmentExtractor extractor = new PdfAttachmentExtractor(imageExtractor);
 
   @Test
   void extract_returnsTextFromTextPdf() throws IOException {
@@ -37,7 +43,8 @@ class PdfAttachmentExtractorTest {
   }
 
   @Test
-  void extract_returnsEmptyTextFromImageOnlyPdf() throws IOException {
+  void extract_returnsRecognizedTextFromImageOnlyPdf() throws IOException {
+    when(imageExtractor.extract(any(InputStream.class), eq("png"))).thenReturn("OCR meeting notes");
     try (var document = new PDDocument()) {
       var page = new PDPage();
       document.addPage(page);
@@ -49,7 +56,7 @@ class PdfAttachmentExtractorTest {
         content.drawImage(pdfImage, 50, 700);
       }
 
-      assertThat(extract(document)).isEmpty();
+      assertThat(extract(document)).isEqualTo("OCR meeting notes");
     }
   }
 

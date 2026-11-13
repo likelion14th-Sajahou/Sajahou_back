@@ -89,14 +89,15 @@ class AttachmentServiceTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"capture.png", "capture.jpg"})
-  void registerFile_savesImagesAsSkipped(String filename) {
+  void registerFile_savesImagesAsPendingForTextExtraction(String filename) {
+    // PR #66부터 이미지도 글자를 읽는다(OCR). 등록은 PENDING이고, 추출 작업이 DONE·SKIPPED·FAILED로 바꾼다
     var file = new MockMultipartFile("file", filename, "application/octet-stream", new byte[] {1});
     when(attachmentRepository.save(any(Attachment.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
 
     Attachment saved = attachmentService.registerFile(2L, file, AttachmentCategory.DESIGN);
 
-    assertThat(saved.getExtractStatus()).isEqualTo(ExtractStatus.SKIPPED);
+    assertThat(saved.getExtractStatus()).isEqualTo(ExtractStatus.PENDING);
   }
 
   @Test
