@@ -46,9 +46,10 @@ class FootprintServiceTest {
     when(weekService.findFootprintWeeks(Part.BACKEND))
         .thenReturn(
             List.of(
-                new FootprintWeek(27L, 27, "HACKATHON", true, "전체 회고"),
-                new FootprintWeek(37L, 37, "JUNGKATHON", false, "테스트코드"),
-                new FootprintWeek(38L, 38, "JUNGKATHON", true, "중커톤 최종 발표")));
+                new FootprintWeek(27L, 27, "HACKATHON", true, "전체 회고", "HACKATHON"),
+                new FootprintWeek(28L, 28, "REGULAR_3", false, "선배와의 만남", null),
+                new FootprintWeek(37L, 37, "JUNGKATHON", false, "테스트코드", null),
+                new FootprintWeek(38L, 38, "JUNGKATHON", true, "중커톤 발표·회고", "JUNGKATHON")));
     when(retrospectiveService.footprints(USER_ID)).thenReturn(List.of());
     when(storyCardService.findPublished(USER_ID)).thenReturn(List.of());
   }
@@ -56,14 +57,16 @@ class FootprintServiceTest {
   @Test
   void addsStickerOnlyToMatchingPresentationWeekEvenWhenUpcoming() {
     when(projectService.findCompletedCategories(USER_ID))
-        .thenReturn(Set.of(ProjectCategory.JUNGKATHON));
+        .thenReturn(Set.of(ProjectCategory.HACKATHON, ProjectCategory.JUNGKATHON));
 
     var weeks = service.getFootprints(USER_ID).weeks();
 
     assertThat(weeks)
         .extracting(WeekItem::stickers)
-        .containsExactly(List.of(), List.of(), List.of("JUNGKATHON"));
-    assertThat(weeks.get(2).status()).isEqualTo(Status.UPCOMING);
+        .containsExactly(List.of("HACKATHON"), List.of(), List.of(), List.of("JUNGKATHON"));
+    assertThat(weeks.get(1).phase()).isEqualTo("REGULAR_3");
+    assertThat(weeks.get(3).status()).isEqualTo(Status.UPCOMING);
+    assertThat(weeks.get(3).sessionTitle()).isEqualTo("중커톤 발표·회고");
     verify(projectService).findCompletedCategories(USER_ID);
   }
 
