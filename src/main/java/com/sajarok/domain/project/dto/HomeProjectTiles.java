@@ -1,5 +1,6 @@
 package com.sajarok.domain.project.dto;
 
+import com.sajarok.domain.project.entity.ProjectCategory;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -7,9 +8,10 @@ import java.util.List;
 public record HomeProjectTiles(
     List<InProgressTile> inProgressProjects, List<DoneTile> doneProjects) {
 
-  /** 진행 중 프로젝트. lastRecordDate는 기록이 없으면 null. */
-  public record InProgressTile(Long id, String name, long recordCount, LocalDate lastRecordDate) {}
+  /** 진행 중 프로젝트. lastRecordDate는 기록이 없으면 null. category는 행사 종류(FE 요청). */
+  public record InProgressTile(
+      Long id, String name, ProjectCategory category, long recordCount, LocalDate lastRecordDate) {}
 
-  /** 완료한 프로젝트. 화면에 '기록 N'만 보여서 기록 수만 넣는다. */
-  public record DoneTile(Long id, String name, long recordCount) {}
+  /** 완료한 프로젝트. 화면에 '기록 N'만 보여서 기록 수만 넣는다. category는 행사 종류(FE 요청). */
+  public record DoneTile(Long id, String name, ProjectCategory category, long recordCount) {}
 }

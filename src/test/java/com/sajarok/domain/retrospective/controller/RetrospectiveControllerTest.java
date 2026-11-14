@@ -562,6 +562,7 @@ class RetrospectiveControllerTest {
                     null,
                     null,
                     null,
+                    null,
                     "N+1 문제를 fetch join으로 해결",
                     "게시글 목록 API에서 N+1 문제가 생겼다.",
                     "fetch join으로 바꿨다.",

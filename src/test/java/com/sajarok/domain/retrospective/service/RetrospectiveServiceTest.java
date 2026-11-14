@@ -373,6 +373,7 @@ class RetrospectiveServiceTest {
         null,
         null,
         null,
+        null,
         "N+1 해결",
         null,
         null,

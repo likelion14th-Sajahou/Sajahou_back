@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.sajarok.domain.project.entity.ProjectCategory;
 import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
 import com.sajarok.domain.storycard.dto.StoryCardDetailResponse.CompetencyView;
 import com.sajarok.domain.storycard.dto.StoryCardDetailResponse.SourceRecord;
@@ -102,6 +103,7 @@ class StoryCardControllerTest {
                 null,
                 3L,
                 "사자록",
+                ProjectCategory.JUNGKATHON,
                 "API 명세 확정",
                 null,
                 "API 명세 확정",
@@ -124,6 +126,7 @@ class StoryCardControllerTest {
         .andExpect(jsonPath("$.data.status").value("PUBLISHED"))
         .andExpect(jsonPath("$.data.weekNumber").value(nullValue()))
         .andExpect(jsonPath("$.data.projectName").value("사자록"))
+        .andExpect(jsonPath("$.data.category").value("JUNGKATHON"))
         .andExpect(jsonPath("$.data.blanks[0]").value("situation"))
         .andExpect(jsonPath("$.data.competencies[0].id").value(21))
         .andExpect(jsonPath("$.data.competencies[0].name").value(nullValue()))
@@ -155,6 +158,7 @@ class StoryCardControllerTest {
                 null,
                 3L,
                 "사자록",
+                ProjectCategory.JUNGKATHON,
                 "새 제목",
                 null,
                 "API 명세 확정",
@@ -225,6 +229,7 @@ class StoryCardControllerTest {
                         null,
                         3L,
                         "사자록",
+                        ProjectCategory.JUNGKATHON,
                         "API 명세 확정",
                         List.of(new CompetencyView(21L, null)),
                         List.of("2026-11-03 기록")))));
@@ -234,6 +239,7 @@ class StoryCardControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.totalCount").value(1))
         .andExpect(jsonPath("$.data.cards[0].cardId").value(412))
+        .andExpect(jsonPath("$.data.cards[0].category").value("JUNGKATHON"))
         .andExpect(jsonPath("$.data.cards[0].projectName").value("사자록"))
         .andExpect(jsonPath("$.data.cards[0].weekNumber").value(nullValue()))
         .andExpect(jsonPath("$.data.cards[0].competencies[0].id").value(21));

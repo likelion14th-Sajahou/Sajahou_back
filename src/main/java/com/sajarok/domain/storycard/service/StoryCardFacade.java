@@ -1,6 +1,7 @@
 package com.sajarok.domain.storycard.service;
 
 import com.sajarok.domain.competency.service.CompetencyService;
+import com.sajarok.domain.project.entity.ProjectCategory;
 import com.sajarok.domain.project.service.ProjectRecordService;
 import com.sajarok.domain.project.service.ProjectService;
 import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
@@ -87,6 +88,10 @@ public class StoryCardFacade {
         card.getProjectId() == null
             ? null
             : projectService.names(List.of(card.getProjectId())).get(card.getProjectId());
+    ProjectCategory category =
+        card.getProjectId() == null
+            ? null
+            : projectService.categories(List.of(card.getProjectId())).get(card.getProjectId());
     LocalDate recordDate =
         card.getProjectRecordId() == null
             ? null
@@ -102,6 +107,7 @@ public class StoryCardFacade {
     return StoryCardDetailResponse.of(
         card,
         projectName,
+        category,
         recordDate,
         competencyService.names(card.getCompetencyIds()),
         weekNumber);
@@ -140,9 +146,10 @@ public class StoryCardFacade {
             .toList();
 
     // 프로젝트 이름·기록 날짜·역량 이름은 카드마다 묻지 않고 한 번에 가져온다 (N+1 방지)
-    Map<Long, String> projectNames =
-        projectService.names(
-            cards.stream().map(StoryCard::getProjectId).filter(Objects::nonNull).toList());
+    List<Long> projectIds =
+        cards.stream().map(StoryCard::getProjectId).filter(Objects::nonNull).distinct().toList();
+    Map<Long, String> projectNames = projectService.names(projectIds);
+    Map<Long, ProjectCategory> categories = projectService.categories(projectIds);
     Map<Long, LocalDate> recordDates =
         projectRecordService.findDates(
             cards.stream().map(StoryCard::getProjectRecordId).filter(Objects::nonNull).toList());
@@ -157,6 +164,7 @@ public class StoryCardFacade {
                     StoryCardListResponse.CardItem.of(
                         card,
                         card.getProjectId() == null ? null : projectNames.get(card.getProjectId()),
+                        card.getProjectId() == null ? null : categories.get(card.getProjectId()),
                         card.getProjectRecordId() == null
                             ? null
                             : recordDates.get(card.getProjectRecordId()),
