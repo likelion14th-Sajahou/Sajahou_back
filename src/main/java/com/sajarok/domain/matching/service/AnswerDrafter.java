@@ -43,7 +43,19 @@ public class AnswerDrafter {
 
     return aiClient
         .call(MatchingPrompts.ANSWER_DRAFT_SYSTEM, user, AnswerDraftResult.class)
-        .toDraft(sources, recommendation.missingCompetencyIds(), false);
+        .toDraft(
+            sources,
+            recommendation.missingCompetencyIds(),
+            false,
+            mainCardHasResult(recommendation.cards()));
+  }
+
+  private static boolean mainCardHasResult(List<CardSnapshot> recommended) {
+    if (recommended.isEmpty()) {
+      return true;
+    }
+    String result = recommended.get(0).result();
+    return result != null && !result.isBlank();
   }
 
   /**

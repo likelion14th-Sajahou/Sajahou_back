@@ -56,9 +56,9 @@ public record PostingAnalysisResult(List<Competency> competencies, List<Question
         found.stream()
             .map(
                 c ->
-                    EvidenceVerifier.isQuoted(postingText, c.evidenceQuote())
-                        ? new Competency(c.competencyId(), c.evidenceQuote().strip())
-                        : new Competency(c.competencyId(), null))
+                    new Competency(
+                        c.competencyId(),
+                        EvidenceVerifier.verified(postingText, c.evidenceQuote())))
             .toList();
     return new PostingAnalysisResult(checked, perQuestion);
   }
