@@ -41,6 +41,7 @@ public final class MatchingPrompts {
       [규칙]
       1. 역량은 반드시 [역량 목록]의 id 중에서만 고른다. 목록에 없는 역량을 만들지 않는다.
       2. 공고가 원하는 역량은 최대 %d개. 근거가 약하면 덜 고르고, 하나도 없으면 빈 배열로 둔다.
+         공고가 강조하는 역량부터 순서대로 쓴다. %d개가 넘으면 덜 중요한 것을 뺀다.
       3. 근거는 [공고]의 문장에서만 찾는다. [문항]의 내용은 근거가 아니다.
          문항이 팀 경험을 물어도, 공고에 그런 문장이 없으면 공고 역량으로 고르지 않는다.
       4. 회사·부서·직무 이름("백엔드 개발", "웹 프론트엔드 개발")만 있는 문장은 근거로 쓰지 않는다.
@@ -85,6 +86,7 @@ public final class MatchingPrompts {
       {"competencies":[{"competencyId":3,"evidenceQuote":"..."}],"questions":[{"seq":1,"competencyIds":[3]}]}
       """
           .formatted(
+              PostingAnalysisResult.MAX_POSTING_COMPETENCIES,
               PostingAnalysisResult.MAX_POSTING_COMPETENCIES,
               PostingAnalysisResult.MAX_QUESTION_COMPETENCIES);
 
