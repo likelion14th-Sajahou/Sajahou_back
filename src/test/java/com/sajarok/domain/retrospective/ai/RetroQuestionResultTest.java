@@ -2,10 +2,12 @@ package com.sajarok.domain.retrospective.ai;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.groups.Tuple.tuple;
 
 import com.sajarok.domain.question.dto.NewQuestion;
 import com.sajarok.domain.retrospective.ai.RetroQuestionResult.Question;
 import com.sajarok.domain.retrospective.ai.RetroQuestionResult.Validated;
+import com.sajarok.domain.retrospective.entity.RetrospectiveType;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.util.ArrayList;
@@ -21,11 +23,16 @@ class RetroQuestionResultTest {
   private static final Map<Long, String> ATTACHMENTS = Map.of(502L, "지연 로딩과 N+1 문제, fetch join");
 
   private static Validated validate(Boolean insufficient, List<Question> questions) {
-    return new RetroQuestionResult(insufficient, questions).validate(MATERIAL, ATTACHMENTS);
+    return validate(insufficient, questions, RetrospectiveType.SESSION);
+  }
+
+  private static Validated validate(
+      Boolean insufficient, List<Question> questions, RetrospectiveType type) {
+    return new RetroQuestionResult(insufficient, questions).validate(MATERIAL, ATTACHMENTS, type);
   }
 
   @Test
-  @DisplayName("원문에 있는 quote는 남기고, 없는 quote는 null로 바꾸되 질문은 살린다")
+  @DisplayName("원문에 있는 quote는 남기고, 없는 quote는 null로 바꾸되 질문은 살린다(글은 태그별 고정 질문으로)")
   void keepsQuestionsAndVerifiesQuotes() {
     Validated v =
         validate(
@@ -36,9 +43,94 @@ class RetroQuestionResultTest {
 
     assertThat(v.insufficientMaterial()).isFalse();
     assertThat(v.questions())
-        .containsExactly(
+        .startsWith(
             new NewQuestion("근거와 숫자", MATERIAL, null, "쿼리 수가 얼마나 줄었나요?"),
-            new NewQuestion("세션과 연결", null, null, "세션 내용과 어떻게 이어지나요?"));
+            new NewQuestion("세션과 연결", null, null, "이번 세션에서 배운 내용 중 실습이나 과제와 이어지는 부분이 있었나요?"));
+  }
+
+  @Test
+  @DisplayName("QA 2: AI가 준 quote가 원문 대조에서 지워지면 \"이 말을 듣고~\" 질문 대신 태그별 고정 질문으로 바꾼다")
+  void droppedQuote_usesFallbackQuestion() {
+    Validated v =
+        validate(
+            false,
+            List.of(new Question("역량 신호", "페이징이랑 fetch join 같이 쓰기", null, "이 말을 듣고 어떤 점을 바꿨나요?")));
+
+    assertThat(v.questions())
+        .startsWith(new NewQuestion("역량 신호", null, null, "이번 세션에서 직접 문제를 풀거나 팀과 함께 정한 일이 있었나요?"));
+  }
+
+  @Test
+  @DisplayName("QA 2: quote를 처음부터 null로 준 질문은 (느낀 점이 아니면) AI 질문 그대로 둔다")
+  void nullQuote_keepsQuestion() {
+    Validated v =
+        validate(false, List.of(new Question("빠진 칸", null, null, "과제 칸에 무엇을 했는지 적어 주세요.")));
+
+    assertThat(v.questions().get(0).content()).isEqualTo("과제 칸에 무엇을 했는지 적어 주세요.");
+  }
+
+  @Test
+  @DisplayName("QA 2: 느낀 점은 quote가 없으면(처음부터 null·지워짐) 세션 회고는 '이번 세션', 과제 회고는 '이번 과제' 고정 질문으로 바꾼다")
+  void feeling_withoutQuote_usesFixedQuestionByType() {
+    List<Question> feelings =
+        List.of(
+            new Question("느낀 점", null, null, "무엇을 배웠나요?"),
+            new Question("느낀 점", "지어낸 문장", null, "이 부분에서 무엇을 느꼈나요?"));
+
+    assertThat(validate(false, feelings, RetrospectiveType.SESSION).questions())
+        .extracting(NewQuestion::content)
+        .containsOnly("이번 세션에서 무엇을 느꼈나요?");
+    assertThat(validate(false, feelings, RetrospectiveType.ASSIGNMENT).questions())
+        .extracting(NewQuestion::content)
+        .containsOnly("이번 과제에서 무엇을 느꼈나요?");
+  }
+
+  @Test
+  @DisplayName("R-15: 느낀 점이 없으면 고정 느낀 점 질문(세션 회고는 '이번 세션')을 맨 끝에 붙인다")
+  void noFeeling_appendsFixedFeelingLast() {
+    Validated v = validate(false, List.of(new Question("빠진 칸", null, null, "질문 1")));
+
+    assertThat(v.questions())
+        .extracting(NewQuestion::tag, NewQuestion::content)
+        .containsExactly(tuple("빠진 칸", "질문 1"), tuple("느낀 점", "이번 세션에서 무엇을 느꼈나요?"));
+  }
+
+  @Test
+  @DisplayName("R-15: 느낀 점 없이 4개가 오면 느낀 점이 아닌 마지막 질문을 빼고 4개를 유지하며, 마지막은 느낀 점이다")
+  void fourWithoutFeeling_keepsFourEndingWithFeeling() {
+    List<Question> four = new ArrayList<>();
+    for (int i = 1; i <= 4; i++) {
+      four.add(new Question("빠진 칸", null, null, "질문 " + i));
+    }
+
+    assertThat(validate(false, four, RetrospectiveType.ASSIGNMENT).questions())
+        .extracting(NewQuestion::content)
+        .containsExactly("질문 1", "질문 2", "질문 3", "이번 과제에서 무엇을 느꼈나요?");
+  }
+
+  @Test
+  @DisplayName("R-15: 느낀 점이 중간에 있으면 AI가 만든 그 질문을 맨 끝으로 옮긴다")
+  void feelingInMiddle_movesToEnd() {
+    Validated v =
+        validate(
+            false,
+            List.of(
+                new Question("근거와 숫자", MATERIAL, null, "쿼리 수가 얼마나 줄었나요?"),
+                new Question("느낀 점", MATERIAL, null, "N+1을 고치며 새로 안 점이 있나요?"),
+                new Question("빠진 칸", null, null, "과제 칸을 더 채워 주세요.")));
+
+    assertThat(v.questions())
+        .extracting(NewQuestion::tag, NewQuestion::content)
+        .containsExactly(
+            tuple("근거와 숫자", "쿼리 수가 얼마나 줄었나요?"),
+            tuple("빠진 칸", "과제 칸을 더 채워 주세요."),
+            tuple("느낀 점", "N+1을 고치며 새로 안 점이 있나요?"));
+  }
+
+  @Test
+  @DisplayName("QA 2: 태그 목록의 모든 태그에 고정 질문이 있다")
+  void everyTagHasFallback() {
+    assertThat(RetroQuestionResult.FALLBACK_QUESTIONS).containsOnlyKeys(RetroQuestionResult.TAGS);
   }
 
   @Test
@@ -83,14 +175,14 @@ class RetroQuestionResultTest {
   }
 
   @Test
-  @DisplayName("질문이 5개를 넘으면 앞에서 5개만 쓴다 (전에는 전체 실패)")
-  void limitsToFive() {
+  @DisplayName("질문이 4개를 넘으면 앞에서 4개만 쓴다 (기능명세서 R-15 11/11, 전에는 전체 실패)")
+  void limitsToFour() {
     List<Question> seven = new ArrayList<>();
     for (int i = 1; i <= 7; i++) {
       seven.add(new Question("빠진 칸", null, null, "질문 " + i));
     }
 
-    assertThat(validate(false, seven).questions()).hasSize(5);
+    assertThat(validate(false, seven).questions()).hasSize(4);
   }
 
   @Test
