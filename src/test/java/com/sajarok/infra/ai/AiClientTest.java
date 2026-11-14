@@ -3,6 +3,7 @@ package com.sajarok.infra.ai;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.sajarok.global.exception.BusinessException;
@@ -11,8 +12,11 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
+import java.time.Duration;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import tools.jackson.databind.json.JsonMapper;
@@ -75,6 +79,25 @@ class AiClientTest {
         .isInstanceOf(BusinessException.class)
         .extracting("errorCode")
         .isEqualTo(ErrorCode.AI_TIMEOUT);
+  }
+
+  @Test
+  void callWithTimeout_setsRequestTimeout_andDefaultCallKeeps50Seconds() throws Exception {
+    stubResponse(
+        """
+                {"status": "completed",
+                 "output": [{"type": "message", "content": [{"type": "output_text", "text": "{\\"answer\\":\\"확인\\"}"}]}]}
+                """);
+
+    client().call("시스템 지시", "입력", Result.class, Duration.ofSeconds(12));
+    client().call("시스템 지시", "입력", Result.class);
+
+    ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+    verify(httpClient, org.mockito.Mockito.times(2))
+        .send(captor.capture(), any(HttpResponse.BodyHandler.class));
+    assertThat(captor.getAllValues())
+        .extracting(HttpRequest::timeout)
+        .containsExactly(Optional.of(Duration.ofSeconds(12)), Optional.of(Duration.ofSeconds(50)));
   }
 
   private void stubResponse(String body) throws Exception {
