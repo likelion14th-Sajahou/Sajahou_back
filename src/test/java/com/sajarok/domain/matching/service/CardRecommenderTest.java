@@ -81,11 +81,11 @@ class CardRecommenderTest {
     assertThat(none.noMatchingCard()).isTrue();
     assertThat(none.missingCompetencyIds()).containsExactly(4L);
     assertThat(noQuestionTags.noMatchingCard()).isTrue();
-    assertThat(none.sources()).containsExactly(new Source(1, "JOB_POSTING", null));
+    assertThat(none.sources()).containsExactly(new Source(3, "JOB_POSTING", null));
   }
 
   @Test
-  @DisplayName("출처 번호는 MAIN=1, SUB=2, 지원 공고=마지막 번호")
+  @DisplayName("출처 번호는 MAIN=1, SUB=2, 지원 공고=3 (M-09·M-12)")
   void sources_numbering() {
     Recommendation r =
         recommender.recommend(
@@ -97,5 +97,15 @@ class CardRecommenderTest {
             new Source(1, "CARD", 12L),
             new Source(2, "CARD", 11L),
             new Source(3, "JOB_POSTING", null));
+  }
+
+  @Test
+  @DisplayName("카드가 1장이어도 지원 공고는 ③(3번)이다. 보조 카드 번호 2는 비워 둔다 (FE가 공고를 ③으로 그림)")
+  void sources_oneCard_jobPostingStaysThree() {
+    Recommendation r =
+        recommender.recommend(List.of(3L), List.of(card(11, StoryCardType.PROJECT, 3L)));
+
+    assertThat(r.sources())
+        .containsExactly(new Source(1, "CARD", 11L), new Source(3, "JOB_POSTING", null));
   }
 }

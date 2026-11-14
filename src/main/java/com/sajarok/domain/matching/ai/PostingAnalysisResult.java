@@ -4,6 +4,7 @@ import com.sajarok.infra.ai.EvidenceVerifier;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,6 +18,8 @@ public record PostingAnalysisResult(List<Competency> competencies, List<Question
   private static final Logger log = LoggerFactory.getLogger(PostingAnalysisResult.class);
 
   public static final int MAX_POSTING_COMPETENCIES = 5;
+
+  private static final Pattern BULLET = Pattern.compile("^[-•*·]\\s+");
   public static final int MAX_QUESTION_COMPETENCIES = 3;
 
   /**
@@ -57,7 +60,7 @@ public record PostingAnalysisResult(List<Competency> competencies, List<Question
                 c ->
                     new Competency(
                         c.competencyId(),
-                        EvidenceVerifier.verified(postingText, c.evidenceQuote())))
+                        withoutBullet(EvidenceVerifier.verified(postingText, c.evidenceQuote()))))
             .toList();
 
     List<Question> checkedQuestions =
@@ -81,6 +84,15 @@ public record PostingAnalysisResult(List<Competency> competencies, List<Question
           usedQuestionIds);
     }
     return new PostingAnalysisResult(checked, checkedQuestions);
+  }
+
+  /** 공고 줄머리 목록 기호("- 데이터를…")까지 옮긴 근거는 기호를 뗀다. 화면에 "- "가 같이 보이지 않게. */
+  static String withoutBullet(String quote) {
+    if (quote == null) {
+      return null;
+    }
+    String stripped = BULLET.matcher(quote).replaceFirst("");
+    return stripped.isBlank() ? quote : stripped;
   }
 
   private static List<Long> usableIds(List<Long> ids, Set<Long> allowedCompetencyIds) {
