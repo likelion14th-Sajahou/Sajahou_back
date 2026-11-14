@@ -9,6 +9,7 @@ import com.sajarok.domain.matching.entity.AnswerDraft;
 import com.sajarok.domain.matching.entity.AnswerDraft.Source;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
@@ -157,34 +158,68 @@ class AiResultTest {
         .isZero();
   }
 
+  private static final Set<Long> ALLOWED = Set.of(1L, 2L, 3L, 4L, 5L, 6L);
+
+  private static PostingAnalysisResult.Competency competency(long id) {
+    return new PostingAnalysisResult.Competency(id, "협업을 중시");
+  }
+
   @Test
-  @DisplayName("36번: 목록에 없는 역량·공고 역량 6개 이상·문항 역량 4개 이상·없는 문항 번호면 AI_FAILED")
-  void posting_invalid_throwsAiFailed() {
-    Set<Long> allowed = Set.of(1L, 2L, 3L, 4L, 5L, 6L);
-    assertAiFailed(
-        () ->
-            new PostingAnalysisResult(
-                    List.of(new PostingAnalysisResult.Competency(99L, "q")), List.of())
-                .validate(allowed, 1, "협업을 중시"));
-    assertAiFailed(
-        () ->
-            new PostingAnalysisResult(
-                    List.of(1L, 2L, 3L, 4L, 5L, 6L).stream()
-                        .map(id -> new PostingAnalysisResult.Competency(id, "q"))
-                        .toList(),
-                    List.of())
-                .validate(allowed, 1, "협업을 중시"));
-    assertAiFailed(
-        () ->
-            new PostingAnalysisResult(
-                    List.of(),
-                    List.of(new PostingAnalysisResult.Question(1, List.of(1L, 2L, 3L, 4L))))
-                .validate(allowed, 1, "협업을 중시"));
-    assertAiFailed(
-        () ->
-            new PostingAnalysisResult(
-                    List.of(), List.of(new PostingAnalysisResult.Question(2, List.of(1L))))
-                .validate(allowed, 1, "협업을 중시"));
+  @DisplayName("36번 너그러운 검증: 공고 역량이 6개면 실패하지 않고 앞에서 5개만 쓴다 (예시 공고 AI_FAILED 원인)")
+  void posting_sixCompetencies_keepsFirstFive() {
+    PostingAnalysisResult result =
+        new PostingAnalysisResult(
+                List.of(1L, 2L, 3L, 4L, 5L, 6L).stream().map(AiResultTest::competency).toList(),
+                List.of())
+            .validate(ALLOWED, 1, "협업을 중시");
+
+    assertThat(result.competencies())
+        .extracting(PostingAnalysisResult.Competency::competencyId)
+        .containsExactly(1L, 2L, 3L, 4L, 5L);
+  }
+
+  @Test
+  @DisplayName("36번 너그러운 검증: 문항 역량이 4개면 앞에서 3개만 쓴다")
+  void posting_fourQuestionCompetencies_keepsFirstThree() {
+    PostingAnalysisResult result =
+        new PostingAnalysisResult(
+                List.of(), List.of(new PostingAnalysisResult.Question(1, List.of(1L, 2L, 3L, 4L))))
+            .validate(ALLOWED, 1, "협업을 중시");
+
+    assertThat(result.questions().get(0).competencyIds()).containsExactly(1L, 2L, 3L);
+  }
+
+  @Test
+  @DisplayName("36번 너그러운 검증: 목록 밖 id·null 역량은 그것만 버리고(공고·문항 모두), 같은 id는 처음 것만 쓴다")
+  void posting_unknownIds_droppedOnly() {
+    PostingAnalysisResult result =
+        new PostingAnalysisResult(
+                Arrays.asList(competency(99L), null, competency(3L), competency(3L)),
+                List.of(new PostingAnalysisResult.Question(1, List.of(99L, 4L))))
+            .validate(ALLOWED, 1, "협업을 중시");
+
+    assertThat(result.competencies())
+        .extracting(PostingAnalysisResult.Competency::competencyId)
+        .containsExactly(3L);
+    assertThat(result.questions().get(0).competencyIds()).containsExactly(4L);
+  }
+
+  @Test
+  @DisplayName("36번 너그러운 검증: seq가 범위 밖인 문항은 버리고, 남은 게 없어도 실패가 아니다")
+  void posting_seqOutOfRange_dropped() {
+    PostingAnalysisResult result =
+        new PostingAnalysisResult(
+                List.of(competency(99L)),
+                List.of(
+                    new PostingAnalysisResult.Question(0, List.of(1L)),
+                    new PostingAnalysisResult.Question(2, List.of(1L)),
+                    new PostingAnalysisResult.Question(1, List.of(2L))))
+            .validate(ALLOWED, 1, "협업을 중시");
+
+    assertThat(result.competencies()).isEmpty();
+    assertThat(result.questions())
+        .extracting(PostingAnalysisResult.Question::seq)
+        .containsExactly(1);
   }
 
   @Test

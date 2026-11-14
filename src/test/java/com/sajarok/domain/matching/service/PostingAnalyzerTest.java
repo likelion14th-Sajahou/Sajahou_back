@@ -37,7 +37,8 @@ class PostingAnalyzerTest {
   private static final List<CompetencyOption> COMPETENCIES =
       List.of(
           new CompetencyOption(3L, "협업", "팀과 함께 일하며 결과를 만듦"),
-          new CompetencyOption(7L, "API 설계", "요청·응답 규칙 설계"));
+          new CompetencyOption(7L, "API 설계", "요청·응답 규칙 설계"),
+          new CompetencyOption(9L, "서비스 분리", "기능을 작은 서비스로 나눔"));
 
   private PostingAnalysisResult analyze() {
     return analyzer.analyze(
@@ -56,7 +57,7 @@ class PostingAnalyzerTest {
                 List.of(
                     new Competency(3L, "다양한 직군과 협업한 경험"),
                     new Competency(7L, "REST API 설계 경험 우대"),
-                    new Competency(7L, "MSA 경험 필수")),
+                    new Competency(9L, "MSA 경험 필수")),
                 List.of()));
 
     assertThat(analyze().competencies())
@@ -65,13 +66,13 @@ class PostingAnalyzerTest {
   }
 
   @Test
-  @DisplayName("목록 밖 역량 ID면 AI_FAILED, AiClient의 AI_TIMEOUT은 그대로 올린다")
-  void analyze_invalidOrTimeout_throws() {
+  @DisplayName("목록 밖 역량 ID는 그 역량만 버리고(실패 아님), AiClient의 AI_TIMEOUT은 그대로 올린다")
+  void analyze_unknownIdDropped_timeoutRethrown() {
     when(aiClient.call(anyString(), anyString(), eq(PostingAnalysisResult.class)))
         .thenReturn(new PostingAnalysisResult(List.of(new Competency(99L, "q")), List.of()))
         .thenThrow(new BusinessException(ErrorCode.AI_TIMEOUT));
 
-    assertThatThrownBy(this::analyze).extracting("errorCode").isEqualTo(ErrorCode.AI_FAILED);
+    assertThat(analyze().competencies()).isEmpty();
     assertThatThrownBy(this::analyze).extracting("errorCode").isEqualTo(ErrorCode.AI_TIMEOUT);
   }
 
