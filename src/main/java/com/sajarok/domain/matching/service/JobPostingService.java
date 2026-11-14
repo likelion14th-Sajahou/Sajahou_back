@@ -91,7 +91,7 @@ public class JobPostingService {
   }
 
   /**
-   * 아직 공고에 연결하지 않은 첨부를 ID마다 읽는다(내 첨부가 아니면 NOT_FOUND). 추출 DONE인 글자만 쓰고 FAILED·SKIPPED는 건너뛴다.
+   * 새 공고에 연결할 수 있는 첨부를 ID마다 읽는다(내 첨부가 아니면 NOT_FOUND). 추출 DONE인 글자만 쓰고 FAILED·SKIPPED는 건너뛴다.
    *
    * <p>TODO(첨부 담당): ID 목록으로 읽는 readTexts가 생기면 바꾼다. 지금은 readTexts처럼 기다리지 않고 바로 ATTACHMENT_PENDING.
    */
@@ -102,6 +102,7 @@ public class JobPostingService {
     List<Attachment> attachments =
         new LinkedHashSet<>(attachmentIds)
             .stream().map(id -> attachmentService.getOwnedAttachment(userId, id)).toList();
+    attachments.forEach(attachmentService::validateJobPostingAttachment);
     if (attachments.stream().anyMatch(a -> a.getExtractStatus() == ExtractStatus.PENDING)) {
       throw new BusinessException(ErrorCode.ATTACHMENT_PENDING);
     }

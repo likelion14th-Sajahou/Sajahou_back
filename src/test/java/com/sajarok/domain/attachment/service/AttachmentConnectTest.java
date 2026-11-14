@@ -99,6 +99,46 @@ class AttachmentConnectTest {
     assertThat(attachmentService.findAll(recordA)).isEmpty();
   }
 
+  @Test
+  void connectToJobPosting_movesAttachmentFromPreviousPosting() {
+    Long attachmentId = registerLink(userId);
+    Long oldPosting = insertPosting();
+    Long newPosting = insertPosting();
+    attachmentService.connect(userId, List.of(attachmentId), AttachmentOwner.jobPosting(oldPosting));
+    flushAndClear();
+
+    attachmentService.connectToJobPosting(userId, List.of(attachmentId), newPosting);
+    flushAndClear();
+
+    assertThat(attachmentService.findAll(AttachmentOwner.jobPosting(oldPosting))).isEmpty();
+    assertThat(attachmentService.findAll(AttachmentOwner.jobPosting(newPosting)))
+        .extracting(AttachmentView::attachmentId)
+        .containsExactly(attachmentId);
+  }
+
+  @Test
+  void connectToJobPosting_rejectsAttachmentLinkedToProjectRecord() {
+    Long attachmentId = registerLink(userId);
+    Long postingId = insertPosting();
+    attachmentService.connect(userId, List.of(attachmentId), recordA);
+    flushAndClear();
+
+    assertThatThrownBy(
+            () -> attachmentService.connectToJobPosting(userId, List.of(attachmentId), postingId))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.INVALID_STATE);
+
+    assertThat(attachmentService.findAll(recordA))
+        .extracting(AttachmentView::attachmentId)
+        .containsExactly(attachmentId);
+  }
+
+  private Long insertPosting() {
+    jdbc.update("INSERT INTO job_posting (user_id, company) VALUES (?, ?)", userId, "테스트 공고");
+    return lastInsertId();
+  }
+
   private Long insertUser() {
     String providerId = "attachment-test-" + UUID.randomUUID();
     jdbc.update(

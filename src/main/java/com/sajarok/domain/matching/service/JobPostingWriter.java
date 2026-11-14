@@ -1,6 +1,5 @@
 package com.sajarok.domain.matching.service;
 
-import com.sajarok.domain.attachment.dto.AttachmentOwner;
 import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.matching.ai.PostingAnalysisResult;
 import com.sajarok.domain.matching.dto.JobPostingCreateRequest;
@@ -102,7 +101,7 @@ public class JobPostingWriter {
         q ->
             q.applyCompetencyIds(
                 idsBySeq.getOrDefault(q.getSeq(), List.of()).stream().distinct().toList()));
-    attachmentService.connect(userId, attachmentIds, AttachmentOwner.jobPosting(jobPostingId));
+    attachmentService.connectToJobPosting(userId, attachmentIds, jobPostingId);
     return new Applied(posting, questions);
   }
 
