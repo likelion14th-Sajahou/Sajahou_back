@@ -54,7 +54,7 @@ class RecordQuestionResultTest {
   }
 
   @Test
-  @DisplayName("30번 검증: 원문에 없는 quote는 quote·출처를 null로 바꾸고 질문은 살린다 (명세: 원문에 없으면 null)")
+  @DisplayName("30번 검증 QA 2: 원문에 없는 quote는 quote·출처를 null로 바꾸고, 질문 글은 태그별 고정 질문으로 바꾼다")
   void validate_dropsUnquotedEvidence() {
     Validated v =
         new RecordQuestionResult(false, List.of(q("근거와 숫자", "클릭률 30% 상승", 601L)))
@@ -62,7 +62,24 @@ class RecordQuestionResultTest {
 
     assertThat(v.questions().get(0).quote()).isNull();
     assertThat(v.questions().get(0).sourceAttachmentId()).isNull();
-    assertThat(v.questions().get(0).content()).isEqualTo("질문");
+    assertThat(v.questions().get(0).content()).isEqualTo("결과나 팀·사용자 반응이 있었나요? 확인한 것만요.");
+  }
+
+  @Test
+  @DisplayName("30번 검증 QA 2: quote를 처음부터 null로 준 질문은 AI 질문 그대로 둔다 (빈칸을 묻는 정상 질문)")
+  void validate_nullQuote_keepsQuestion() {
+    Validated v =
+        new RecordQuestionResult(
+                false, List.of(new Question("근거와 숫자", null, null, "결과나 반응이 있었나요?")))
+            .validate(MEMO, ATTACHMENTS);
+
+    assertThat(v.questions().get(0).content()).isEqualTo("결과나 반응이 있었나요?");
+  }
+
+  @Test
+  @DisplayName("30번 검증 QA 2: 태그 목록의 모든 태그에 고정 질문이 있다")
+  void everyTagHasFallback() {
+    assertThat(RecordQuestionResult.FALLBACK_QUESTIONS).containsOnlyKeys(RecordQuestionResult.TAGS);
   }
 
   @Test

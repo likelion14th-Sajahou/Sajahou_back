@@ -27,6 +27,16 @@ public record RecordQuestionResult(Boolean insufficientMaterial, List<Question> 
   public static final int MAX_QUESTIONS = 4;
 
   /**
+   * quote가 원문 대조에서 지워졌을 때 쓰는 태그별 고정 질문(QA 2). AI 질문은 "이 말을 듣고~"처럼 quote를 가리킬 수 있어서 quote 없이 남기지
+   * 않는다. quote를 처음부터 null로 준 질문은 규칙상 정상이라 바꾸지 않는다.
+   */
+  static final Map<String, String> FALLBACK_QUESTIONS =
+      Map.of(
+          "내 역할·과정", "이 기록에서 내가 맡은 일과 진행 과정을 알려 주세요.",
+          "선택의 이유", "무엇을 골랐고, 왜 그렇게 정했어요?",
+          "근거와 숫자", "결과나 팀·사용자 반응이 있었나요? 확인한 것만요.");
+
+  /**
    * @param quote 질문의 근거가 된 원문 문장
    * @param sourceAttachmentId quote가 나온 첨부. 메모·5칸에서 나왔으면 null
    */
@@ -44,7 +54,8 @@ public record RecordQuestionResult(Boolean insufficientMaterial, List<Question> 
    *   <li>질문 글이 비었으면 버린다
    *   <li>태그는 띄어쓰기·가운뎃점만 다르면 목록의 태그로 맞추고, 그래도 목록에 없으면 버린다
    *   <li>출처(sourceAttachmentId)는 AI가 적은 번호가 아니라 quote가 실제로 있는 곳으로 정한다(메모·5칸이면 null, 첨부면 그 번호)
-   *   <li>quote가 메모·5칸·첨부 어디에도 없으면 quote·sourceAttachmentId를 null로 바꾼다(명세: 원문에 없으면 null). 질문은 살린다
+   *   <li>quote가 메모·5칸·첨부 어디에도 없으면 quote·sourceAttachmentId를 null로 바꾸고(명세: 원문에 없으면 null), 질문 글은 태그별
+   *       고정 질문으로 바꾼다
    * </ul>
    *
    * 남은 질문이 없으면 AI_FAILED, 4개가 넘으면 앞에서 4개만 쓴다.
@@ -85,9 +96,14 @@ public record RecordQuestionResult(Boolean insufficientMaterial, List<Question> 
     }
     EvidenceVerifier.Located found =
         EvidenceVerifier.locate(q.quote(), q.sourceAttachmentId(), recordText, attachmentTexts);
-    return found != null
-        ? new NewQuestion(tag, found.quote(), found.attachmentId(), q.content().strip())
-        : new NewQuestion(tag, null, null, q.content().strip());
+    if (found != null) {
+      return new NewQuestion(tag, found.quote(), found.attachmentId(), q.content().strip());
+    }
+    if (!isBlank(q.quote())) {
+      log.info("AI 기록 질문을 고정 질문으로 바꿈 tag={} 원래 질문={} 지워진 quote={}", tag, q.content(), q.quote());
+      return new NewQuestion(tag, null, null, FALLBACK_QUESTIONS.get(tag));
+    }
+    return new NewQuestion(tag, null, null, q.content().strip());
   }
 
   /** "내 역할 · 과정"·"근거와숫자"처럼 띄어쓰기나 가운뎃점만 다르면 목록의 태그로 맞춘다. 목록에 없으면 null */

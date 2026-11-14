@@ -25,6 +25,6 @@ public class RetroQuestionGenerator {
     Map<Long, String> attachmentTexts =
         attachments.stream()
             .collect(Collectors.toMap(RetroAttachment::id, RetroAttachment::text, (a, b) -> a));
-    return raw.validate(RetroPrompts.materialText(r), attachmentTexts);
+    return raw.validate(RetroPrompts.materialText(r), attachmentTexts, r.getType());
   }
 }

@@ -49,7 +49,12 @@ public class AiClient {
   }
 
   public <T> T call(String system, String user, Class<T> resultType) {
-    return send(system, user + "\n\nRespond with a single JSON object.", resultType);
+    return call(system, user, resultType, REQUEST_TIMEOUT);
+  }
+
+  /** 제한 시간을 직접 정하는 호출. 한 API 안에서 AI를 다시 부를 때 전체 시간을 50초 안에 맞추려고 쓴다(33번 재요청). */
+  public <T> T call(String system, String user, Class<T> resultType, Duration timeout) {
+    return send(system, user + "\n\nRespond with a single JSON object.", resultType, timeout);
   }
 
   public <T> T callWithImage(String system, String user, String imageDataUrl, Class<T> resultType) {
@@ -57,10 +62,11 @@ public class AiClient {
         List.of(
             Map.of("type", "input_text", "text", user + "\n\nRespond with a single JSON object."),
             Map.of("type", "input_image", "image_url", imageDataUrl, "detail", "high"));
-    return send(system, List.of(Map.of("role", "user", "content", content)), resultType);
+    return send(
+        system, List.of(Map.of("role", "user", "content", content)), resultType, REQUEST_TIMEOUT);
   }
 
-  private <T> T send(String system, Object input, Class<T> resultType) {
+  private <T> T send(String system, Object input, Class<T> resultType, Duration timeout) {
     if (apiKey.isBlank() || model.isBlank()) {
       throw new BusinessException(ErrorCode.AI_FAILED);
     }
@@ -82,7 +88,7 @@ public class AiClient {
 
       HttpRequest request =
           HttpRequest.newBuilder(RESPONSES_URI)
-              .timeout(REQUEST_TIMEOUT)
+              .timeout(timeout)
               .header("Authorization", "Bearer " + apiKey)
               .header("Content-Type", "application/json")
               .POST(HttpRequest.BodyPublishers.ofString(body))
