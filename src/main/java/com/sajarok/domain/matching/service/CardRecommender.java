@@ -74,17 +74,23 @@ public class CardRecommender {
   public record Recommendation(
       List<CardSnapshot> cards, List<Long> missingCompetencyIds, boolean noMatchingCard) {
 
+    /** ③ 지원 공고 출처 번호 (카드 수와 상관없이 고정) */
+    public static final int JOB_POSTING_SOURCE_NO = 3;
+
     public CoverLetterCardRole roleOf(int index) {
       return index == 0 ? CoverLetterCardRole.MAIN : CoverLetterCardRole.SUB;
     }
 
-    /** AI에게 넘기고 초안에 저장할 출처 목록: 카드 순서대로 1, 2, … 마지막 번호가 ③ 지원 공고. */
+    /**
+     * AI에게 넘기고 초안에 저장할 출처 목록: ① 추천 카드, ② 보조 카드, ③ 지원 공고. 번호는 고정이라 카드가 1장이어도 공고는 3번이다(M-09·M-12, 37번
+     * 명세 예시. FE도 공고를 ③으로 그린다).
+     */
     public List<Source> sources() {
       List<Source> sources = new ArrayList<>();
       for (int i = 0; i < cards.size(); i++) {
         sources.add(new Source(i + 1, "CARD", cards.get(i).cardId()));
       }
-      sources.add(new Source(cards.size() + 1, "JOB_POSTING", null));
+      sources.add(new Source(JOB_POSTING_SOURCE_NO, "JOB_POSTING", null));
       return sources;
     }
   }

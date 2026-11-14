@@ -115,7 +115,7 @@ class AnswerDrafterTest {
             new AnswerDraftResult(
                 List.of(
                     new Piece("text", "팀 API 연동을 맡았습니다.", 1, null, null),
-                    new Piece("text", "카카오에서도 이어 가겠습니다.", 2, null, null))));
+                    new Piece("text", "카카오에서도 이어 가겠습니다.", 3, null, null))));
 
     AnswerDraft draft = draft();
 

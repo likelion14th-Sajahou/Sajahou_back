@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
 class AiResultTest {
 
   private static final List<Source> SOURCES =
-      List.of(new Source(1, "CARD", 410L), new Source(2, "JOB_POSTING", null));
+      List.of(new Source(1, "CARD", 410L), new Source(3, "JOB_POSTING", null));
 
   private static void assertAiFailed(Runnable call) {
     assertThatThrownBy(call::run)
@@ -46,11 +46,11 @@ class AiResultTest {
   }
 
   @Test
-  @DisplayName("37번: 없는 출처 번호·출처 없는 문장·빈 응답·hint 없는 빈칸·모르는 type이면 AI_FAILED")
+  @DisplayName("37번: 없는 출처 번호(보조 카드가 없는데 2번)·출처 없는 문장·빈 응답·hint 없는 빈칸·모르는 type이면 AI_FAILED")
   void answer_invalid_throwsAiFailed() {
     assertAiFailed(
         () ->
-            new AnswerDraftResult(List.of(new Piece("text", "문장", 3, null, null)))
+            new AnswerDraftResult(List.of(new Piece("text", "문장", 2, null, null)))
                 .toDraft(SOURCES, List.of(), false, true));
     assertAiFailed(
         () ->
@@ -117,7 +117,7 @@ class AiResultTest {
                 List.of(
                     new Piece("text", "행동 문장", 1, null, null),
                     new Piece("text", "배운 점 문장", 1, null, null),
-                    new Piece("text", "회사 연결 문장", 2, null, null)))
+                    new Piece("text", "회사 연결 문장", 3, null, null)))
             .toDraft(SOURCES, List.of(), false, false);
 
     assertThat(draft.segments())
@@ -162,6 +162,20 @@ class AiResultTest {
 
   private static PostingAnalysisResult.Competency competency(long id) {
     return new PostingAnalysisResult.Competency(id, "협업을 중시");
+  }
+
+  @Test
+  @DisplayName("36번: 근거 앞에 공고 줄머리 목록 기호(\"- \")가 붙어 오면 떼고 저장한다")
+  void posting_bulletEvidence_storesWithoutBullet() {
+    PostingAnalysisResult result =
+        new PostingAnalysisResult(
+                List.of(new PostingAnalysisResult.Competency(3L, "- 데이터를 근거로 디자인 결정을 설명할 수 있는 분")),
+                List.of())
+            .validate(Set.of(3L), 1, "우대사항\n- 데이터를 근거로 디자인 결정을 설명할 수 있는 분");
+
+    assertThat(result.competencies().get(0).evidenceQuote())
+        .isEqualTo("데이터를 근거로 디자인 결정을 설명할 수 있는 분");
+    assertThat(PostingAnalysisResult.withoutBullet("-3년 이상")).isEqualTo("-3년 이상");
   }
 
   @Test
