@@ -106,4 +106,19 @@ class AnswerDrafterTest {
     assertThatThrownBy(this::draft).extracting("errorCode").isEqualTo(ErrorCode.AI_FAILED);
     assertThatThrownBy(this::draft).extracting("errorCode").isEqualTo(ErrorCode.AI_TIMEOUT);
   }
+
+  @Test
+  @DisplayName("37번 QA: 추천 카드(결과 없음)인데 AI가 결과 빈칸을 빠뜨리면 서버가 넣은 빈칸이 초안에 들어간다")
+  void draft_mainCardWithoutResult_addsResultBlank() {
+    when(aiClient.call(anyString(), anyString(), eq(AnswerDraftResult.class)))
+        .thenReturn(
+            new AnswerDraftResult(
+                List.of(
+                    new Piece("text", "팀 API 연동을 맡았습니다.", 1, null, null),
+                    new Piece("text", "카카오에서도 이어 가겠습니다.", 2, null, null))));
+
+    AnswerDraft draft = draft();
+
+    assertThat(draft.segments()).extracting(Segment::slot).containsExactly(null, "result", null);
+  }
 }

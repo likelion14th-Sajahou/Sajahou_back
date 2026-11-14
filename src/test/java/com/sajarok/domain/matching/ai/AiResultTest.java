@@ -2,6 +2,7 @@ package com.sajarok.domain.matching.ai;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.groups.Tuple.tuple;
 
 import com.sajarok.domain.matching.ai.AnswerDraftResult.Piece;
 import com.sajarok.domain.matching.entity.AnswerDraft;
@@ -35,7 +36,7 @@ class AiResultTest {
                 new Piece("text", "API를 맡았습니다.", 1, "무시", null),
                 new Piece("blank", "무시", 9, "result", "결과를 채워 주세요")));
 
-    AnswerDraft draft = result.toDraft(SOURCES, List.of(4L), false);
+    AnswerDraft draft = result.toDraft(SOURCES, List.of(4L), false, true);
 
     assertThat(draft.segments().get(0).slot()).isNull();
     assertThat(draft.segments().get(1).source()).isNull();
@@ -49,20 +50,20 @@ class AiResultTest {
     assertAiFailed(
         () ->
             new AnswerDraftResult(List.of(new Piece("text", "문장", 3, null, null)))
-                .toDraft(SOURCES, List.of(), false));
+                .toDraft(SOURCES, List.of(), false, true));
     assertAiFailed(
         () ->
             new AnswerDraftResult(List.of(new Piece("text", "문장", null, null, null)))
-                .toDraft(SOURCES, List.of(), false));
-    assertAiFailed(() -> new AnswerDraftResult(List.of()).toDraft(SOURCES, List.of(), false));
+                .toDraft(SOURCES, List.of(), false, true));
+    assertAiFailed(() -> new AnswerDraftResult(List.of()).toDraft(SOURCES, List.of(), false, true));
     assertAiFailed(
         () ->
             new AnswerDraftResult(List.of(new Piece("blank", null, null, "result", " ")))
-                .toDraft(SOURCES, List.of(), false));
+                .toDraft(SOURCES, List.of(), false, true));
     assertAiFailed(
         () ->
             new AnswerDraftResult(List.of(new Piece("title", "문장", 1, null, null)))
-                .toDraft(SOURCES, List.of(), false));
+                .toDraft(SOURCES, List.of(), false, true));
   }
 
   @Test
@@ -93,6 +94,67 @@ class AiResultTest {
     assertThat(result.competencies())
         .extracting(PostingAnalysisResult.Competency::evidenceQuote)
         .containsExactly("다양한 직군과   협업한 경험", null);
+  }
+
+  @Test
+  @DisplayName("36번 QA: AI가 \"우대사항: …\"처럼 칸 이름까지 옮기면 칸 이름을 뗀 문장으로 저장한다 (30·17번 quote와 같게)")
+  void posting_labeledEvidence_storesWithoutLabel() {
+    PostingAnalysisResult result =
+        new PostingAnalysisResult(
+                List.of(new PostingAnalysisResult.Competency(3L, "우대사항: 다양한 직군과 협업한 경험")),
+                List.of())
+            .validate(Set.of(3L), 1, "카카오\n다양한 직군과 협업한 경험");
+
+    assertThat(result.competencies().get(0).evidenceQuote()).isEqualTo("다양한 직군과 협업한 경험");
+  }
+
+  @Test
+  @DisplayName("37번 QA: 추천 카드에 결과가 없는데 결과 빈칸이 없으면, 출처 (1)이 아닌 첫 문장(회사 연결) 앞에 서버가 빈칸을 넣는다")
+  void answer_mainCardWithoutResult_addsResultBlank() {
+    AnswerDraft draft =
+        new AnswerDraftResult(
+                List.of(
+                    new Piece("text", "행동 문장", 1, null, null),
+                    new Piece("text", "배운 점 문장", 1, null, null),
+                    new Piece("text", "회사 연결 문장", 2, null, null)))
+            .toDraft(SOURCES, List.of(), false, false);
+
+    assertThat(draft.segments())
+        .extracting(AnswerDraft.Segment::type, AnswerDraft.Segment::slot)
+        .containsExactly(
+            tuple("text", null),
+            tuple("text", null),
+            tuple("blank", "result"),
+            tuple("text", null));
+    assertThat(draft.segments().get(2).hint()).isEqualTo("결과 · 숫자나 받은 반응을 채워 주세요");
+  }
+
+  @Test
+  @DisplayName("37번 QA: 출처 (1) 문장만 있으면 빈칸을 맨 끝에 넣는다")
+  void answer_onlyMainSource_addsResultBlankAtEnd() {
+    AnswerDraft draft =
+        new AnswerDraftResult(List.of(new Piece("text", "행동 문장", 1, null, null)))
+            .toDraft(SOURCES, List.of(), false, false);
+
+    assertThat(draft.segments())
+        .extracting(AnswerDraft.Segment::slot)
+        .containsExactly(null, "result");
+  }
+
+  @Test
+  @DisplayName("37번 QA: 결과 빈칸이 이미 있거나 추천 카드에 결과가 있으면 빈칸을 더 넣지 않는다")
+  void answer_resultBlankPresentOrCardHasResult_unchanged() {
+    List<Piece> withBlank =
+        List.of(
+            new Piece("text", "행동 문장", 1, null, null),
+            new Piece("blank", null, null, "result", "결과 · 직접 쓴 안내"));
+    List<Piece> noBlank = List.of(new Piece("text", "결과 문장", 1, null, null));
+
+    assertThat(
+            new AnswerDraftResult(withBlank).toDraft(SOURCES, List.of(), false, false).blankCount())
+        .isEqualTo(1);
+    assertThat(new AnswerDraftResult(noBlank).toDraft(SOURCES, List.of(), false, true).blankCount())
+        .isZero();
   }
 
   @Test
