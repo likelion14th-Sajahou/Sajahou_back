@@ -6,7 +6,6 @@ import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.sajarok.domain.attachment.dto.AttachmentOwner;
 import com.sajarok.domain.attachment.service.AttachmentService;
 import com.sajarok.domain.matching.ai.PostingAnalysisResult;
 import com.sajarok.domain.matching.dto.JobPostingCreateRequest;
@@ -97,7 +96,7 @@ class JobPostingWriterTest {
     assertThat(questions.get(1).getCompetencyIds()).isEmpty();
     assertThat(applied.posting()).isSameAs(posting);
     assertThat(applied.questions()).isEqualTo(questions);
-    verify(attachmentService).connect(1L, List.of(701L), AttachmentOwner.jobPosting(21L));
+    verify(attachmentService).connectToJobPosting(1L, List.of(701L), 21L);
   }
 
   @Test
