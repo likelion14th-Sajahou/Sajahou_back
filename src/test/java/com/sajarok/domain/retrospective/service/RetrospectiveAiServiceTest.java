@@ -377,6 +377,7 @@ class RetrospectiveAiServiceTest {
         null,
         null,
         null,
+        null,
         "N+1 해결",
         "상황",
         "행동",

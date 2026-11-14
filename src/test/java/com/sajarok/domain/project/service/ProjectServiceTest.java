@@ -34,6 +34,7 @@ import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
 import com.sajarok.domain.project.entity.ProjectRole;
 import com.sajarok.domain.project.entity.ProjectStatus;
+import com.sajarok.domain.project.repository.ProjectCategoryRow;
 import com.sajarok.domain.project.repository.ProjectName;
 import com.sajarok.domain.project.repository.ProjectRecordRepository;
 import com.sajarok.domain.project.repository.ProjectRepository;
@@ -147,7 +148,7 @@ class ProjectServiceTest {
   }
 
   @Test
-  @DisplayName("홈 타일은 4번 형태대로 진행 중에는 마지막 기록 날짜를, 완료에는 기록 수만 넣는다")
+  @DisplayName("홈 타일은 4번 형태대로 진행 중에는 마지막 기록 날짜를, 완료에는 기록 수만 넣고, 둘 다 행사 종류(category)를 넣는다")
   void homeTiles_matchesHomeSpecShape() {
     Project inProgress = project(3L, "사자록", ProjectStatus.IN_PROGRESS);
     Project done = project(1L, "아이디어톤", ProjectStatus.DONE);
@@ -162,8 +163,27 @@ class ProjectServiceTest {
     HomeProjectTiles tiles = projectService.homeTiles(1L);
 
     assertThat(tiles.inProgressProjects())
-        .containsExactly(new InProgressTile(3L, "사자록", 5, LocalDate.of(2026, 11, 4)));
-    assertThat(tiles.doneProjects()).containsExactly(new DoneTile(1L, "아이디어톤", 8));
+        .containsExactly(
+            new InProgressTile(
+                3L, "사자록", ProjectCategory.JUNGKATHON, 5, LocalDate.of(2026, 11, 4)));
+    assertThat(tiles.doneProjects())
+        .containsExactly(new DoneTile(1L, "아이디어톤", ProjectCategory.JUNGKATHON, 8));
+  }
+
+  @Test
+  @DisplayName("categories: 프로젝트 ID → 행사 종류를 쿼리 한 번으로 주고, 빈 목록이면 쿼리하지 않는다")
+  void categories_mapsIdToCategory() {
+    when(projectRepository.findCategoriesByIdIn(List.of(3L, 1L)))
+        .thenReturn(
+            List.of(
+                new ProjectCategoryRow(3L, ProjectCategory.JUNGKATHON),
+                new ProjectCategoryRow(1L, ProjectCategory.IDEATHON)));
+
+    assertThat(projectService.categories(List.of(3L, 1L)))
+        .containsExactlyInAnyOrderEntriesOf(
+            Map.of(3L, ProjectCategory.JUNGKATHON, 1L, ProjectCategory.IDEATHON));
+    assertThat(projectService.categories(List.of())).isEmpty();
+    verify(projectRepository).findCategoriesByIdIn(anyCollection());
   }
 
   @Test

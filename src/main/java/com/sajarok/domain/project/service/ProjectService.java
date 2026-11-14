@@ -17,6 +17,7 @@ import com.sajarok.domain.project.entity.ProjectCategory;
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
 import com.sajarok.domain.project.entity.ProjectStatus;
+import com.sajarok.domain.project.repository.ProjectCategoryRow;
 import com.sajarok.domain.project.repository.ProjectName;
 import com.sajarok.domain.project.repository.ProjectRecordRepository;
 import com.sajarok.domain.project.repository.ProjectRepository;
@@ -158,10 +159,14 @@ public class ProjectService {
             .map(
                 p ->
                     new InProgressTile(
-                        p.getId(), p.getName(), recordCount(stats, p), lastRecordDate(stats, p)))
+                        p.getId(),
+                        p.getName(),
+                        p.getCategory(),
+                        recordCount(stats, p),
+                        lastRecordDate(stats, p)))
             .toList(),
         filter(projects, ProjectStatus.DONE).stream()
-            .map(p -> new DoneTile(p.getId(), p.getName(), recordCount(stats, p)))
+            .map(p -> new DoneTile(p.getId(), p.getName(), p.getCategory(), recordCount(stats, p)))
             .toList());
   }
 
@@ -179,6 +184,15 @@ public class ProjectService {
     }
     return projectRepository.findNamesByIdIn(projectIds).stream()
         .collect(Collectors.toMap(ProjectName::projectId, ProjectName::name));
+  }
+
+  /** 프로젝트 ID → 행사 종류. 없는 ID는 결과에서 빠진다. 카드 담당이 카드 목록·상세에 쓴다. */
+  public Map<Long, ProjectCategory> categories(Collection<Long> projectIds) {
+    if (projectIds == null || projectIds.isEmpty()) {
+      return Map.of();
+    }
+    return projectRepository.findCategoriesByIdIn(projectIds).stream()
+        .collect(Collectors.toMap(ProjectCategoryRow::projectId, ProjectCategoryRow::category));
   }
 
   /** 프로젝트들의 저장된 기록 통계를 쿼리 한 번으로 가져온다. */

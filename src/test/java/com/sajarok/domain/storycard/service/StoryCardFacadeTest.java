@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.sajarok.domain.competency.service.CompetencyService;
+import com.sajarok.domain.project.entity.ProjectCategory;
 import com.sajarok.domain.project.service.ProjectRecordService;
 import com.sajarok.domain.project.service.ProjectService;
 import com.sajarok.domain.storycard.dto.RecordCardSource;
@@ -131,10 +132,11 @@ class StoryCardFacadeTest {
   }
 
   @Test
-  @DisplayName("22번: 프로젝트 카드 상세에는 프로젝트 이름, 출처 기록, 근거 요약, 빈칸이 들어간다")
+  @DisplayName("22번: 프로젝트 카드 상세에는 프로젝트 이름·행사 종류, 출처 기록, 근거 요약, 빈칸이 들어간다")
   void projectCard_detail() {
     when(storyCardRepository.findByIdAndUserId(412L, ME)).thenReturn(Optional.of(projectCard()));
     when(projectService.names(List.of(3L))).thenReturn(Map.of(3L, "사자록"));
+    when(projectService.categories(List.of(3L))).thenReturn(Map.of(3L, ProjectCategory.JUNGKATHON));
     when(projectRecordService.findDates(List.of(77L)))
         .thenReturn(Map.of(77L, LocalDate.of(2026, 11, 3)));
 
@@ -143,6 +145,7 @@ class StoryCardFacadeTest {
     assertThat(response.cardId()).isEqualTo(412L);
     assertThat(response.type()).isEqualTo(StoryCardType.PROJECT);
     assertThat(response.projectName()).isEqualTo("사자록");
+    assertThat(response.category()).isEqualTo(ProjectCategory.JUNGKATHON);
     assertThat(response.action()).isEqualTo("API 명세 확정");
     assertThat(response.blanks()).containsExactly("situation", "reason", "result", "learned");
     assertThat(response.competencies()).containsExactly(new CompetencyView(21L, null));

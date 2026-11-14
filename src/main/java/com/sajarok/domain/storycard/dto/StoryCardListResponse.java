@@ -1,5 +1,6 @@
 package com.sajarok.domain.storycard.dto;
 
+import com.sajarok.domain.project.entity.ProjectCategory;
 import com.sajarok.domain.storycard.entity.StoryCard;
 import com.sajarok.domain.storycard.entity.StoryCardType;
 import java.time.LocalDate;
@@ -15,12 +16,13 @@ public record StoryCardListResponse(int totalCount, List<CardItem> cards) {
       Integer weekNumber,
       Long projectId,
       String projectName,
+      ProjectCategory category,
       String title,
       List<StoryCardDetailResponse.CompetencyView> competencies,
       List<String> evidenceSummary) {
 
     /**
-     * projectName·recordDate는 회고 카드면 null.
+     * projectName·category·recordDate는 회고 카드면 null.
      *
      * @param competencyNames 목록 전체 카드의 역량 ID → 이름 (한 번에 가져온 것)
      * @param weekNumber 회고 카드의 주차 번호. 프로젝트 카드는 null
@@ -28,6 +30,7 @@ public record StoryCardListResponse(int totalCount, List<CardItem> cards) {
     public static CardItem of(
         StoryCard card,
         String projectName,
+        ProjectCategory category,
         LocalDate recordDate,
         Map<Long, String> competencyNames,
         Integer weekNumber) {
@@ -45,6 +48,7 @@ public record StoryCardListResponse(int totalCount, List<CardItem> cards) {
           weekNumber,
           card.getProjectId(),
           projectName,
+          category,
           card.getTitle(),
           competencies,
           evidenceSummary);

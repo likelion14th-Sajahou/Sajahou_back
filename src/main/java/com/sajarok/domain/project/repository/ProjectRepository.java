@@ -28,6 +28,12 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
           + " from Project p where p.id in :projectIds")
   List<ProjectName> findNamesByIdIn(@Param("projectIds") Collection<Long> projectIds);
 
+  /** 프로젝트 행사 종류만 읽는다 (카드 목록·상세의 category). */
+  @Query(
+      "select new com.sajarok.domain.project.repository.ProjectCategoryRow(p.id, p.category)"
+          + " from Project p where p.id in :projectIds")
+  List<ProjectCategoryRow> findCategoriesByIdIn(@Param("projectIds") Collection<Long> projectIds);
+
   /** 이 상태인 내 프로젝트들의 행사 종류 (겹치면 하나). 발자국 스티커용으로 완료(DONE)를 넘긴다. */
   @Query(
       "select distinct p.category from Project p"
