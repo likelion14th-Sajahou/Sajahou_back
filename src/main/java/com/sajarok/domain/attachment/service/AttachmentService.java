@@ -115,6 +115,31 @@ public class AttachmentService {
     attachments.forEach(attachment -> attachment.connectTo(owner));
   }
 
+  public void validateJobPostingAttachment(Attachment attachment) {
+    if (attachment.getRetrospectiveId() != null
+        || attachment.getProjectRecordId() != null
+        || attachment.getProjectId() != null) {
+      throw new BusinessException(ErrorCode.INVALID_STATE, "이미 다른 곳에 연결된 첨부가 있어요.");
+    }
+  }
+
+  @Transactional
+  public void connectToJobPosting(Long userId, List<Long> ids, Long jobPostingId) {
+    if (ids == null || ids.isEmpty()) {
+      return;
+    }
+
+    var distinctIds = new LinkedHashSet<>(ids);
+    var attachments = attachmentRepository.findAllByUserIdAndIdInOrderByIdAsc(userId, distinctIds);
+    if (attachments.size() != distinctIds.size()) {
+      throw new BusinessException(ErrorCode.NOT_FOUND);
+    }
+
+    attachments.forEach(this::validateJobPostingAttachment);
+    var owner = AttachmentOwner.jobPosting(jobPostingId);
+    attachments.forEach(attachment -> attachment.connectTo(owner));
+  }
+
   @Transactional
   public void disconnect(AttachmentOwner owner) {
     findAttachments(owner.kind(), List.of(owner.id()))
