@@ -150,6 +150,8 @@ public final class MatchingPrompts {
       8. 한국어 존댓말 자기소개서 문체(~습니다)로 쓴다. 글자 수 제한이 있으면 공백 포함 그 안에서 쓴다(빈칸은 세지 않는다).
       9. 배운 점은 카드의 배운 점만 옮긴다. 배운 점 뒤에 카드에 없는 효과·평가("~하는 데 도움이 되었습니다", "~에 큰 힘이 되었습니다")를 덧붙이지 않는다.
          결과가 빈칸이면 효과·반응·성과처럼 결과로 읽히는 문장도 쓰지 않는다.
+      10. [카드에 없는 역량]에 적힌 역량은 겪은 것처럼 쓰지 않는다. 카드에 있는 사실만 쓴다.
+          문항이 그 역량을 물어도, 카드에 없는 상황(의견 차이 등)이나 방식(조율 방법 등)을 만들지 않는다. 한 줄 소개도 마찬가지다.
 
       [좋은 예]
       입력:
@@ -161,6 +163,7 @@ public final class MatchingPrompts {
                (2) 보조 카드 없음
                (3) 지원 공고 — 회사: 하루북스, 부서: 웹 프론트엔드, 주요 업무: 도서 검색 화면 개발
         [답 순서] 한 줄 소개 → 상황 → 행동 → 이유 → 결과 → 배운 점 → 지원 회사·공고와 연결
+        [카드에 없는 역량] 없음
       출력:
       {"segments":[
         {"type":"text","text":"저는 함께 만들기 전에 서로 맞출 기준부터 정합니다.","source":1},
@@ -185,6 +188,9 @@ public final class MatchingPrompts {
       (보조 카드가 없을 때)
       {"type":"text","text":"다른 경험은 없습니다.","source":1}
       → 빈말이다. [답 순서]에 없는 자리는 "없다"고 쓰지도 않고 문장 자체를 만들지 않는다.
+      ([카드에 없는 역량]이 "갈등 조율"이고 카드에는 명세를 맞춘 일만 있을 때)
+      {"type":"text","text":"저는 의견이 다를 때 표로 정리해 맞추는 방식으로 조율합니다.","source":1}
+      → 카드에 없는 조율 경험을 지어냈다. [카드에 없는 역량]은 겪은 것처럼 쓰지 않고, 카드의 행동·배운 점만 쓴다.
 
       [애매할 때]
       - 카드 내용이 문항과 잘 맞지 않으면 억지로 늘리지 말고 짧게 쓰고, 부족한 부분은 빈칸으로 둔다.
@@ -204,13 +210,15 @@ public final class MatchingPrompts {
   /**
    * @param sources 출처 목록 (CardRecommender.Recommendation.sources)
    * @param cards 카드 ID → 카드 (출처의 카드 내용을 채울 때 씀)
+   * @param missingCompetencyNames 문항 역량 중 내 공개 카드 어디에도 없는 역량 이름 (M-13). 겪은 것처럼 쓰지 않게 넘긴다
    */
   public static String answerDraftUser(
       String question,
       Integer charLimit,
       List<Source> sources,
       Map<Long, CardSnapshot> cards,
-      PostingText posting) {
+      PostingText posting,
+      List<String> missingCompetencyNames) {
     StringBuilder sb = new StringBuilder();
     sb.append("[문항]\n").append(question).append('\n');
     sb.append("글자 수 제한: ").append(charLimit == null ? "없음" : charLimit + "자").append("\n\n");
@@ -230,7 +238,11 @@ public final class MatchingPrompts {
       }
       sb.append('\n');
     }
-    sb.append("[답 순서]\n").append(String.join(" → ", answerOrder(sources))).append('\n');
+    sb.append("[답 순서]\n").append(String.join(" → ", answerOrder(sources))).append("\n\n");
+    sb.append("[카드에 없는 역량]\n")
+        .append(
+            missingCompetencyNames.isEmpty() ? "없음" : String.join(" / ", missingCompetencyNames))
+        .append('\n');
     return sb.toString();
   }
 

@@ -255,13 +255,15 @@ class AiResultTest {
             700,
             List.of(new Source(1, "CARD", 410L), new Source(3, "JOB_POSTING", null)),
             Map.of(410L, card(410L)),
-            POSTING);
+            POSTING,
+            List.of());
 
     assertThat(user).contains("(1) 경험 카드", "(2) 보조 카드 없음", "(3) 지원 공고");
     assertThat(user.indexOf("(2) 보조 카드 없음")).isBetween(user.indexOf("(1)"), user.indexOf("(3)"));
     assertThat(user)
         .contains("[답 순서]\n한 줄 소개 → 상황 → 행동 → 이유 → 결과 → 배운 점 → 지원 회사·공고와 연결")
         .doesNotContain("다른 경험 연결");
+    assertThat(user).contains("[카드에 없는 역량]\n없음");
   }
 
   @Test
@@ -276,7 +278,8 @@ class AiResultTest {
                 new Source(2, "CARD", 411L),
                 new Source(3, "JOB_POSTING", null)),
             Map.of(410L, card(410L), 411L, card(411L)),
-            POSTING);
+            POSTING,
+            List.of());
 
     assertThat(user).contains("(2) 경험 카드").doesNotContain("보조 카드 없음");
     assertThat(user)

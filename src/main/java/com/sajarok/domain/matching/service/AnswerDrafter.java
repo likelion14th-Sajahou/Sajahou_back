@@ -1,5 +1,6 @@
 package com.sajarok.domain.matching.service;
 
+import com.sajarok.domain.competency.service.CompetencyService;
 import com.sajarok.domain.matching.ai.AnswerDraftResult;
 import com.sajarok.domain.matching.ai.MatchingPrompts;
 import com.sajarok.domain.matching.ai.MatchingPrompts.PostingText;
@@ -11,6 +12,7 @@ import com.sajarok.domain.storycard.dto.CardSnapshot;
 import com.sajarok.infra.ai.AiClient;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -20,6 +22,7 @@ import org.springframework.stereotype.Component;
 public class AnswerDrafter {
 
   private final AiClient aiClient;
+  private final CompetencyService competencyService;
 
   /** 빈칸만 있는 초안의 빈칸들. M-10 빈칸 안내 형식("항목 · 채울 내용"). */
   private static final List<Segment> BLANKS =
@@ -39,7 +42,14 @@ public class AnswerDrafter {
       Map<Long, CardSnapshot> cards,
       PostingText posting) {
     List<Source> sources = recommendation.sources();
-    String user = MatchingPrompts.answerDraftUser(question, charLimit, sources, cards, posting);
+    String user =
+        MatchingPrompts.answerDraftUser(
+            question,
+            charLimit,
+            sources,
+            cards,
+            posting,
+            missingNames(recommendation.missingCompetencyIds()));
 
     return aiClient
         .call(MatchingPrompts.ANSWER_DRAFT_SYSTEM, user, AnswerDraftResult.class)
@@ -48,6 +58,15 @@ public class AnswerDrafter {
             recommendation.missingCompetencyIds(),
             false,
             mainCardHasResult(recommendation.cards()));
+  }
+
+  /** 없는 역량 이름. 카드에 없는 역량을 겪은 것처럼 쓰지 않게 프롬프트에 넘긴다(#89). 이름을 못 찾은 ID는 뺀다. */
+  private List<String> missingNames(List<Long> missingCompetencyIds) {
+    if (missingCompetencyIds == null || missingCompetencyIds.isEmpty()) {
+      return List.of();
+    }
+    Map<Long, String> names = competencyService.names(missingCompetencyIds);
+    return missingCompetencyIds.stream().map(names::get).filter(Objects::nonNull).toList();
   }
 
   private static boolean mainCardHasResult(List<CardSnapshot> recommended) {

@@ -3,9 +3,12 @@ package com.sajarok.domain.matching.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.sajarok.domain.competency.service.CompetencyService;
 import com.sajarok.domain.matching.ai.AnswerDraftResult;
 import com.sajarok.domain.matching.ai.AnswerDraftResult.Piece;
 import com.sajarok.domain.matching.ai.MatchingPrompts;
@@ -33,6 +36,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class AnswerDrafterTest {
 
   @Mock private AiClient aiClient;
+  @Mock private CompetencyService competencyService;
 
   @InjectMocks private AnswerDrafter drafter;
 
@@ -120,5 +124,30 @@ class AnswerDrafterTest {
     AnswerDraft draft = draft();
 
     assertThat(draft.segments()).extracting(Segment::slot).containsExactly(null, "result", null);
+  }
+
+  @Test
+  @DisplayName("37번 #89: 없는 역량(missingCompetencyIds)의 이름을 [카드에 없는 역량]으로 프롬프트에 넘긴다")
+  void draft_passesMissingCompetencyNames() {
+    when(competencyService.names(List.of(4L))).thenReturn(Map.of(4L, "갈등 조율"));
+    when(aiClient.call(anyString(), anyString(), eq(AnswerDraftResult.class)))
+        .thenReturn(
+            new AnswerDraftResult(
+                List.of(
+                    new Piece("text", "팀 API 연동을 맡았습니다.", 1, null, null),
+                    new Piece("blank", null, null, "result", "결과 · 숫자나 받은 반응을 채워 주세요"))));
+
+    drafter.draft(
+        "협업 경험을 써 주세요",
+        700,
+        new Recommendation(List.of(CARD), List.of(4L), false),
+        Map.of(410L, CARD),
+        new PostingText("카카오", "백엔드", null, "대규모 트래픽 API 개발", null, null));
+
+    verify(aiClient)
+        .call(
+            eq(MatchingPrompts.ANSWER_DRAFT_SYSTEM),
+            contains("[카드에 없는 역량]\n갈등 조율"),
+            eq(AnswerDraftResult.class));
   }
 }
