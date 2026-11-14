@@ -2,6 +2,7 @@ package com.sajarok.domain.matching.ai;
 
 import com.sajarok.domain.matching.entity.AnswerDraft.Source;
 import com.sajarok.domain.storycard.dto.CardSnapshot;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -123,8 +124,8 @@ public final class MatchingPrompts {
   // ---- 37번: 답 초안 ----
 
   /**
-   * 37번 system 프롬프트 (역할·번호 규칙·좋은 예·나쁜 예·애매할 때·출력 형식 순서). 답 구성 순서는 M-08, 빈칸 규칙은 M-10, 회사 연결 예시 문장은
-   * 프로토타입 문구(한 줄 소개는 예시 카드 내용에서 뽑음).
+   * 37번 system 프롬프트 (역할·번호 규칙·좋은 예·나쁜 예·애매할 때·출력 형식 순서). 답 순서(M-08)는 고정하지 않고 서버가 상황별로 [답 순서]에
+   * 넘긴다(보조 카드가 없으면 "다른 경험 연결"을 뺌, #89). 빈칸 규칙은 M-10. 좋은 예의 공고는 ai-eval 입력과 겹치지 않는 새 문구.
    */
   public static final String ANSWER_DRAFT_SYSTEM =
       """
@@ -137,11 +138,12 @@ public final class MatchingPrompts {
          번호는 (1) 추천 카드, (2) 보조 카드, (3) 지원 공고로 고정이다. 보조 카드가 없으면 (2)는 없고 공고는 그대로 (3)이다.
       4. 출처 (1)은 문항 역량과 태그가 가장 많이 겹치는 추천 카드이고 답의 중심 경험이다.
          (2)는 그다음으로 겹치는 보조 카드라서 "다른 경험 연결"에만 짧게 쓴다.
+         [출처]에 "(2) 보조 카드 없음"이 있으면 다른 경험을 말하는 문장을 쓰지 않는다.
          출처 (1)·(2) 문장은 카드의 칸(상황·행동·이유·결과·배운 점)에 있는 내용만 쓴다. 칸에 없는 문장은 쓰지 않는다.
-      5. 답은 이 순서로 쓴다: 한 줄 소개 → 상황 → 행동 → 이유 → 결과 → 다른 경험 연결 → 배운 점 → 지원 회사·공고와 연결.
-         보조 카드가 없으면 "다른 경험 연결"은 건너뛴다.
+      5. 답은 [답 순서]에 적힌 순서대로 쓴다. [답 순서]에 없는 자리는 만들지 않는다.
          한 줄 소개는 출처 (1) 카드의 행동·배운 점에서 뽑는다. 카드에 없는 성격·습관을 새로 만들지 않는다.
-      6. "지원 공고" 출처는 마지막 "지원 회사·공고와 연결" 문장에만 쓴다. 공고 내용을 지원자의 경험처럼 쓰지 않는다.
+      6. (3) 지원 공고 문장은 맨 마지막 한 문장뿐이고, 마지막 문장은 반드시 (3)이다("지원 회사·공고와 연결").
+         공고 내용을 지원자의 경험처럼 쓰지 않는다.
       7. 카드에 없는 상황·행동·이유·결과는 지어내지 말고 빈칸 조각으로 둔다.
          slot은 situation / action / reason / result 중 하나, hint는 "결과 · 숫자나 받은 반응을 채워 주세요"처럼
          "항목 · 채울 내용" 한 줄로 쓴다.
@@ -156,15 +158,17 @@ public final class MatchingPrompts {
                    행동: 연동 전에 프론트와 API 명세부터 맞추고 응답 형식을 정리했다
                    배운 점: 명세를 먼저 맞추면 연동하면서 생기는 오해가 줄어든다
                    (결과 없음)
-               (3) 지원 공고 — 회사: 카카오, 부서: 백엔드, 주요 업무: 대규모 트래픽 API 개발
+               (2) 보조 카드 없음
+               (3) 지원 공고 — 회사: 하루북스, 부서: 웹 프론트엔드, 주요 업무: 도서 검색 화면 개발
+        [답 순서] 한 줄 소개 → 상황 → 행동 → 이유 → 결과 → 배운 점 → 지원 회사·공고와 연결
       출력:
       {"segments":[
         {"type":"text","text":"저는 함께 만들기 전에 서로 맞출 기준부터 정합니다.","source":1},
         {"type":"text","text":"중커톤에서 팀 API 연동을 맡아, 연동 전에 프론트와 API 명세부터 맞췄습니다.","source":1},
         {"type":"blank","slot":"result","hint":"결과 · 숫자나 받은 반응을 채워 주세요"},
-        {"type":"text","text":"카카오에서 백엔드 개발자로 일하게 된다면, 공고에 적힌 '대규모 트래픽 API 개발' 일에서 이 습관을 그대로 이어 가겠습니다.","source":3}
+        {"type":"text","text":"하루북스에서 웹 프론트엔드 개발자로 일하게 된다면, 공고에 적힌 '도서 검색 화면 개발' 일에서도 이 습관을 그대로 이어 가겠습니다.","source":3}
       ]}
-      (실제 답에서는 상황·행동·이유·배운 점 문장도 카드 내용으로 순서대로 쓴다.)
+      (실제 답에서는 상황·행동·이유·배운 점 문장도 카드 내용으로 순서대로 쓴다. 보조 카드가 없어 다른 경험 문장은 없고, 마지막 한 문장만 (3)이다.)
 
       [나쁜 예]
       {"type":"text","text":"API 응답 시간을 40% 줄였습니다.","source":1}
@@ -175,6 +179,12 @@ public final class MatchingPrompts {
       (보조 카드가 없을 때)
       {"type":"text","text":"다른 경험으로는 동아리 행사를 준비할 때도 역할을 먼저 나눴습니다.","source":1}
       → 보조 카드가 없는데 다른 경험을 지어냈다. 출처 (1) 카드의 칸에 없는 문장이다. 보조 카드가 없으면 다른 경험 연결 문장 자체를 쓰지 않는다.
+      (보조 카드가 없을 때)
+      {"type":"text","text":"다른 경험으로는 도서 검색 화면을 빠르게 만드는 일이 중요하다는 공고를 보았습니다.","source":3}
+      → 공고 내용으로 다른 경험 자리를 채웠고, (3) 문장이 마지막이 아닌 중간에 들어갔다. (3)은 마지막 회사 연결 한 문장에만 쓴다.
+      (보조 카드가 없을 때)
+      {"type":"text","text":"다른 경험은 없습니다.","source":1}
+      → 빈말이다. [답 순서]에 없는 자리는 "없다"고 쓰지도 않고 문장 자체를 만들지 않는다.
 
       [애매할 때]
       - 카드 내용이 문항과 잘 맞지 않으면 억지로 늘리지 말고 짧게 쓰고, 부족한 부분은 빈칸으로 둔다.
@@ -205,7 +215,13 @@ public final class MatchingPrompts {
     sb.append("[문항]\n").append(question).append('\n');
     sb.append("글자 수 제한: ").append(charLimit == null ? "없음" : charLimit + "자").append("\n\n");
     sb.append("[출처]\n");
+    boolean noSubCard = sources.stream().noneMatch(s -> s.no() == SUB_CARD_NO);
+    boolean noSubCardWritten = false;
     for (Source source : sources) {
+      if (noSubCard && !noSubCardWritten && source.no() > SUB_CARD_NO) {
+        sb.append("(").append(SUB_CARD_NO).append(") 보조 카드 없음\n\n");
+        noSubCardWritten = true;
+      }
       sb.append("(").append(source.no()).append(") ");
       if ("CARD".equals(source.kind())) {
         sb.append(cardBody(cards.get(source.cardId())));
@@ -214,7 +230,26 @@ public final class MatchingPrompts {
       }
       sb.append('\n');
     }
+    sb.append("[답 순서]\n").append(String.join(" → ", answerOrder(sources))).append('\n');
     return sb.toString();
+  }
+
+  /** ② 보조 카드 출처 번호 (CardRecommender.Recommendation.sources와 같은 고정 번호) */
+  private static final int SUB_CARD_NO = 2;
+
+  /**
+   * 37번 답 순서(M-08). 보조 카드가 없으면 "다른 경험 연결"을 뺀다. 고정 순서를 보여 주면 AI가 빈 자리를 공고나 빈말로 채워서(#89) 상황별로 넘긴다.
+   */
+  static List<String> answerOrder(List<Source> sources) {
+    List<String> order = new ArrayList<>(List.of("한 줄 소개", "상황", "행동", "이유", "결과"));
+    if (sources.stream().anyMatch(s -> s.no() == SUB_CARD_NO)) {
+      order.add("다른 경험 연결");
+    }
+    order.add("배운 점");
+    if (sources.stream().anyMatch(s -> "JOB_POSTING".equals(s.kind()))) {
+      order.add("지원 회사·공고와 연결");
+    }
+    return order;
   }
 
   private static String cardBody(CardSnapshot card) {

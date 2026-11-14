@@ -7,10 +7,12 @@ import static org.assertj.core.groups.Tuple.tuple;
 import com.sajarok.domain.matching.ai.AnswerDraftResult.Piece;
 import com.sajarok.domain.matching.entity.AnswerDraft;
 import com.sajarok.domain.matching.entity.AnswerDraft.Source;
+import com.sajarok.domain.storycard.dto.CardSnapshot;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -234,6 +236,51 @@ class AiResultTest {
     assertThat(result.questions())
         .extracting(PostingAnalysisResult.Question::seq)
         .containsExactly(1);
+  }
+
+  private static CardSnapshot card(long id) {
+    return new CardSnapshot(
+        id, null, null, null, "카드 " + id, null, "행동 " + id, null, null, null, Set.of());
+  }
+
+  private static final MatchingPrompts.PostingText POSTING =
+      new MatchingPrompts.PostingText("하루북스", "웹 프론트엔드", null, "도서 검색 화면 개발", null, null);
+
+  @Test
+  @DisplayName("37번 #89: 보조 카드가 없으면 [출처]에 \"(2) 보조 카드 없음\"을 넣고, [답 순서]에서 다른 경험 연결을 뺀다")
+  void answerUser_noSubCard_marksMissingAndDropsOtherExperience() {
+    String user =
+        MatchingPrompts.answerDraftUser(
+            "협업 경험을 써 주세요",
+            700,
+            List.of(new Source(1, "CARD", 410L), new Source(3, "JOB_POSTING", null)),
+            Map.of(410L, card(410L)),
+            POSTING);
+
+    assertThat(user).contains("(1) 경험 카드", "(2) 보조 카드 없음", "(3) 지원 공고");
+    assertThat(user.indexOf("(2) 보조 카드 없음")).isBetween(user.indexOf("(1)"), user.indexOf("(3)"));
+    assertThat(user)
+        .contains("[답 순서]\n한 줄 소개 → 상황 → 행동 → 이유 → 결과 → 배운 점 → 지원 회사·공고와 연결")
+        .doesNotContain("다른 경험 연결");
+  }
+
+  @Test
+  @DisplayName("37번 #89: 보조 카드가 있으면 지금과 같은 순서(다른 경험 연결 포함)를 넘기고 \"보조 카드 없음\"은 넣지 않는다")
+  void answerUser_withSubCard_keepsFullOrder() {
+    String user =
+        MatchingPrompts.answerDraftUser(
+            "협업 경험을 써 주세요",
+            700,
+            List.of(
+                new Source(1, "CARD", 410L),
+                new Source(2, "CARD", 411L),
+                new Source(3, "JOB_POSTING", null)),
+            Map.of(410L, card(410L), 411L, card(411L)),
+            POSTING);
+
+    assertThat(user).contains("(2) 경험 카드").doesNotContain("보조 카드 없음");
+    assertThat(user)
+        .contains("[답 순서]\n한 줄 소개 → 상황 → 행동 → 이유 → 결과 → 다른 경험 연결 → 배운 점 → 지원 회사·공고와 연결");
   }
 
   @Test
