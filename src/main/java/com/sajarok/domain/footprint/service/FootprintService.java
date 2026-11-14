@@ -76,7 +76,9 @@ public class FootprintService {
                       status,
                       week.weekNumber() == currentWeekNumber,
                       week.isPresentationWeek(),
-                      status == Status.UPCOMING ? null : week.sessionTitle(),
+                      status == Status.UPCOMING && !week.isPresentationWeek()
+                          ? null
+                          : week.sessionTitle(),
                       cardIdsByWeek.getOrDefault(week.weekId(), List.of()),
                       stickersOf(week, completedEvents));
                 })
@@ -87,8 +89,9 @@ public class FootprintService {
 
   private static List<String> stickersOf(
       WeekService.FootprintWeek week, Set<String> completedEvents) {
-    return week.isPresentationWeek() && completedEvents.contains(week.phase())
-        ? List.of(week.phase())
+    String category = week.presentationCategory();
+    return week.isPresentationWeek() && category != null && completedEvents.contains(category)
+        ? List.of(category)
         : List.of();
   }
 

@@ -107,7 +107,8 @@ public class WeekService {
   public List<FootprintWeek> findFootprintWeeks(Part part) {
     return jdbcTemplate.query(
         """
-                SELECT w.id, w.week_number, w.phase, w.is_presentation_week, s.session_title
+                SELECT w.id, w.week_number, w.phase, w.is_presentation_week,
+                       s.session_title, w.presentation_category
                 FROM week w
                 LEFT JOIN week_part_schedule s
                   ON s.week_id = w.id AND s.part = ?
@@ -119,12 +120,18 @@ public class WeekService {
                 rs.getInt("week_number"),
                 rs.getString("phase"),
                 rs.getBoolean("is_presentation_week"),
-                rs.getString("session_title")),
+                rs.getString("session_title"),
+                rs.getString("presentation_category")),
         part.name());
   }
 
   public record FootprintWeek(
-      Long weekId, int weekNumber, String phase, boolean isPresentationWeek, String sessionTitle) {}
+      Long weekId,
+      int weekNumber,
+      String phase,
+      boolean isPresentationWeek,
+      String sessionTitle,
+      String presentationCategory) {}
 
   /**
    * 주차·파트별 일정 (회고 11·13번, 권민찬 추가). 그 파트 일정이 없으면 제목·마감이 null이고, 없는 주차 ID는 key가 없다.
