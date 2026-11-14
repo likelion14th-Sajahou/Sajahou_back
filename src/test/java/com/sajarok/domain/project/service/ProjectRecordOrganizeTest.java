@@ -117,11 +117,10 @@ class ProjectRecordOrganizeTest {
   }
 
   @Test
-  @DisplayName(
-      "31번: 답한(ANSWERED) 질문만 AI에 넘기고, 사용자가 이미 쓴 칸(did)은 AI 제안 대신 원문을, 빈 칸은 null과 blanks로 준다")
+  @DisplayName("31번: 답한(ANSWERED) 질문만 AI에 넘기고, AI가 null로 준 빈 칸은 null과 blanks로 준다")
   @SuppressWarnings("unchecked")
-  void organize_keepsWrittenFieldsAndPassesOnlyAnswered() {
-    ProjectRecord record = record("11/3 기획 회의", "내가 쓴 한 일");
+  void organize_passesOnlyAnsweredAndReturnsBlanks() {
+    ProjectRecord record = record("11/3 기획 회의", null);
     when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
     QuestionView answered = question("내 역할", QuestionStatus.ANSWERED);
     when(aiQuestionService.findAll(QuestionOwner.projectRecord(77L)))
@@ -133,11 +132,43 @@ class ProjectRecordOrganizeTest {
     ArgumentCaptor<List<QuestionView>> captor = ArgumentCaptor.forClass(List.class);
     verify(recordOrganizer).organize(eq(record), captor.capture(), anyList());
     assertThat(captor.getValue()).containsExactly(answered);
-    assertThat(response.did()).isEqualTo("내가 쓴 한 일");
     assertThat(response.concern()).isEqualTo("AI가 쓴 고민");
     assertThat(response.decision()).isNull();
     assertThat(response.result()).isEqualTo("AI가 쓴 결과");
     assertThat(response.blanks()).containsExactly("decision", "nextStep");
+  }
+
+  @Test
+  @DisplayName("31번 QA 3: 사용자가 이미 쓴 칸(did)에 AI가 값을 주면(답으로 보강) 원문 대신 그 값이 응답에 나온다")
+  void organize_writtenField_usesAiSuggestion() {
+    ProjectRecord record = record("11/3 기획 회의", "내가 쓴 한 일");
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+    when(aiQuestionService.findAll(QuestionOwner.projectRecord(77L)))
+        .thenReturn(List.of(question("내 역할·과정", QuestionStatus.ANSWERED)));
+    Map<String, String> s = suggestion();
+    s.put("did", "내가 쓴 한 일. 답에서 나온 내용");
+    when(recordOrganizer.organize(eq(record), anyList(), anyList())).thenReturn(s);
+
+    RecordOrganizeResponse response = projectRecordService.organize(1L, 77L);
+
+    assertThat(response.did()).isEqualTo("내가 쓴 한 일. 답에서 나온 내용");
+  }
+
+  @Test
+  @DisplayName("31번 QA 3: 사용자가 이미 쓴 칸을 AI가 null로 주면 원문이 나오고, blanks에 넣지 않는다")
+  void organize_writtenFieldNullFromAi_keepsOriginal() {
+    ProjectRecord record = record("11/3 기획 회의", "내가 쓴 한 일");
+    when(projectRecordRepository.findByIdAndUserId(77L, 1L)).thenReturn(Optional.of(record));
+    when(aiQuestionService.findAll(QuestionOwner.projectRecord(77L)))
+        .thenReturn(List.of(question("내 역할·과정", QuestionStatus.ANSWERED)));
+    Map<String, String> s = suggestion();
+    s.put("did", null);
+    when(recordOrganizer.organize(eq(record), anyList(), anyList())).thenReturn(s);
+
+    RecordOrganizeResponse response = projectRecordService.organize(1L, 77L);
+
+    assertThat(response.did()).isEqualTo("내가 쓴 한 일");
+    assertThat(response.blanks()).doesNotContain("did");
   }
 
   @Test
