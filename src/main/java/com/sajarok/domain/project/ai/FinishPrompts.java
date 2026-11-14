@@ -5,6 +5,7 @@ import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.question.dto.QuestionView;
 import java.util.List;
+import java.util.Map;
 
 /** 프로젝트 마치기(32·33번) 프롬프트. 호출은 FinishQuestionGenerator·PortfolioDrafter에서 트랜잭션 밖에서 한다. */
 public final class FinishPrompts {
@@ -98,10 +99,17 @@ public final class FinishPrompts {
       2. 자료에 없는 기능·사실도 지어내지 않는다.
       3. 항목은 [항목 목록]의 6개이고 key를 그대로 쓴다:
          role(내 역할) / contribution(주요 기여) / problem(문제와 해결) / result(결과) / artifact(산출물) / learned(배운 점)
-      4. 항목의 근거가 기록과 답에 없으면 body를 null로 둔다. 비슷한 내용으로 채우지 않는다.
+      4. [마치기 답]에 답이 있으면 말투(구어체·줄임말·이모티콘)와 상관없이 규칙 5의 항목에 반드시 반영한다.
+         문체만 "~했습니다"로 정리하고, 답에 없는 말은 붙이거나 부풀리지 않는다.
+         조사·어미만 자연스럽게 다듬는다(예: "사용자 50명 넘음!!" → "사용자가 50명을 넘었습니다"). 단어·숫자·내용은 그대로 둔다.
+         마치기 답도 기록도 없는 항목만 body를 null로 둔다. 비슷한 내용으로 채우지 않는다.
+         [프로젝트]의 역할(PM, BACKEND 등)만으로 role을 쓰지 않는다. 서버가 "역할:" 줄로 이미 붙인다.
+         role은 [마치기 답]의 내 역할 답이나, 기록에서 맡은 범위가 드러날 때만 쓴다.
+         [다시 채울 항목]이 있으면 거기 적힌 항목을 이 규칙대로 반드시 채운다.
       5. 마치기 답은 같은 항목에 먼저 쓴다:
          내 역할 → role, 최종 결과 → result, 근거와 숫자 → result에 "숫자로 보면: …" 한 줄로,
          산출물 요청 → artifact, 배운 점 → learned.
+         "숫자로 보면" 줄도 규칙 4대로 조사·어미를 다듬어 "~했습니다" 문장으로 끝낸다(예: "숫자로 보면: 2주 동안 API 12개를 만들었습니다.").
       6. 주요 기여(contribution)는 기록마다 "- MM/DD 한 일" 형식의 목록으로 쓴다 (예: "- 11/03 팀 API 연동을 맡았습니다.").
          문제와 해결(problem)도 "- " 목록으로 2 ~ 4줄.
       7. body에는 본문만 쓴다. 제목(# / ##), 기간·역할 줄은 쓰지 않는다(서버가 붙인다).
@@ -124,9 +132,28 @@ public final class FinishPrompts {
         {"key":"learned","body":"명세를 먼저 맞추면 연동이 빨라진다는 것을 배웠습니다."}
       ]}
 
+      [좋은 예 2] 편한 말투의 답 (해당 항목만 보임)
+      입력:
+        [마치기 답] - 최종 결과
+                    질문: 최종 결과는 어땠어요? 시연, 수상, 사용자 반응처럼 확인할 수 있는 것만요.
+                    답: 공모전 나가서 3등 했답니당ㅎㅎ
+      출력: {"key":"result","body":"공모전에 나가 3등을 했습니다."}
+
+      [좋은 예 3] 짧은 명사형 답 (해당 항목만 보임)
+      입력:
+        [마치기 답] - 최종 결과
+                    답: 수상함
+      출력: {"key":"result","body":"수상했습니다."}
+
       [나쁜 예]
       {"key":"result","body":"서비스 사용자 200명을 모았습니다."}
       → 기록과 답에 "200명"이 없으면 지어낸 결과다. 근거가 없으면 null로 둔다.
+      {"key":"result","body":null}
+      → [마치기 답]에 "공모전 나가서 3등 했답니당ㅎㅎ"가 있는데 말투 때문에 근거로 보지 않았다. 답이 있으면 반드시 반영한다.
+      {"key":"result","body":"공모전에서 우수한 성과를 거뒀습니다."}
+      → "3등"을 "우수한 성과"로 부풀렸다. 답에 있는 사실을 그대로 쓴다.
+      {"key":"result","body":"교내 SW 공모전에서 3등을 했습니다."}
+      → 답에 없는 대회 이름("교내 SW")을 붙였다.
 
       [애매할 때]
       - 기록마다 역할이 흩어져 있어 한 문장으로 정리하기 어려우면 role은 null로 둔다(마치기 답이 있으면 그 답을 쓴다).
@@ -134,7 +161,7 @@ public final class FinishPrompts {
       - 최종 결과는 없고 숫자만 있으면 result에 "숫자로 보면: …" 한 줄만 쓴다.
 
       [출력 형식]
-      아래 JSON으로만 답한다. 다른 글은 쓰지 않는다. 6개 key를 모두, 위 순서대로 쓰고 근거가 없으면 body는 null.
+      아래 JSON으로만 답한다. 다른 글은 쓰지 않는다. 6개 key를 모두, 위 순서대로 쓴다. 마치기 답도 기록도 없는 항목만 body를 null로 둔다.
       - role: 내 역할. 프로젝트 전체에서 맡은 범위 한 문장
       - contribution: 주요 기여. "- MM/DD 한 일" 목록
       - problem: 문제와 해결. 부딪힌 문제와 해결 방법 "- " 목록
@@ -143,6 +170,32 @@ public final class FinishPrompts {
       - learned: 배운 점. 다음 프로젝트에 가져갈 것
       {"sections":[{"key":"role","body":"..."},{"key":"contribution","body":"..."},{"key":"problem","body":null},{"key":"result","body":"..."},{"key":"artifact","body":null},{"key":"learned","body":"..."}]}
       """;
+
+  /**
+   * 33번 재요청 user 프롬프트: 첫 요청 뒤에 [다시 채울 항목]을 붙인다.
+   *
+   * @param keys 답이 있는데 비어 온 항목 key (PortfolioDraftResult.KEYS 순서)
+   */
+  public static String portfolioRetryUser(String firstUser, List<String> keys) {
+    StringBuilder sb = new StringBuilder(firstUser);
+    sb.append("\n[다시 채울 항목]\n");
+    keys.forEach(
+        key ->
+            sb.append(key)
+                .append('(')
+                .append(SECTION_LABELS.get(key))
+                .append("): [마치기 답]에 답이 있는데 비어 있었다. 규칙 4대로 반드시 반영한다.\n"));
+    return sb.toString();
+  }
+
+  private static final Map<String, String> SECTION_LABELS =
+      Map.of(
+          "role", "내 역할",
+          "contribution", "주요 기여",
+          "problem", "문제와 해결",
+          "result", "결과",
+          "artifact", "산출물",
+          "learned", "배운 점");
 
   /**
    * @param records 고른 기록 (만든 순서)
