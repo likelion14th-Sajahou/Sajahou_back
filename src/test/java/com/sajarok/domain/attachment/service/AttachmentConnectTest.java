@@ -104,7 +104,8 @@ class AttachmentConnectTest {
     Long attachmentId = registerLink(userId);
     Long oldPosting = insertPosting();
     Long newPosting = insertPosting();
-    attachmentService.connect(userId, List.of(attachmentId), AttachmentOwner.jobPosting(oldPosting));
+    attachmentService.connect(
+        userId, List.of(attachmentId), AttachmentOwner.jobPosting(oldPosting));
     flushAndClear();
 
     attachmentService.connectToJobPosting(userId, List.of(attachmentId), newPosting);
