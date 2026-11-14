@@ -16,7 +16,7 @@ public record RecordOrganizeResponse(
     String nextStep,
     List<String> blanks) {
 
-  /** 사용자가 이미 쓴 칸은 AI 제안 대신 원문을 그대로 쓴다(사용자 글이 바뀌지 않게). */
+  /** AI 제안이 있으면 그 값을 쓰고(이미 쓴 칸도 답으로 보강됨), null이면 사용자 원문을 써서 사용자 글이 사라지지 않게 한다. */
   public static RecordOrganizeResponse of(ProjectRecord record, Map<String, String> suggested) {
     Map<String, String> written = new LinkedHashMap<>();
     written.put("did", record.getDid());
@@ -28,7 +28,7 @@ public record RecordOrganizeResponse(
     Map<String, String> merged = new LinkedHashMap<>();
     List<String> blanks = new ArrayList<>();
     for (String key : RecordOrganizeResult.KEYS) {
-      String value = written.get(key) != null ? written.get(key) : suggested.get(key);
+      String value = suggested.get(key) != null ? suggested.get(key) : written.get(key);
       merged.put(key, value);
       if (value == null) {
         blanks.add(key);
