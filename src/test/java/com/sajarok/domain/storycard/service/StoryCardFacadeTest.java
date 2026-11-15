@@ -12,6 +12,7 @@ import com.sajarok.domain.competency.service.CompetencyService;
 import com.sajarok.domain.project.entity.ProjectCategory;
 import com.sajarok.domain.project.service.ProjectRecordService;
 import com.sajarok.domain.project.service.ProjectService;
+import com.sajarok.domain.retrospective.service.RetrospectiveService;
 import com.sajarok.domain.storycard.dto.RecordCardSource;
 import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
 import com.sajarok.domain.storycard.dto.StoryCardDetailResponse.CompetencyView;
@@ -55,6 +56,7 @@ class StoryCardFacadeTest {
   @Mock private ProjectService projectService;
   @Mock private CompetencyService competencyService;
   @Mock private WeekService weekService;
+  @Mock private RetrospectiveService retrospectiveService;
 
   @InjectMocks private StoryCardFacade storyCardFacade;
 
@@ -96,15 +98,29 @@ class StoryCardFacadeTest {
   }
 
   @Test
-  @DisplayName("회고 카드는 카드만 지우고, 기록 서비스는 부르지 않는다")
-  void retrospectiveCard_deletesCardOnly() {
+  @DisplayName("회고 카드를 지우면 그 회고를 처음 시작한 것처럼 되돌린다 (카드·자료·질문·첨부 정리는 회고 서비스가)")
+  void retrospectiveCard_restartsRetrospective() {
     StoryCard card = retrospectiveCard();
     when(storyCardRepository.findByIdAndUserId(301L, ME)).thenReturn(Optional.of(card));
 
     storyCardFacade.delete(ME, 301L);
 
-    verify(storyCardRepository).delete(card);
+    verify(retrospectiveService).restartByCardDeletion(ME, 101L);
+    verify(storyCardRepository, never()).delete(any(StoryCard.class));
     verifyNoInteractions(projectRecordService);
+  }
+
+  @Test
+  @DisplayName("회고와 연결이 끊긴 회고 카드면 카드만 지운다")
+  void retrospectiveCardWithoutRetrospective_deletesCardOnly() {
+    StoryCard card = retrospectiveCard();
+    ReflectionTestUtils.setField(card, "retrospectiveId", null);
+    when(storyCardRepository.findByIdAndUserId(301L, ME)).thenReturn(Optional.of(card));
+
+    storyCardFacade.delete(ME, 301L);
+
+    verify(storyCardRepository).delete(card);
+    verifyNoInteractions(retrospectiveService, projectRecordService);
   }
 
   @Test
@@ -116,6 +132,7 @@ class StoryCardFacadeTest {
 
     verify(projectRecordService).delete(ME, 77L);
     verify(storyCardRepository, never()).delete(any(StoryCard.class));
+    verifyNoInteractions(retrospectiveService);
   }
 
   @Test
@@ -128,7 +145,7 @@ class StoryCardFacadeTest {
         .extracting("errorCode")
         .isEqualTo(ErrorCode.NOT_FOUND);
     verify(storyCardRepository, never()).delete(any(StoryCard.class));
-    verifyNoInteractions(projectRecordService);
+    verifyNoInteractions(projectRecordService, retrospectiveService);
   }
 
   @Test

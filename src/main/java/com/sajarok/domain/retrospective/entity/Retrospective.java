@@ -108,6 +108,37 @@ public class Retrospective extends BaseTimeEntity {
     if (status == RetrospectiveStatus.COMPLETED) {
       throw new BusinessException(ErrorCode.INVALID_STATE);
     }
+    clearToStep2();
+  }
+
+  /**
+   * 24번 회고 카드 삭제: 처음 시작한 것처럼 빈 2단계로 되돌린다. 완료한 회고도 작성 중으로 돌아간다. 질문·카드·첨부 정리는 서비스가 한다.
+   *
+   * <p>completedAt(처음 완료한 시각)은 지우지 않는다. '한 번 완료한 회고'라는 표시로 남겨, 마감 + 7일이 지났어도 다시 쓰고 완료할 수 있게 하고(지운
+   * 순간 다시 못 쓰게 되는 것을 막음), 지각 여부도 처음 완료 기준을 그대로 쓴다.
+   */
+  public void restart() {
+    this.status = RetrospectiveStatus.IN_PROGRESS;
+    clearToStep2();
+  }
+
+  /** 한 번이라도 완료한 회고면 true (카드를 지워 다시 쓰는 중이어도) */
+  public boolean wasCompleted() {
+    return status == RetrospectiveStatus.COMPLETED || completedAt != null;
+  }
+
+  /**
+   * 카드를 지워 처음으로 돌아간 뒤({@link #restart}) 아직 아무것도 저장하지 않은 회고. 이번 주 화면(11번)·홈에서는 처음 쓰는 것처럼 '시작 전'으로 보여
+   * 준다. 한 번 저장(14번)하면 다시 '작성 중'으로 보인다.
+   */
+  public boolean isRestartedBlank() {
+    return status == RetrospectiveStatus.IN_PROGRESS
+        && !rested
+        && completedAt != null
+        && lastSavedAt == null;
+  }
+
+  private void clearToStep2() {
     this.currentStep = 2;
     this.hasPractice = null;
     this.practiceContent = null;

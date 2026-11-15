@@ -4,6 +4,7 @@ import com.sajarok.domain.competency.service.CompetencyService;
 import com.sajarok.domain.project.entity.ProjectCategory;
 import com.sajarok.domain.project.service.ProjectRecordService;
 import com.sajarok.domain.project.service.ProjectService;
+import com.sajarok.domain.retrospective.service.RetrospectiveService;
 import com.sajarok.domain.storycard.dto.StoryCardDetailResponse;
 import com.sajarok.domain.storycard.dto.StoryCardListResponse;
 import com.sajarok.domain.storycard.dto.StoryCardUpdateRequest;
@@ -33,16 +34,22 @@ public class StoryCardFacade {
   private final ProjectService projectService;
   private final CompetencyService competencyService;
   private final WeekService weekService;
+  private final RetrospectiveService retrospectiveService;
 
-  /** 24번: 카드 삭제. 프로젝트 카드는 기록째 지운다 */
+  /**
+   * 24번: 카드 삭제. 프로젝트 카드는 기록째 지운다. 회고 카드는 그 회고를 처음 시작한 것처럼 되돌린다(2단계 자료·AI 질문·첨부까지 지우고 작성 중 2단계로, 완료한
+   * 회고도 마찬가지).
+   */
   @Transactional
   public void delete(Long userId, Long cardId) {
     StoryCard card = findMyCard(userId, cardId);
 
     if (card.getType() == StoryCardType.PROJECT) {
       projectRecordService.delete(userId, card.getProjectRecordId());
+    } else if (card.getRetrospectiveId() != null) {
+      retrospectiveService.restartByCardDeletion(userId, card.getRetrospectiveId());
     } else {
-      storyCardRepository.delete(card);
+      storyCardRepository.delete(card); // 회고와 연결이 끊긴 카드면 카드만 지운다
     }
   }
 
