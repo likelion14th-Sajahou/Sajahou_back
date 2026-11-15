@@ -74,6 +74,15 @@ public class ProjectService {
     return categories.isEmpty() ? Set.of() : EnumSet.copyOf(categories);
   }
 
+  /**
+   * 발표 주차 카드(발자국 cardIds·21번 weekNumber): 완료(DONE)한 내 프로젝트 ID → 행사 종류. 없으면 빈 Map. 스티커와 같은 기준이라 진행
+   * 중인 프로젝트는 넣지 않는다.
+   */
+  public Map<Long, ProjectCategory> findCompletedProjectCategories(Long userId) {
+    return projectRepository.findIdAndCategoryByUserIdAndStatus(userId, ProjectStatus.DONE).stream()
+        .collect(Collectors.toMap(ProjectCategoryRow::projectId, ProjectCategoryRow::category));
+  }
+
   /** 43번: 내 프로젝트 목록. 진행 중·완료로 나누고, 각각 만든 순서 최신순. */
   public ProjectListResponse getMyProjects(Long userId) {
     List<Project> projects = projectRepository.findAllByUserIdOrderByCreatedAtDescIdDesc(userId);

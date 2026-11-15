@@ -40,4 +40,11 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
           + " where p.userId = :userId and p.status = :status")
   List<ProjectCategory> findCategoriesByUserIdAndStatus(
       @Param("userId") Long userId, @Param("status") ProjectStatus status);
+
+  /** 이 상태인 내 프로젝트들의 ID와 행사 종류. 발표 주차 카드(발자국·21번 weekNumber)용으로 완료(DONE)를 넘긴다. */
+  @Query(
+      "select new com.sajarok.domain.project.repository.ProjectCategoryRow(p.id, p.category)"
+          + " from Project p where p.userId = :userId and p.status = :status")
+  List<ProjectCategoryRow> findIdAndCategoryByUserIdAndStatus(
+      @Param("userId") Long userId, @Param("status") ProjectStatus status);
 }
