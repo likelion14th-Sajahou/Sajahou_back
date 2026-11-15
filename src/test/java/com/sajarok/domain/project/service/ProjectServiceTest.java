@@ -229,6 +229,19 @@ class ProjectServiceTest {
     assertThat(projectService.findCompletedCategories(1L)).isEmpty();
   }
 
+  @Test
+  @DisplayName("발표 주차 카드: 완료한 내 프로젝트의 ID → 행사 종류를 돌려준다 (진행 중은 조회 조건에서 빠짐)")
+  void findCompletedProjectCategories_returnsIdToCategory() {
+    when(projectRepository.findIdAndCategoryByUserIdAndStatus(1L, ProjectStatus.DONE))
+        .thenReturn(
+            List.of(
+                new ProjectCategoryRow(3L, ProjectCategory.IDEATHON),
+                new ProjectCategoryRow(5L, ProjectCategory.JUNGKATHON)));
+
+    assertThat(projectService.findCompletedProjectCategories(1L))
+        .isEqualTo(Map.of(3L, ProjectCategory.IDEATHON, 5L, ProjectCategory.JUNGKATHON));
+  }
+
   /** 테스트용 프로젝트. id와 상태는 DB나 엔티티 메서드가 정하므로 테스트에서는 직접 넣는다. */
   private static Project project(Long id, String name, ProjectStatus status) {
     Project project =

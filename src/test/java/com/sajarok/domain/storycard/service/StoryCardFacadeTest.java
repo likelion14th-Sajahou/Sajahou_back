@@ -409,7 +409,7 @@ class StoryCardFacadeTest {
   }
 
   @Test
-  @DisplayName("21번: weekNumber로 거르고(프로젝트 카드는 주차가 없어 빠진다), 목록 카드에 주차 번호를 넣는다")
+  @DisplayName("21번: weekNumber로 거르고(발표 주차가 아니면 프로젝트 카드는 빠진다), 목록 카드에 주차 번호를 넣는다")
   void list_filterByWeekNumber() {
     twoPublishedCards();
     when(weekService.findWeekNumbers(List.of(10L))).thenReturn(Map.of(10L, 10));
@@ -420,5 +420,49 @@ class StoryCardFacadeTest {
     assertThat(week10.cards()).extracting(CardItem::cardId).containsExactly(301L);
     assertThat(week10.cards().get(0).weekNumber()).isEqualTo(10);
     assertThat(week9.totalCount()).isZero();
+  }
+
+  /** 21번 발표 주차 준비: 회고 카드(301)는 38주차, 38주차는 중커톤 발표 주차 */
+  private void week38IsJungkathonPresentation(Map<Long, ProjectCategory> completedProjects) {
+    twoPublishedCards();
+    when(weekService.findWeekNumbers(List.of(10L))).thenReturn(Map.of(10L, 38));
+    when(weekService.findPresentationCategory(38)).thenReturn(Optional.of("JUNGKATHON"));
+    when(projectService.findCompletedProjectCategories(ME)).thenReturn(completedProjects);
+  }
+
+  @Test
+  @DisplayName("21번: 발표 주차면 그 행사를 완료한 프로젝트의 카드도 그 주차 카드로 준다 (카드의 weekNumber는 null 그대로)")
+  void list_presentationWeek_includesCompletedEventProjectCards() {
+    week38IsJungkathonPresentation(Map.of(3L, ProjectCategory.JUNGKATHON));
+    projectLookups();
+
+    StoryCardListResponse week38 = storyCardFacade.getList(ME, null, null, 38, null);
+
+    assertThat(week38.cards()).extracting(CardItem::cardId).containsExactly(412L, 301L);
+    assertThat(week38.cards().get(0).weekNumber()).isNull();
+    assertThat(week38.cards().get(1).weekNumber()).isEqualTo(38);
+  }
+
+  @Test
+  @DisplayName("21번: 발표 주차여도 type·competencyId 같은 다른 필터는 똑같이 적용한다")
+  void list_presentationWeek_otherFiltersStillApply() {
+    week38IsJungkathonPresentation(Map.of(3L, ProjectCategory.JUNGKATHON));
+
+    assertThat(storyCardFacade.getList(ME, StoryCardType.SESSION, null, 38, null).cards())
+        .extracting(CardItem::cardId)
+        .containsExactly(301L);
+    assertThat(storyCardFacade.getList(ME, null, 5L, 38, null).cards())
+        .extracting(CardItem::cardId)
+        .containsExactly(301L);
+  }
+
+  @Test
+  @DisplayName("21번: 발표 주차여도 다른 행사이거나 완료하지 않은 프로젝트의 카드는 넣지 않는다")
+  void list_presentationWeek_onlyCompletedProjectsOfThatEvent() {
+    week38IsJungkathonPresentation(Map.of(3L, ProjectCategory.HACKATHON));
+
+    assertThat(storyCardFacade.getList(ME, null, null, 38, null).cards())
+        .extracting(CardItem::cardId)
+        .containsExactly(301L);
   }
 }

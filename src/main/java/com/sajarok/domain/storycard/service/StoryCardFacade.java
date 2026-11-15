@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -136,6 +137,10 @@ public class StoryCardFacade {
                 .distinct()
                 .toList());
 
+    // 발표 주차면 그 행사를 완료한 프로젝트의 카드도 그 주차 카드로 친다 (발자국 cardIds와 같은 기준)
+    Set<Long> eventProjectIds =
+        weekNumber == null ? Set.of() : completedEventProjectIds(userId, weekNumber);
+
     List<StoryCard> cards =
         published.stream()
             .filter(card -> type == null || card.getType() == type)
@@ -144,7 +149,10 @@ public class StoryCardFacade {
                 card ->
                     weekNumber == null
                         || (card.getWeekId() != null
-                            && weekNumber.equals(weekNumbers.get(card.getWeekId()))))
+                            && weekNumber.equals(weekNumbers.get(card.getWeekId())))
+                        || (card.getType() == StoryCardType.PROJECT
+                            && card.getProjectId() != null
+                            && eventProjectIds.contains(card.getProjectId())))
             .filter(
                 card ->
                     q == null
@@ -179,5 +187,18 @@ public class StoryCardFacade {
                         card.getWeekId() == null ? null : weekNumbers.get(card.getWeekId())))
             .toList();
     return new StoryCardListResponse(items.size(), items);
+  }
+
+  /** 그 주차가 발표 주차면, 그 행사를 완료(DONE)한 내 프로젝트 ID. 발표 주차가 아니면 빈 Set */
+  private Set<Long> completedEventProjectIds(Long userId, int weekNumber) {
+    return weekService
+        .findPresentationCategory(weekNumber)
+        .map(
+            category ->
+                projectService.findCompletedProjectCategories(userId).entrySet().stream()
+                    .filter(entry -> entry.getValue().name().equals(category))
+                    .map(Map.Entry::getKey)
+                    .collect(Collectors.toSet()))
+        .orElse(Set.of());
   }
 }

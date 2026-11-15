@@ -11,6 +11,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -123,6 +124,26 @@ public class WeekService {
                 rs.getString("session_title"),
                 rs.getString("presentation_category")),
         part.name());
+  }
+
+  /**
+   * 그 주차가 발표 주차면 발표하는 행사 종류(IDEATHON·HACKATHON·JUNGKATHON), 아니면 빈 값. 21번 카드 목록 weekNumber에서 발표 주차에
+   * 프로젝트 카드를 넣을 때 쓴다 (권민찬 추가).
+   */
+  public Optional<String> findPresentationCategory(int weekNumber) {
+    return jdbcTemplate
+        .query(
+            """
+                SELECT presentation_category
+                FROM week
+                WHERE week_number = ?
+                  AND is_presentation_week = TRUE
+                  AND presentation_category IS NOT NULL
+                """,
+            (rs, rowNum) -> rs.getString("presentation_category"),
+            weekNumber)
+        .stream()
+        .findFirst();
   }
 
   public record FootprintWeek(
