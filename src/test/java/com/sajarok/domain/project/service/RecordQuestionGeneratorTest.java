@@ -56,7 +56,7 @@ class RecordQuestionGeneratorTest {
   }
 
   @Test
-  @DisplayName("AI 응답이 검증을 통과하면 질문으로 쓰고, 원문에 없는 quote는 null로 바꾼다")
+  @DisplayName("AI 응답이 검증을 통과하면 질문으로 쓰고, 원문에 없는 quote는 null로 바꾼다 (첨부가 하나라 출처는 그 첨부)")
   void generate_validResponse_returnsCheckedQuestions() {
     aiReturns(
         new RecordQuestionResult(
@@ -74,7 +74,7 @@ class RecordQuestionGeneratorTest {
     assertThat(v.insufficientMaterial()).isFalse();
     assertThat(v.questions())
         .extracting(NewQuestion::quote, NewQuestion::sourceAttachmentId)
-        .containsExactly(tuple("시안 A 회고 마감 강조, 시안 B 프로젝트 함께 보기", 602L), tuple(null, null));
+        .containsExactly(tuple("시안 A 회고 마감 강조, 시안 B 프로젝트 함께 보기", 602L), tuple(null, 602L));
   }
 
   @Test

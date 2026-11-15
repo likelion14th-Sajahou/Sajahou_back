@@ -54,14 +54,14 @@ class RecordQuestionResultTest {
   }
 
   @Test
-  @DisplayName("30번 검증 QA 2: 원문에 없는 quote는 quote·출처를 null로 바꾸고, 질문 글은 태그별 고정 질문으로 바꾼다")
+  @DisplayName("30번 검증 QA 2: 원문에 없는 quote는 null로 바꾸고(첨부가 하나면 출처는 그 첨부), 질문 글은 태그별 고정 질문으로 바꾼다")
   void validate_dropsUnquotedEvidence() {
     Validated v =
         new RecordQuestionResult(false, List.of(q("근거와 숫자", "클릭률 30% 상승", 601L)))
             .validate(MEMO, ATTACHMENTS);
 
     assertThat(v.questions().get(0).quote()).isNull();
-    assertThat(v.questions().get(0).sourceAttachmentId()).isNull();
+    assertThat(v.questions().get(0).sourceAttachmentId()).isEqualTo(601L);
     assertThat(v.questions().get(0).content()).isEqualTo("결과나 팀·사용자 반응이 있었나요? 확인한 것만요.");
   }
 
@@ -158,7 +158,8 @@ class RecordQuestionResultTest {
   }
 
   @Test
-  @DisplayName("30번 검증: 넘겨주지 않은 첨부 번호여도 질문은 살리고, 출처는 quote가 실제로 있는 곳으로 바로잡는다 (어디에도 없으면 null)")
+  @DisplayName(
+      "30번 검증: 넘겨주지 않은 첨부 번호여도 질문은 살리고, 출처는 quote가 실제로 있는 곳으로 바로잡는다 (어디에도 없으면 quote는 null)")
   void validate_unknownAttachment_keepsQuestion() {
     Validated v =
         new RecordQuestionResult(
@@ -167,7 +168,25 @@ class RecordQuestionResultTest {
 
     assertThat(v.questions())
         .extracting(NewQuestion::tag, NewQuestion::quote, NewQuestion::sourceAttachmentId)
-        .containsExactly(tuple("선택의 이유", "시안", null), tuple("근거와 숫자", null, null));
+        .containsExactly(tuple("선택의 이유", "시안", null), tuple("근거와 숫자", null, 601L));
+  }
+
+  @Test
+  @DisplayName("30번 검증: quote가 없는 질문은 AI가 읽은 첨부가 하나면 그 첨부를 출처로 두고, 첨부가 없거나 둘 이상이면 출처를 비운다")
+  void validate_noQuote_sourceIsOnlyAttachment() {
+    RecordQuestionResult result =
+        new RecordQuestionResult(
+            false, List.of(q("근거와 숫자", null, null), q("내 역할·과정", "나는 시안 2개 준비", null)));
+
+    assertThat(result.validate(MEMO, ATTACHMENTS).questions())
+        .extracting(NewQuestion::quote, NewQuestion::sourceAttachmentId)
+        .containsExactly(tuple(null, 601L), tuple("나는 시안 2개 준비", null));
+    assertThat(result.validate(MEMO, Map.of()).questions())
+        .extracting(NewQuestion::sourceAttachmentId)
+        .containsOnlyNulls();
+    assertThat(result.validate(MEMO, Map.of(601L, "홈 화면", 602L, "시안 A")).questions())
+        .extracting(NewQuestion::sourceAttachmentId)
+        .containsOnlyNulls();
   }
 
   @Test

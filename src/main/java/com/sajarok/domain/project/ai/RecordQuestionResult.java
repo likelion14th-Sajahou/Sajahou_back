@@ -56,6 +56,7 @@ public record RecordQuestionResult(Boolean insufficientMaterial, List<Question> 
    *   <li>출처(sourceAttachmentId)는 AI가 적은 번호가 아니라 quote가 실제로 있는 곳으로 정한다(메모·5칸이면 null, 첨부면 그 번호)
    *   <li>quote가 메모·5칸·첨부 어디에도 없으면 quote·sourceAttachmentId를 null로 바꾸고(명세: 원문에 없으면 null), 질문 글은 태그별
    *       고정 질문으로 바꾼다
+   *   <li>quote가 없는 질문(자료 전체에서 묻는 질문)은 AI가 읽은 첨부가 하나뿐이면 그 첨부를 출처로 둔다. 응답의 quote는 "전체에서 물어봐요"
    * </ul>
    *
    * 남은 질문이 없으면 AI_FAILED, 4개가 넘으면 앞에서 4개만 쓴다.
@@ -81,7 +82,8 @@ public record RecordQuestionResult(Boolean insufficientMaterial, List<Question> 
     if (usable.size() < Math.min(list.size(), MAX_QUESTIONS)) {
       log.warn("AI 기록 질문 일부를 버림 받은 {}개 → 쓴 {}개 내용={}", list.size(), usable.size(), list);
     }
-    return new Validated(false, usable);
+    return new Validated(
+        false, NewQuestion.withWholeMaterialSource(usable, attachmentTexts.keySet()));
   }
 
   /** 쓸 수 없는 질문이면 null */

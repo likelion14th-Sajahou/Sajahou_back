@@ -45,7 +45,7 @@ class RetroQuestionResultTest {
     assertThat(v.questions())
         .startsWith(
             new NewQuestion("근거와 숫자", MATERIAL, null, "쿼리 수가 얼마나 줄었나요?"),
-            new NewQuestion("세션과 연결", null, null, "이번 세션에서 배운 내용 중 실습이나 과제와 이어지는 부분이 있었나요?"));
+            new NewQuestion("세션과 연결", null, 502L, "이번 세션에서 배운 내용 중 실습이나 과제와 이어지는 부분이 있었나요?"));
   }
 
   @Test
@@ -57,7 +57,7 @@ class RetroQuestionResultTest {
             List.of(new Question("역량 신호", "페이징이랑 fetch join 같이 쓰기", null, "이 말을 듣고 어떤 점을 바꿨나요?")));
 
     assertThat(v.questions())
-        .startsWith(new NewQuestion("역량 신호", null, null, "이번 세션에서 직접 문제를 풀거나 팀과 함께 정한 일이 있었나요?"));
+        .startsWith(new NewQuestion("역량 신호", null, 502L, "이번 세션에서 직접 문제를 풀거나 팀과 함께 정한 일이 있었나요?"));
   }
 
   @Test
@@ -125,6 +125,32 @@ class RetroQuestionResultTest {
             tuple("근거와 숫자", "쿼리 수가 얼마나 줄었나요?"),
             tuple("빠진 칸", "과제 칸을 더 채워 주세요."),
             tuple("느낀 점", "N+1을 고치며 새로 안 점이 있나요?"));
+  }
+
+  @Test
+  @DisplayName("quote가 없는 질문은 AI가 읽은 첨부가 하나면 그 첨부를 출처로 두고, 첨부가 없거나 둘 이상이면 출처를 비운다")
+  void noQuote_sourceIsOnlyAttachment() {
+    RetroQuestionResult result =
+        new RetroQuestionResult(
+            false,
+            List.of(
+                new Question("빠진 칸", null, null, "과제 칸을 더 채워 주세요."),
+                new Question("근거와 숫자", MATERIAL, null, "쿼리 수가 얼마나 줄었나요?")));
+    RetrospectiveType session = RetrospectiveType.SESSION;
+
+    assertThat(result.validate(MATERIAL, ATTACHMENTS, session).questions())
+        .extracting(NewQuestion::tag, NewQuestion::quote, NewQuestion::sourceAttachmentId)
+        .containsExactly(
+            tuple("빠진 칸", null, 502L), tuple("근거와 숫자", MATERIAL, null), tuple("느낀 점", null, 502L));
+    assertThat(result.validate(MATERIAL, Map.of(), session).questions())
+        .extracting(NewQuestion::sourceAttachmentId)
+        .containsOnlyNulls();
+    assertThat(
+            result
+                .validate(MATERIAL, Map.of(502L, "지연 로딩", 503L, "fetch join"), session)
+                .questions())
+        .extracting(NewQuestion::sourceAttachmentId)
+        .containsOnlyNulls();
   }
 
   @Test
