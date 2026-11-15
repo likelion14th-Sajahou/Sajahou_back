@@ -7,11 +7,11 @@ import com.sajarok.domain.question.entity.QuestionOwner;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/** 질문 응답 모양: quote가 없는 질문은 "전체에서 물어봐요"로 내보낸다. */
+/** 질문 응답 모양: quote가 없는 질문은 "전체"로 내보낸다. */
 class QuestionViewTest {
 
   @Test
-  @DisplayName("17·30번: quote가 없는 질문은 \"전체에서 물어봐요\"로 내보내고, 출처 첨부는 그대로 둔다 (DB에는 null 그대로)")
+  @DisplayName("17·30번: quote가 없는 질문은 \"전체\"로 내보내고, 출처 첨부는 그대로 둔다 (DB에는 null 그대로)")
   void from_noQuote_wholeMaterial() {
     AiQuestion q =
         AiQuestion.create(
@@ -19,13 +19,13 @@ class QuestionViewTest {
 
     QuestionView view = QuestionView.from(q);
 
-    assertThat(view.quote()).isEqualTo("전체에서 물어봐요");
+    assertThat(view.quote()).isEqualTo("전체");
     assertThat(view.sourceAttachmentId()).isEqualTo(62L);
     assertThat(q.getQuote()).isNull();
   }
 
   @Test
-  @DisplayName("17·30번: 첨부도 모르면 quote는 \"전체에서 물어봐요\", 출처는 null")
+  @DisplayName("17·30번: 첨부도 모르면 quote는 \"전체\", 출처는 null")
   void from_noQuoteNoSource() {
     AiQuestion q =
         AiQuestion.create(QuestionOwner.projectRecord(77L), 1, "근거와 숫자", null, null, "결과가 있었나요?");
