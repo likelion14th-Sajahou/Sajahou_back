@@ -24,6 +24,7 @@ public record AnswerDraftResult(List<Piece> segments) {
   private static final String TEXT = "text";
   private static final String BLANK = "blank";
   private static final int MAIN_SOURCE = 1;
+  private static final Set<String> BLANK_SLOTS = Set.of("situation", "action", "reason", "result");
   private static final Segment RESULT_BLANK =
       new Segment(BLANK, null, null, "result", "결과 · 숫자나 받은 반응을 채워 주세요");
 
@@ -41,6 +42,9 @@ public record AnswerDraftResult(List<Piece> segments) {
    *
    * <p>추천 카드에 결과가 없는데 AI가 결과 빈칸을 빠뜨리면(M-10) 서버가 빈칸을 넣는다. 시연 중 실패보다 낫다고 보고 AI_FAILED로 막지 않는다.
    *
+   * <p>빈칸 slot이 situation / action / reason / result가 아니면(예: "다른 경험 연결" 자리에 만든 빈칸) 그 빈칸만 버리고 나머지는
+   * 살린다. 답 전체를 실패시키지 않는다(#86 공고 분석과 같은 방식). 남은 조각이 없으면 AI_FAILED.
+   *
    * @param mainCardHasResult 출처 (1) 추천 카드에 결과가 있는지
    */
   public AnswerDraft toDraft(
@@ -52,7 +56,16 @@ public record AnswerDraftResult(List<Piece> segments) {
       throw new BusinessException(ErrorCode.AI_FAILED);
     }
     Set<Integer> sourceNos = sources.stream().map(Source::no).collect(Collectors.toSet());
-    List<Segment> checked = segments.stream().map(p -> check(p, sourceNos)).toList();
+    List<Segment> all = segments.stream().map(p -> check(p, sourceNos)).toList();
+    List<Segment> checked = all.stream().filter(AnswerDraftResult::isAllowedSlot).toList();
+    if (checked.size() < all.size()) {
+      log.warn(
+          "37번 정해진 자리가 아닌 빈칸을 버림 slots={}",
+          all.stream().filter(seg -> !isAllowedSlot(seg)).map(Segment::slot).toList());
+    }
+    if (checked.isEmpty()) {
+      throw new BusinessException(ErrorCode.AI_FAILED);
+    }
     if (!mainCardHasResult && checked.stream().noneMatch(AnswerDraftResult::isResultBlank)) {
       log.info("37번 추천 카드에 결과가 없는데 결과 빈칸이 없어 서버가 넣음");
       checked = withResultBlank(checked);
@@ -73,6 +86,11 @@ public record AnswerDraftResult(List<Piece> segments) {
     }
     result.add(at, RESULT_BLANK);
     return result;
+  }
+
+  /** 문장은 항상 통과. 빈칸은 카드 4칸(M-10) 자리만 */
+  private static boolean isAllowedSlot(Segment s) {
+    return !BLANK.equals(s.type()) || BLANK_SLOTS.contains(s.slot());
   }
 
   private static boolean isResultBlank(Segment s) {

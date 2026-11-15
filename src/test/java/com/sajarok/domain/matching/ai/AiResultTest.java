@@ -112,6 +112,45 @@ class AiResultTest {
   }
 
   @Test
+  @DisplayName(
+      "37번: 빈칸 slot이 situation·action·reason·result가 아니면(\"다른 경험 연결\" 자리 빈칸 등) 그 빈칸만 버리고 나머지는 살린다")
+  void answer_blankWithUnknownSlot_droppedOnly() {
+    AnswerDraft draft =
+        new AnswerDraftResult(
+                List.of(
+                    new Piece("text", "행동 문장", 1, null, null),
+                    new Piece("blank", null, null, "other_experience", "다른 경험 연결 · 채워 주세요"),
+                    new Piece("text", "회사 연결 문장", 3, null, null)))
+            .toDraft(SOURCES, List.of(), false, true);
+
+    assertThat(draft.segments())
+        .extracting(AnswerDraft.Segment::type, AnswerDraft.Segment::source)
+        .containsExactly(tuple("text", 1), tuple("text", 3));
+  }
+
+  @Test
+  @DisplayName("37번: 정해진 자리가 아닌 빈칸만 있어서 버리고 나면 남는 조각이 없으면 AI_FAILED")
+  void answer_onlyUnknownSlotBlanks_throwsAiFailed() {
+    assertAiFailed(
+        () ->
+            new AnswerDraftResult(
+                    List.of(new Piece("blank", null, null, "other", "다른 경험 · 채워 주세요")))
+                .toDraft(SOURCES, List.of(), false, true));
+  }
+
+  @Test
+  @DisplayName("37번 프롬프트: 같은 일의 보조 카드·빈칸 자리·hint 말투·엔드포인트·같은 문장 반복 규칙이 있다")
+  void answerSystem_hasWordingRules() {
+    assertThat(MatchingPrompts.ANSWER_DRAFT_SYSTEM)
+        .contains(
+            "(2)가 (1)과 같은 일을 적은 카드라",
+            "다른 경험 연결·회사 연결 자리는 빈칸으로 만들지 않는다",
+            "hint는 지원자에게 보이는 말이다",
+            "엔드포인트",
+            "같은 문장이나 같은 뜻의 구절을 두 번 쓰지 않는다");
+  }
+
+  @Test
   @DisplayName("37번 QA: 추천 카드에 결과가 없는데 결과 빈칸이 없으면, 출처 (1)이 아닌 첫 문장(회사 연결) 앞에 서버가 빈칸을 넣는다")
   void answer_mainCardWithoutResult_addsResultBlank() {
     AnswerDraft draft =
