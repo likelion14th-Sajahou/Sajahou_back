@@ -21,10 +21,10 @@ public record QuestionView(
     QuestionStatus status) {
 
   /**
-   * quote가 없는 질문에 대신 내보내는 문구. 화면은 "📄 파일 이름 · 전체에서 물어봐요"처럼 보여 준다. DB에는 null로 두고 응답에서만 바꾼다(원문 대조·AI
-   * 프롬프트에 섞이지 않게, 이 기능 전에 만든 질문에도 똑같이 보이게).
+   * quote가 없는 질문에 대신 내보내는 문구. 화면은 "📄 파일 이름 · 전체"처럼 보여 준다. DB에는 null로 두고 응답에서만 바꾼다(원문 대조·AI 프롬프트에
+   * 섞이지 않게, 이 기능 전에 만든 질문에도 똑같이 보이게).
    */
-  public static final String WHOLE_MATERIAL = "전체에서 물어봐요";
+  public static final String WHOLE_MATERIAL = "전체";
 
   public static QuestionView from(AiQuestion q) {
     String quote = q.getQuote();
