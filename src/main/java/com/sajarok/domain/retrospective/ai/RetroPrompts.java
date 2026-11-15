@@ -26,6 +26,9 @@ public final class RetroPrompts {
       2. 질문마다 [회고 자료]나 [첨부]의 특정 문장을 짚고 묻는다.
          그 문장을 quote에 한 글자도 바꾸지 않고 옮긴다. 첨부에서 옮겼으면 sourceAttachmentId에 그 첨부 번호를, 회고 자료면 null을 쓴다.
          quote는 사용자가 쓴 글이나 첨부에 있는 문장만 쓴다. "과제: 없음", "실습: 안 함", "없음"처럼 서버가 넣은 표시 줄은 quote로 쓰지 않는다.
+         quote는 내용이 담긴 한 문장으로 짚는다. "Github CI/CD"처럼 제목이나 단어만 있는 줄은 quote로 쓰지 않는다.
+         같은 quote를 두 질문에 쓰지 않는다. 질문마다 다른 문장을 짚는다.
+         [회고 자료]가 제목·단어처럼 짧으면 [첨부](세션 PDF 등)의 문장을 quote로 짚는다.
       3. 질문마다 행동(내가 한 일)·숫자·결정(무엇을 왜 골랐는지)·느낌(배운 점, 다음에 다르게 할 점) 중 하나만 묻는다.
       4. 자료에 없는 사실을 질문에 전제하지 않는다. "잘 해결했는데", "속도가 2배 빨라졌는데"처럼 자료에 없는 결과를 깔고 묻지 않는다.
       5. 태그 고르는 기준:
@@ -57,19 +60,20 @@ public final class RetroPrompts {
         [파트] 백엔드
         [회고 자료] 실습: 게시글 목록 API에서 N+1 문제를 fetch join으로 해결
                     메모: 이번 주 고민은 페이징과 fetch join을 같이 쓰는 것
-        [첨부] (502) FILE / SESSION_PDF / 7주차 JPA.pdf: 지연 로딩과 N+1 문제, fetch join, 배치 사이즈
+        [첨부] (502) FILE / SESSION_PDF / 7주차 JPA.pdf: N+1 문제는 fetch join이나 배치 사이즈로 줄일 수 있다.
+              컬렉션을 fetch join하면 페이징을 메모리에서 처리하므로 주의한다.
       출력:
       {"insufficientMaterial":false,"questions":[
         {"tag":"근거와 숫자","quote":"게시글 목록 API에서 N+1 문제를 fetch join으로 해결","sourceAttachmentId":null,
          "content":"고치기 전후로 쿼리 수가 실제로 얼마나 달라졌나요? 로그로 확인한 숫자가 있으면 알려 주세요."},
-        {"tag":"세션과 연결","quote":"지연 로딩과 N+1 문제, fetch join, 배치 사이즈","sourceAttachmentId":502,
-         "content":"세션에서 배운 방법 중 배치 사이즈 대신 fetch join을 고른 이유가 있나요?"},
+        {"tag":"세션과 연결","quote":"N+1 문제는 fetch join이나 배치 사이즈로 줄일 수 있다.","sourceAttachmentId":502,
+         "content":"세션에서 배운 두 방법 중 배치 사이즈 대신 fetch join을 고른 이유가 있나요?"},
         {"tag":"역량 신호","quote":"이번 주 고민은 페이징과 fetch join을 같이 쓰는 것","sourceAttachmentId":null,
          "content":"페이징과 fetch join을 같이 쓸 때 어떤 문제가 있었고, 어떻게 풀었어요?"},
-        {"tag":"느낀 점","quote":"게시글 목록 API에서 N+1 문제를 fetch join으로 해결","sourceAttachmentId":null,
-         "content":"N+1 문제를 직접 고쳐 보면서 새로 알게 된 점이나, 다음에는 다르게 해 보고 싶은 점이 있나요?"}
+        {"tag":"느낀 점","quote":"컬렉션을 fetch join하면 페이징을 메모리에서 처리하므로 주의한다.","sourceAttachmentId":502,
+         "content":"세션에서 컬렉션 fetch join은 페이징을 메모리에서 처리한다고 배웠는데, 다음에 목록 API를 만들 때 다르게 해 보고 싶은 점이 있나요?"}
       ]}
-      → 다른 질문 3개 뒤에 느낀 점 하나로 끝낸다.
+      → 다른 질문 3개 뒤에 느낀 점 하나로 끝낸다. 네 질문이 모두 다른 문장을 짚는다.
 
       [나쁜 예]
       {"tag":"근거와 숫자","quote":"응답 속도가 3배 빨라짐","sourceAttachmentId":null,"content":"3배 빨라졌다고 했는데 어떻게 측정했어요?"}
@@ -79,11 +83,20 @@ public final class RetroPrompts {
       {"tag":"역량 신호","quote":"이번 주 고민은 페이징과 fetch join을 같이 쓰는 것","sourceAttachmentId":null,"content":"이 말을 듣고 어떤 점을 바꿨나요?"}
       → "이 말"이 quote를 가리킨다. 질문만 보면 무엇을 묻는지 알 수 없다.
         이렇게 쓴다: "페이징과 fetch join을 같이 쓸 때 어떤 문제가 있었고, 어떻게 풀었어요?"
-      {"tag":"세션과 연결","quote":"지연 로딩과 N+1 문제, fetch join, 배치 사이즈","sourceAttachmentId":502,"content":"배치 사이즈를 안 쓰지 않은 이유가 있나요?"}
+      {"tag":"세션과 연결","quote":"N+1 문제는 fetch join이나 배치 사이즈로 줄일 수 있다.","sourceAttachmentId":502,"content":"배치 사이즈를 안 쓰지 않은 이유가 있나요?"}
       → 부정을 두 번 써서 뜻이 꼬였다. 이렇게 쓴다: "배치 사이즈 대신 fetch join을 고른 이유가 있나요?"
       {"tag":"빠진 칸","quote":"과제: 없음","sourceAttachmentId":null,"content":"과제에서 어떤 걸 했는지 알려 주세요."}
       → "과제: 없음"은 사용자가 쓴 글이 아니라 서버가 넣은 표시 줄이라 quote로 쓰지 않는다.
         과제가 없는 회고라 과제를 묻지도 않는다. 비어 있는 곳을 물을 때는 quote를 null로 둔다.
+      입력: [회고 자료] 실습: Github CI/CD
+            [첨부] (121) FILE / SESSION_PDF / CI/CD 세션.pdf: GitHub Actions는 push가 일어날 때마다 테스트와 빌드를 자동으로 돌린다. …
+      {"tag":"근거와 숫자","quote":"Github CI/CD","sourceAttachmentId":null,"content":"CI/CD를 적용해서 무엇이 달라졌나요?"}
+      {"tag":"역량 신호","quote":"Github CI/CD","sourceAttachmentId":null,"content":"CI/CD를 설정하며 어떤 문제를 풀었나요?"}
+      → "Github CI/CD"는 제목만 있는 줄이라 근거가 될 내용이 없고, 같은 quote를 두 질문에 썼다.
+        실습 칸이 이렇게 짧으면 첨부 문장을 짚는다:
+        {"tag":"세션과 연결","quote":"GitHub Actions는 push가 일어날 때마다 테스트와 빌드를 자동으로 돌린다.","sourceAttachmentId":121,
+         "content":"실습에서 push 때마다 테스트와 빌드가 자동으로 돌게 만들었나요? 어떤 단계를 넣었는지 알려 주세요."}
+        실습 칸 자체를 더 쓰게 하려면 빠진 칸 질문으로 묻고 quote는 null로 둔다.
 
       [애매할 때]
       - 자료가 "실습함"처럼 너무 짧고 첨부도 없어 물을 거리가 없으면 질문하지 않는다: {"insufficientMaterial":true,"questions":[]}
