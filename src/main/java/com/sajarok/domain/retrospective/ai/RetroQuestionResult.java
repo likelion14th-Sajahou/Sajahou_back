@@ -67,6 +67,7 @@ public record RetroQuestionResult(Boolean insufficientMaterial, List<Question> q
    *   <li>출처(sourceAttachmentId)는 AI가 적은 번호가 아니라 quote가 실제로 있는 곳으로 정한다(회고 자료면 null, 첨부면 그 번호)
    *   <li>quote가 회고 자료·첨부 어디에도 없으면 quote·sourceAttachmentId를 null로 바꾸고, 질문 글은 태그별 고정 질문으로 바꾼다
    *   <li>느낀 점은 quote가 없으면(처음부터 null이든 지워졌든) 항상 고정 질문으로 바꾼다
+   *   <li>quote가 없는 질문(자료 전체에서 묻는 질문)은 AI가 읽은 첨부가 하나뿐이면 그 첨부를 출처로 둔다. 응답의 quote는 "전체에서 물어봐요"
    * </ul>
    *
    * 남은 질문이 없으면 AI_FAILED. 기능명세서 R-15대로 마지막은 항상 느낀 점 하나다(답이 카드 배운 점 R-20·회고록 느낀 점 R-19를 채움): 느낀 점이
@@ -95,7 +96,8 @@ public record RetroQuestionResult(Boolean insufficientMaterial, List<Question> q
     if (usable.size() < Math.min(list.size(), MAX_QUESTIONS)) {
       log.warn("AI 회고 질문 일부를 버림 받은 {}개 → 쓴 {}개 내용={}", list.size(), usable.size(), list);
     }
-    return new Validated(false, usable);
+    return new Validated(
+        false, NewQuestion.withWholeMaterialSource(usable, attachmentTexts.keySet()));
   }
 
   /** 쓸 수 없는 질문이면 null */
