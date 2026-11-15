@@ -986,6 +986,119 @@ class RetrospectiveServiceTest {
     assertThat(retrospectiveService.complete(ME, 101L).isLate()).isFalse();
   }
 
+  // ---------- 24번 회고 카드 삭제 → 처음부터 다시 ----------
+
+  @Test
+  @DisplayName("24번: 완료한 회고의 카드를 지우면 작성 중 2단계로 돌아가고 자료·질문·카드·첨부를 지운다. 처음 완료 시각은 남긴다")
+  void restartByCardDeletion_completed_backToStep2() {
+    Retrospective session = mySessionAtStep3();
+    java.time.LocalDateTime firstDone = java.time.LocalDateTime.of(2026, 11, 8, 21, 0);
+    session.complete(firstDone);
+
+    retrospectiveService.restartByCardDeletion(ME, 101L);
+
+    assertThat(session.getStatus()).isEqualTo(RetrospectiveStatus.IN_PROGRESS);
+    assertThat(RetrospectiveState.of(session)).isEqualTo(RetrospectiveState.IN_PROGRESS);
+    assertThat(session.getCurrentStep()).isEqualTo(2);
+    assertThat(session.getMemo()).isNull();
+    assertThat(session.getAssignmentMode()).isNull();
+    assertThat(session.getLastSavedAt()).isNull();
+    assertThat(session.getCompletedAt()).isEqualTo(firstDone);
+    verify(aiQuestionService).deleteAll(QuestionOwner.retrospective(101L));
+    verify(storyCardService).deleteByRetrospective(101L);
+    verify(attachmentService).deleteAll(RETRO_101);
+  }
+
+  @Test
+  @DisplayName("24번: 없거나 남의 회고면 NOT_FOUND이고, 아무것도 지우지 않는다")
+  void restartByCardDeletion_notMine_notFound() {
+    when(retrospectiveRepository.findByIdAndUserId(999L, ME)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> retrospectiveService.restartByCardDeletion(ME, 999L))
+        .isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.NOT_FOUND);
+    verifyNoInteractions(aiQuestionService, storyCardService, attachmentService);
+  }
+
+  @Test
+  @DisplayName("24번 뒤: 카드를 지워 다시 쓰는 회고는 마감 + 7일이 지났어도 저장(14번)과 완료(20번)가 된다")
+  void restartedAfterDeadline_canSaveAndComplete() {
+    Retrospective session = mySessionAtStep3();
+    session.complete(java.time.LocalDateTime.of(2026, 11, 8, 21, 0));
+    retrospectiveService.restartByCardDeletion(ME, 101L);
+    week10Deadlines(NOW.minusDays(30), null);
+    when(storyCardService.publishRetrospectiveCard(101L)).thenReturn(302L);
+
+    retrospectiveService.saveDraft(ME, 101L, memo("다시 쓴 메모"));
+    retrospectiveService.complete(ME, 101L);
+
+    assertThat(session.getMemo()).isEqualTo("다시 쓴 메모");
+    assertThat(session.getStatus()).isEqualTo(RetrospectiveStatus.COMPLETED);
+  }
+
+  @Test
+  @DisplayName(
+      "24번 뒤 11번: 처음으로 돌아간 이번 주 회고는 처음처럼 NOT_STARTED(id 등 null)로 보이고, 한 번 저장하면 IN_PROGRESS")
+  void current_restartedBlank_looksNotStarted() {
+    iAmBackend();
+    currentWeekIs10();
+    Retrospective restarted = sessionOf(101L, WEEK, AssignmentMode.RECORD, true);
+    restarted.restart();
+    when(retrospectiveRepository.findAllByUserId(ME)).thenReturn(List.of(restarted));
+
+    RetrospectiveCurrentResponse before = retrospectiveService.getCurrent(ME);
+
+    assertThat(before.session().id()).isNull();
+    assertThat(before.session().state()).isEqualTo(RetrospectiveState.NOT_STARTED);
+    assertThat(before.session().currentStep()).isNull();
+    assertThat(before.session().lastSavedAt()).isNull();
+
+    ReflectionTestUtils.setField(restarted, "lastSavedAt", DONE_AT.plusDays(1));
+    RetrospectiveCurrentResponse after = retrospectiveService.getCurrent(ME);
+
+    assertThat(after.session().id()).isEqualTo(101L);
+    assertThat(after.session().state()).isEqualTo(RetrospectiveState.IN_PROGRESS);
+  }
+
+  @Test
+  @DisplayName("24번 뒤 홈: 처음으로 돌아간 이번 주 회고는 NOT_STARTED·id null이고 이번 주 칸을 띄운다")
+  void homeSummary_restartedBlank_looksNotStarted() {
+    Retrospective restarted = retro(101L, WEEK, RetrospectiveType.SESSION, true);
+    restarted.restart();
+    when(retrospectiveRepository.findByUserIdAndWeekIdAndType(ME, WEEK, RetrospectiveType.SESSION))
+        .thenReturn(Optional.of(restarted));
+    when(retrospectiveRepository.findAllByUserId(ME)).thenReturn(List.of(restarted));
+
+    HomeRetroSummary summary = retrospectiveService.homeSummary(ME, WEEK);
+
+    assertThat(summary.sessionRetrospectiveId()).isNull();
+    assertThat(summary.state()).isEqualTo(RetrospectiveState.NOT_STARTED);
+    assertThat(summary.stickerWeekIds()).isEmpty();
+    assertThat(summary.showThisWeekSlot()).isTrue();
+  }
+
+  @Test
+  @DisplayName("24번 뒤 12번: 시작하기를 누르면 처음으로 돌아간 그 회고를 돌려주고, 휴회를 고르면 처음처럼 휴회가 된다")
+  void start_restartedBlank_returnsSameRetro_andCanRest() {
+    Retrospective restarted = sessionWith(AssignmentMode.RECORD);
+    restarted.complete(DONE_AT);
+    restarted.restart();
+    when(retrospectiveRepository.findByUserIdAndWeekIdAndType(ME, WEEK, RetrospectiveType.SESSION))
+        .thenReturn(Optional.of(restarted));
+
+    StartResult plain = retrospectiveService.start(ME, request(RetrospectiveType.SESSION, null));
+
+    assertThat(plain.created()).isFalse();
+    assertThat(plain.response().id()).isEqualTo(101L);
+    assertThat(plain.response().state()).isEqualTo(RetrospectiveState.IN_PROGRESS);
+
+    StartResult rested = retrospectiveService.start(ME, request(RetrospectiveType.SESSION, true));
+
+    assertThat(rested.response().state()).isEqualTo(RetrospectiveState.RESTED);
+    verify(retrospectiveRepository, never()).save(any(Retrospective.class));
+  }
+
   // ---------- 14번 코드 리뷰는 프론트엔드만 ----------
 
   private void iAm(Part part) {

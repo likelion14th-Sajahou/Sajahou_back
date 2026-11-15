@@ -68,9 +68,11 @@ public class RetrospectiveService {
    * <p>이번 주 칸(showThisWeekSlot)은 아직 이번 주 스티커를 받을 수 있을 때(시작 전·진행 중)만 띄운다. 완료면 이미 스티커가 있고, 휴회면 칸이 없다.
    */
   public HomeRetroSummary homeSummary(Long userId, Long currentWeekId) {
+    // 카드를 지워 처음으로 돌아간 뒤 아직 저장하지 않은 회고는 처음 쓰는 것처럼 '시작 전'으로 보여 준다
     Optional<Retrospective> thisWeek =
-        retrospectiveRepository.findByUserIdAndWeekIdAndType(
-            userId, currentWeekId, RetrospectiveType.SESSION);
+        retrospectiveRepository
+            .findByUserIdAndWeekIdAndType(userId, currentWeekId, RetrospectiveType.SESSION)
+            .filter(r -> !r.isRestartedBlank());
     RetrospectiveState state =
         thisWeek.map(RetrospectiveState::of).orElse(RetrospectiveState.NOT_STARTED);
 
@@ -127,7 +129,7 @@ public class RetrospectiveService {
         .orElse(RetrospectiveState.NOT_STARTED);
   }
 
-  /** 12번: 회고 시작. 이미 있으면 그 회고를 그대로 돌려준다 */
+  /** 12번: 회고 시작. 이미 있으면 그 회고를 그대로 돌려준다. 카드를 지워 처음으로 돌아간 세션 회고는 처음 시작할 때처럼 휴회를 고를 수 있다. */
   @Transactional
   public StartResult start(Long userId, RetrospectiveStartRequest request) {
 
@@ -135,6 +137,10 @@ public class RetrospectiveService {
         retrospectiveRepository.findByUserIdAndWeekIdAndType(
             userId, request.weekId(), request.type());
     if (existing.isPresent()) {
+      Retrospective r = existing.get();
+      if (request.wantsRest() && r.getType() == RetrospectiveType.SESSION && r.isRestartedBlank()) {
+        r.changeRested(true);
+      }
       return new StartResult(
           RetrospectiveStartResponse.from(existing.get(), weekNumberOf(request.weekId())), false);
     }
@@ -183,11 +189,27 @@ public class RetrospectiveService {
   public RetrospectiveProgressResponse reset(Long userId, Long retrospectiveId) {
     Retrospective retrospective = findMine(userId, retrospectiveId);
     retrospective.reset();
+    deleteOutputs(retrospectiveId);
+
+    return RetrospectiveProgressResponse.from(retrospective);
+  }
+
+  /**
+   * 24번 회고 카드 삭제: 카드를 지우고 회고를 처음 시작한 것처럼 되돌린다. 16번 '처음부터'와 같이 2단계 자료·AI 질문·카드·첨부를 지우고 작성 중 2단계로
+   * 돌아가는데, 완료한 회고에도 된다(16번은 완료한 회고는 막힘).
+   */
+  @Transactional
+  public void restartByCardDeletion(Long userId, Long retrospectiveId) {
+    Retrospective retrospective = findMine(userId, retrospectiveId);
+    retrospective.restart();
+    deleteOutputs(retrospectiveId);
+  }
+
+  /** 회고에 딸린 AI 질문·카드·첨부를 지운다 */
+  private void deleteOutputs(Long retrospectiveId) {
     aiQuestionService.deleteAll(QuestionOwner.retrospective(retrospectiveId));
     storyCardService.deleteByRetrospective(retrospectiveId);
     attachmentService.deleteAll(AttachmentOwner.retrospective(retrospectiveId));
-
-    return RetrospectiveProgressResponse.from(retrospective);
   }
 
   /** 13번: 회고 상세 */
@@ -328,11 +350,12 @@ public class RetrospectiveService {
   }
 
   /**
-   * 14·20번: 진행 중인 회고가 마감 + 7일을 넘겼으면 409 DEADLINE_PASSED. 완료한 회고는 기간과 상관없이 고칠 수 있다. 마감을 모르면 막지 않는다.
+   * 14·20번: 한 번도 완료하지 않은 회고가 마감 + 7일을 넘겼으면 409 DEADLINE_PASSED. 완료한 적이 있는 회고(카드를 지워 처음부터 다시 쓰는 중인
+   * 회고 포함)는 기간과 상관없이 고치고 완료할 수 있다. 마감을 모르면 막지 않는다.
    */
   private static void checkWritable(Retrospective r, WeekSchedule schedule) {
     OffsetDateTime deadline = deadlineOf(r, schedule);
-    if (r.getStatus() != RetrospectiveStatus.COMPLETED
+    if (!r.wasCompleted()
         && deadline != null
         && OffsetDateTime.now(KstTime.OFFSET).isAfter(deadline.plusDays(GRACE_DAYS))) {
       throw new BusinessException(ErrorCode.DEADLINE_PASSED);
