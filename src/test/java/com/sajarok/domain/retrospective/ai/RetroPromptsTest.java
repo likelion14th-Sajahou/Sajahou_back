@@ -7,6 +7,7 @@ import com.sajarok.domain.retrospective.entity.RetrospectiveType;
 import com.sajarok.domain.user.entity.Part;
 import com.sajarok.infra.ai.AttachmentBudget;
 import java.util.List;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -52,6 +53,34 @@ class RetroPromptsTest {
     assertThat(user)
         .contains(": " + "가".repeat(20_000) + "\n", ": " + "나".repeat(20_000) + "\n")
         .doesNotContain("가".repeat(20_001), "나".repeat(20_001));
+  }
+
+  @Test
+  @DisplayName("17번 system: 근거는 내용이 담긴 한 문장, 같은 근거 두 번 금지, 회고 자료가 짧으면 첨부 문장을 짚는다")
+  void questionsSystem_quoteRules() {
+    assertThat(RetroPrompts.QUESTIONS_SYSTEM)
+        .contains(
+            "quote는 내용이 담긴 한 문장으로 짚는다",
+            "제목이나 단어만 있는 줄은 quote로 쓰지 않는다",
+            "같은 quote를 두 질문에 쓰지 않는다",
+            "[회고 자료]가 제목·단어처럼 짧으면 [첨부](세션 PDF 등)의 문장을 quote로 짚는다");
+  }
+
+  @Test
+  @DisplayName("17번 system: 좋은 예의 질문들은 서로 다른 quote를 짚는다 (새 규칙과 예시가 어긋나지 않게)")
+  void questionsSystem_goodExampleHasDistinctQuotes() {
+    String good =
+        RetroPrompts.QUESTIONS_SYSTEM.substring(
+            RetroPrompts.QUESTIONS_SYSTEM.indexOf("[좋은 예]"),
+            RetroPrompts.QUESTIONS_SYSTEM.indexOf("[나쁜 예]"));
+    List<String> quotes =
+        Pattern.compile("\"quote\":\"([^\"]+)\"")
+            .matcher(good)
+            .results()
+            .map(m -> m.group(1))
+            .toList();
+
+    assertThat(quotes).hasSize(4).doesNotHaveDuplicates();
   }
 
   @Test
