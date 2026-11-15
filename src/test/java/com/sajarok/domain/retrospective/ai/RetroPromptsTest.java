@@ -109,4 +109,15 @@ class RetroPromptsTest {
   void reviewSystem_doesNotAskForTitle() {
     assertThat(RetroPrompts.REVIEW_SYSTEM).doesNotContain("\"title\"");
   }
+
+  @Test
+  @DisplayName("19번 system 프롬프트: 받은 코드리뷰 자리(## 받은 코드리뷰)가 있고, 질문 답은 반드시 반영하라는 규칙이 있다")
+  void reviewSystem_hasCodeReviewSectionAndAnswerRule() {
+    assertThat(RetroPrompts.REVIEW_SYSTEM)
+        .contains("## 받은 코드리뷰", "[질문과 답]의 답은 회고록과 카드 칸에 반드시 반영한다");
+    assertThat(RetroPrompts.REVIEW_SYSTEM.indexOf("## 받은 코드리뷰"))
+        .isBetween(
+            RetroPrompts.REVIEW_SYSTEM.indexOf("## 과제"),
+            RetroPrompts.REVIEW_SYSTEM.indexOf("## 고민과 해결"));
+  }
 }
