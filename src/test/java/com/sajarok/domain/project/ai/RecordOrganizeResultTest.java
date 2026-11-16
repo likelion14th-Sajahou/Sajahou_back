@@ -74,6 +74,17 @@ class RecordOrganizeResultTest {
   }
 
   @Test
+  @DisplayName("31번 프롬프트: 다음(nextStep)은 앞으로 할 일이라 '~하기로 했다'·'~할 예정이다'로 쓰는 규칙과 예시가 있다")
+  void organizeSystem_nextStepIsFuture() {
+    assertThat(RecordPrompts.ORGANIZE_SYSTEM)
+        .contains(
+            "nextStep(다음)의 사용자 글은 앞으로 할 일이라 \"~하기로 했다\"로 맞춘다",
+            "\"~하기로 했다\" 또는 \"~할 예정이다\"",
+            "\"nextStep\":\"저장 실패 안내 문구 넣기로 했다.\"",
+            "{\"nextStep\":\"저장 실패 안내 문구를 넣었다.\"}");
+  }
+
+  @Test
   @DisplayName("31번 프롬프트: 첨부는 다 합쳐 4만 자까지, 짧은 첨부를 다 넣고 남은 만큼 긴 첨부를 넣는다")
   void organizeUser_cutsLongAttachment() {
     ProjectRecord record =
