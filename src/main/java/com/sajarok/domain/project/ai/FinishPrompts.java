@@ -3,6 +3,7 @@ package com.sajarok.domain.project.ai;
 import com.sajarok.domain.attachment.dto.AttachmentView;
 import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
+import com.sajarok.domain.project.entity.ProjectRole;
 import com.sajarok.domain.question.dto.QuestionView;
 import java.util.List;
 import java.util.Map;
@@ -34,7 +35,7 @@ public final class FinishPrompts {
 
       [좋은 예]
       입력:
-        [프로젝트] 사자록 · 멋사 회고 서비스 / 역할: BACKEND
+        [프로젝트] 사자록 · 멋사 회고 서비스 / 역할: 백엔드
         [기록] (1) 2026-11-03 한 일: 팀 API 연동을 맡았다 / 결과·반응: 연동을 마쳤다
                (2) 2026-11-05 한 일: 회고 화면 API를 만들었다 / 고민·해결: 응답 형식을 프론트와 맞췄다
         [첨부] 없음
@@ -103,7 +104,7 @@ public final class FinishPrompts {
          문체만 "~했습니다"로 정리하고, 답에 없는 말은 붙이거나 부풀리지 않는다.
          조사·어미만 자연스럽게 다듬는다(예: "사용자 50명 넘음!!" → "사용자가 50명을 넘었습니다"). 단어·숫자·내용은 그대로 둔다.
          마치기 답도 기록도 없는 항목만 body를 null로 둔다. 비슷한 내용으로 채우지 않는다.
-         [프로젝트]의 역할(PM, BACKEND 등)만으로 role을 쓰지 않는다. 서버가 "역할:" 줄로 이미 붙인다.
+         [프로젝트]의 역할(PM, 백엔드 등)만으로 role을 쓰지 않는다. 서버가 "역할:" 줄로 이미 붙인다.
          role은 [마치기 답]의 내 역할 답이나, 기록에서 맡은 범위가 드러날 때만 쓴다.
          [다시 채울 항목]이 있으면 거기 적힌 항목을 이 규칙대로 반드시 채운다.
       5. 마치기 답은 같은 항목에 먼저 쓴다:
@@ -117,7 +118,7 @@ public final class FinishPrompts {
 
       [좋은 예]
       입력:
-        [프로젝트] 사자록 · 멋사 회고 서비스 / 역할: PM, BACKEND
+        [프로젝트] 사자록 · 멋사 회고 서비스 / 역할: PM, 백엔드
         [기록] (1) 2026-11-03 한 일: 팀 API 연동을 맡았다 / 고민·해결: 응답 형식을 프론트와 미리 맞췄다
                (2) 2026-11-05 한 일: 회고 화면 API를 만들었다
         [마치기 답] 근거와 숫자: 2주 동안 API 12개를 만들었다 / 배운 점: 명세를 먼저 맞추면 연동이 빨라진다
@@ -229,7 +230,10 @@ public final class FinishPrompts {
     line(sb, "이름", project.getName());
     line(sb, "부제", project.getSubtitle());
     if (project.getRoles() != null && !project.getRoles().isEmpty()) {
-      line(sb, "역할", String.join(", ", project.getRoles().stream().map(Enum::name).toList()));
+      line(
+          sb,
+          "역할",
+          String.join(", ", project.getRoles().stream().map(ProjectRole::label).toList()));
     }
   }
 

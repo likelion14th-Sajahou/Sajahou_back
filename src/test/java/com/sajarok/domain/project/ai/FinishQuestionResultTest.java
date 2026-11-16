@@ -67,7 +67,11 @@ class FinishQuestionResultTest {
       "프롬프트: 태그 목록·프로젝트·기록(빈 칸은 빠짐)·첨부(종류·이름, 이름 없는 링크는 URL)가 이름표 구역으로 들어가고, system에 태그 5개와 최대 개수가 들어간다")
   void prompts_containSectionsAndTags() {
     Project project =
-        Project.builder().userId(1L).name("사자록").roles(List.of(ProjectRole.BACKEND)).build();
+        Project.builder()
+            .userId(1L)
+            .name("사자록")
+            .roles(List.of(ProjectRole.PLANNING, ProjectRole.BACKEND))
+            .build();
     ProjectRecord record =
         ProjectRecord.builder()
             .project(project)
@@ -109,11 +113,11 @@ class FinishQuestionResultTest {
             "[태그 목록]",
             "[프로젝트]",
             "이름: 사자록",
-            "역할: BACKEND",
+            "역할: 기획, 백엔드",
             "[기록]",
             "한 일: 팀 API 연동을 맡았다",
             "[첨부]\n- 산출물 / PRESENTATION / 최종 발표.pdf\n- 기록 첨부 / DESIGN / https://figma.com/a")
-        .doesNotContain("결과·반응:");
+        .doesNotContain("결과·반응:", "PLANNING", "BACKEND");
     assertThat(FinishPrompts.QUESTIONS_SYSTEM)
         .contains("내 역할 / 최종 결과 / 근거와 숫자 / 산출물 요청 / 배운 점", "최대 5개", "40%");
   }
