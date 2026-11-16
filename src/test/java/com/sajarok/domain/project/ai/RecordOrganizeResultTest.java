@@ -42,7 +42,7 @@ class RecordOrganizeResultTest {
   }
 
   @Test
-  @DisplayName("프롬프트: 메모·이미 쓴 칸·첨부·AI 질문 답이 이름표 구역으로 들어가고, 없는 구역은 '없음'")
+  @DisplayName("프롬프트: 메모·이미 쓴 칸·첨부·AI 질문 답(태그·질문·답 줄)이 이름표 구역으로 들어가고, 없는 구역은 '없음'")
   void organizeUser_containsSections() {
     ProjectRecord record =
         ProjectRecord.builder()
@@ -52,7 +52,14 @@ class RecordOrganizeResultTest {
             .build();
     QuestionView answered =
         new QuestionView(
-            1L, 1, "내 역할", null, null, "질문", "홈 시안 2개를 준비해서 비교 발표했어요.", QuestionStatus.ANSWERED);
+            1L,
+            1,
+            "내 역할·과정",
+            null,
+            null,
+            "기획 회의에서 내가 맡아 한 일은 무엇이었나요?",
+            "홈 시안 2개를 준비해서 비교 발표했어요.",
+            QuestionStatus.ANSWERED);
 
     String user = RecordPrompts.organizeUser(record, List.of(answered), List.of());
 
@@ -61,7 +68,8 @@ class RecordOrganizeResultTest {
             "[메모]\n11/3 기획 회의. 홈 화면 구성 논의. 나는 시안 2개 준비",
             "[이미 쓴 칸]\n없음",
             "[첨부]\n없음",
-            "[AI 질문 답]\n- 내 역할: 홈 시안 2개를 준비해서 비교 발표했어요.");
+            "[AI 질문 답]\n- 내 역할·과정\n질문: 기획 회의에서 내가 맡아 한 일은 무엇이었나요?\n답: 홈 시안 2개를 준비해서 비교 발표했어요.\n");
+    assertThat(user).doesNotContain("- 내 역할·과정:");
     assertThat(RecordPrompts.ORGANIZE_SYSTEM).contains("20%", "\"nextStep\":null");
   }
 
