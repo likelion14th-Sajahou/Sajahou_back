@@ -8,6 +8,7 @@ import com.sajarok.domain.matching.ai.AnswerDraftResult.Piece;
 import com.sajarok.domain.matching.entity.AnswerDraft;
 import com.sajarok.domain.matching.entity.AnswerDraft.Source;
 import com.sajarok.domain.storycard.dto.CardSnapshot;
+import com.sajarok.domain.storycard.entity.StoryCardType;
 import com.sajarok.global.exception.BusinessException;
 import com.sajarok.global.exception.ErrorCode;
 import java.util.Arrays;
@@ -278,8 +279,60 @@ class AiResultTest {
   }
 
   private static CardSnapshot card(long id) {
+    return card(id, null, "배운 점 " + id);
+  }
+
+  private static CardSnapshot card(long id, StoryCardType type, String learned) {
     return new CardSnapshot(
-        id, null, null, null, "카드 " + id, null, "행동 " + id, null, null, null, Set.of());
+        id, type, null, null, "카드 " + id, null, "행동 " + id, null, null, learned, Set.of());
+  }
+
+  private static String order(List<Source> sources, Map<Long, CardSnapshot> cards) {
+    String user = MatchingPrompts.answerDraftUser("협업 경험을 써 주세요", 700, sources, cards, POSTING);
+    return user.substring(user.indexOf("[답 순서]"));
+  }
+
+  @Test
+  @DisplayName("37번: ① 카드의 배운 점이 비어 있으면(프로젝트 카드) [답 순서]에서 배운 점을 뺀다")
+  void answerOrder_mainCardWithoutLearned_dropsLearned() {
+    String order = order(SOURCES, Map.of(410L, card(410L, StoryCardType.PROJECT, null)));
+
+    assertThat(order).isEqualTo("[답 순서]\n한 줄 소개 → 상황 → 행동 → 이유 → 결과 → 지원 회사·공고와 연결\n");
+  }
+
+  @Test
+  @DisplayName("37번: 사용자가 배운 점을 직접 쓴 프로젝트 카드가 ①이면 배운 점을 넣는다(종류가 아니라 값으로 판단)")
+  void answerOrder_projectCardWithLearned_keepsLearned() {
+    String order = order(SOURCES, Map.of(410L, card(410L, StoryCardType.PROJECT, "명세를 먼저 맞춘다")));
+
+    assertThat(order).contains("결과 → 배운 점 → 지원 회사·공고와 연결");
+  }
+
+  @Test
+  @DisplayName("37번: ② 보조 카드에만 배운 점이 있으면 배운 점을 넣지 않는다")
+  void answerOrder_onlySubCardHasLearned_dropsLearned() {
+    String order =
+        order(
+            List.of(
+                new Source(1, "CARD", 410L),
+                new Source(2, "CARD", 411L),
+                new Source(3, "JOB_POSTING", null)),
+            Map.of(
+                410L, card(410L, StoryCardType.PROJECT, " "),
+                411L, card(411L, StoryCardType.SESSION, "배운 점 411")));
+
+    assertThat(order).contains("결과 → 다른 경험 연결 → 지원 회사·공고와 연결").doesNotContain("배운 점");
+  }
+
+  @Test
+  @DisplayName("37번: [출처]의 카드에 제목 줄을 넣지 않는다(세션 이름을 초안 문장에 옮겨 써서)")
+  void answerUser_cardBodyHasNoTitle() {
+    String user =
+        MatchingPrompts.answerDraftUser(
+            "협업 경험을 써 주세요", 700, SOURCES, Map.of(410L, card(410L)), POSTING);
+
+    assertThat(user).contains("(1) 경험 카드\n행동: 행동 410\n배운 점: 배운 점 410\n");
+    assertThat(user).doesNotContain("제목:", "카드 410");
   }
 
   private static final MatchingPrompts.PostingText POSTING =
