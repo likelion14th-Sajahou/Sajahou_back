@@ -125,7 +125,8 @@ public final class MatchingPrompts {
 
   /**
    * 37번 system 프롬프트 (역할·번호 규칙·좋은 예·나쁜 예·애매할 때·출력 형식 순서). 답 순서(M-08)는 고정하지 않고 서버가 상황별로 [답 순서]에
-   * 넘긴다(보조 카드가 없으면 "다른 경험 연결"을 뺌, #89). 빈칸 규칙은 M-10. 좋은 예의 공고는 ai-eval 입력과 겹치지 않는 새 문구.
+   * 넘긴다(보조 카드가 없으면 "다른 경험 연결", ① 카드에 배운 점이 없으면 "배운 점"을 뺌). 빈칸 규칙은 M-10. 좋은 예의 공고는 ai-eval 입력과 겹치지
+   * 않는 새 문구.
    */
   public static final String ANSWER_DRAFT_SYSTEM =
       """
@@ -159,7 +160,8 @@ public final class MatchingPrompts {
       [좋은 예]
       입력:
         [문항] 협업 경험을 써 주세요 / 글자 수 제한: 700자
-        [출처] (1) 경험 카드 — 제목: 팀 API 연동을 맡아 배포까지
+        [출처] (1) 경험 카드
+                   상황: 중커톤에서 팀 API 연동을 맡았다
                    행동: 연동 전에 프론트와 API 명세부터 맞추고 응답 형식을 정리했다
                    배운 점: 명세를 먼저 맞추면 연동하면서 생기는 오해가 줄어든다
                    (결과 없음)
@@ -197,6 +199,9 @@ public final class MatchingPrompts {
       {"type":"text","text":"사용자는 예약 내역만 빨리 보이면 된다고 했기 때문입니다.","source":1},
       {"type":"text","text":"예약 내역만 빨리 보이면 된다고 한 사용자 의견이 있었습니다.","source":1}
       → 같은 뜻을 두 번 썼다. 한 번만 쓴다.
+      ([답 순서]에 배운 점이 없을 때)
+      {"type":"text","text":"사용자에게 필요한 정보부터 보여 주는 것이 중요하다는 것을 배웠습니다.","source":1}
+      → 카드에 배운 점이 없는데 이유·결과를 배운 점처럼 바꿔 썼다. [답 순서]에 배운 점이 없으면 배운 점 문장을 쓰지 않는다.
 
       [애매할 때]
       - 카드 내용이 문항과 잘 맞지 않으면 억지로 늘리지 말고 짧게 쓰고, 부족한 부분은 빈칸으로 둔다.
@@ -242,31 +247,44 @@ public final class MatchingPrompts {
       }
       sb.append('\n');
     }
-    sb.append("[답 순서]\n").append(String.join(" → ", answerOrder(sources))).append('\n');
+    sb.append("[답 순서]\n").append(String.join(" → ", answerOrder(sources, cards))).append('\n');
     return sb.toString();
   }
 
-  /** ② 보조 카드 출처 번호 (CardRecommender.Recommendation.sources와 같은 고정 번호) */
+  /** ① 추천 카드·② 보조 카드 출처 번호 (CardRecommender.Recommendation.sources와 같은 고정 번호) */
+  private static final int MAIN_CARD_NO = 1;
+
   private static final int SUB_CARD_NO = 2;
 
   /**
-   * 37번 답 순서(M-08). 보조 카드가 없으면 "다른 경험 연결"을 뺀다. 고정 순서를 보여 주면 AI가 빈 자리를 공고나 빈말로 채워서(#89) 상황별로 넘긴다.
+   * 37번 답 순서(M-08). 고정 순서를 보여 주면 AI가 빈 자리를 공고나 빈말로 채워서(#89) 상황별로 넘긴다. 보조 카드가 없으면 "다른 경험 연결"을, ① 카드의
+   * 배운 점이 비어 있으면 "배운 점"을 뺀다. 프로젝트 카드는 배운 점이 null이라(27번) 이유를 배운 점처럼 바꿔 썼다. 23번에서 직접 쓴 배운 점은 살리려고 카드
+   * 종류가 아니라 값으로 본다.
    */
-  static List<String> answerOrder(List<Source> sources) {
+  static List<String> answerOrder(List<Source> sources, Map<Long, CardSnapshot> cards) {
     List<String> order = new ArrayList<>(List.of("한 줄 소개", "상황", "행동", "이유", "결과"));
     if (sources.stream().anyMatch(s -> s.no() == SUB_CARD_NO)) {
       order.add("다른 경험 연결");
     }
-    order.add("배운 점");
+    if (mainCardHasLearned(sources, cards)) {
+      order.add("배운 점");
+    }
     if (sources.stream().anyMatch(s -> "JOB_POSTING".equals(s.kind()))) {
       order.add("지원 회사·공고와 연결");
     }
     return order;
   }
 
+  private static boolean mainCardHasLearned(List<Source> sources, Map<Long, CardSnapshot> cards) {
+    return sources.stream()
+        .filter(s -> s.no() == MAIN_CARD_NO && "CARD".equals(s.kind()))
+        .map(s -> cards.get(s.cardId()))
+        .anyMatch(card -> card != null && card.learned() != null && !card.learned().isBlank());
+  }
+
+  /** 제목은 넣지 않는다. 회고 카드 제목은 세션 이름이라 AI가 "기디 마지막 세션에서…"처럼 초안 문장에 옮겨 썼다. */
   private static String cardBody(CardSnapshot card) {
     StringBuilder sb = new StringBuilder("경험 카드\n");
-    line(sb, "제목", card.title());
     line(sb, "상황", card.situation());
     line(sb, "행동", card.action());
     line(sb, "이유", card.reason());
