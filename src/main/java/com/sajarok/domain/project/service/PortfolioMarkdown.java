@@ -86,18 +86,6 @@ final class PortfolioMarkdown {
 
   /** ["PM", "BACKEND"] → "PM·백엔드" */
   static String roles(List<ProjectRole> roles) {
-    return String.join(
-        "·",
-        roles.stream()
-            .map(
-                role ->
-                    switch (role) {
-                      case PM -> "PM";
-                      case PLANNING -> "기획";
-                      case DESIGN -> "디자인";
-                      case FRONTEND -> "프론트엔드";
-                      case BACKEND -> "백엔드";
-                    })
-            .toList());
+    return String.join("·", roles.stream().map(ProjectRole::label).toList());
   }
 }

@@ -7,6 +7,7 @@ import com.sajarok.domain.project.ai.PortfolioDraftResult.Section;
 import com.sajarok.domain.project.entity.Project;
 import com.sajarok.domain.project.entity.ProjectRecord;
 import com.sajarok.domain.project.entity.ProjectRecordStatus;
+import com.sajarok.domain.project.entity.ProjectRole;
 import com.sajarok.domain.question.dto.QuestionView;
 import com.sajarok.domain.question.entity.QuestionStatus;
 import com.sajarok.global.exception.BusinessException;
@@ -64,9 +65,15 @@ class PortfolioDraftResultTest {
   }
 
   @Test
-  @DisplayName("프롬프트: 항목 목록·프로젝트·기록·마치기 답(태그·질문·답)이 이름표 구역으로 들어가고, system에 '숫자로 보면'·MM/DD 규칙이 있다")
+  @DisplayName(
+      "프롬프트: 항목 목록·프로젝트(역할은 한글 이름)·기록·마치기 답(태그·질문·답)이 이름표 구역으로 들어가고, system에 '숫자로 보면'·MM/DD 규칙이 있다")
   void portfolioUser_containsSections() {
-    Project project = Project.builder().userId(1L).name("사자록").build();
+    Project project =
+        Project.builder()
+            .userId(1L)
+            .name("사자록")
+            .roles(List.of(ProjectRole.PLANNING, ProjectRole.DESIGN))
+            .build();
     ProjectRecord record =
         ProjectRecord.builder()
             .project(project)
@@ -93,12 +100,14 @@ class PortfolioDraftResultTest {
             "[항목 목록]",
             "role / contribution / problem / result / artifact / learned",
             "[프로젝트]",
+            "역할: 기획, 디자인",
             "[기록]",
             "한 일: 팀 API 연동을 맡았다",
             "[마치기 답]",
             "- 근거와 숫자",
             "답: 2주 동안 API 12개",
-            "[첨부]\n없음");
+            "[첨부]\n없음")
+        .doesNotContain("PLANNING", "DESIGN");
     assertThat(FinishPrompts.PORTFOLIO_DRAFT_SYSTEM)
         .contains("숫자로 보면: …", "- MM/DD 한 일", "\"- 11/03 팀 API 연동을 맡았습니다.\\n- 11/05");
   }
