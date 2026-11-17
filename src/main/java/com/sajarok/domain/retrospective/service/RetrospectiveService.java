@@ -68,11 +68,11 @@ public class RetrospectiveService {
    * <p>이번 주 칸(showThisWeekSlot)은 아직 이번 주 스티커를 받을 수 있을 때(시작 전·진행 중)만 띄운다. 완료면 이미 스티커가 있고, 휴회면 칸이 없다.
    */
   public HomeRetroSummary homeSummary(Long userId, Long currentWeekId) {
-    // 카드를 지워 처음으로 돌아간 뒤 아직 저장하지 않은 회고는 처음 쓰는 것처럼 '시작 전'으로 보여 준다
+    // 저장한 적 없는 빈 회고(휴회 해제·처음부터·카드 삭제 뒤)는 처음 쓰는 것처럼 '시작 전'으로 보여 준다
     Optional<Retrospective> thisWeek =
         retrospectiveRepository
             .findByUserIdAndWeekIdAndType(userId, currentWeekId, RetrospectiveType.SESSION)
-            .filter(r -> !r.isRestartedBlank());
+            .filter(r -> !r.isUnsavedBlank());
     RetrospectiveState state =
         thisWeek.map(RetrospectiveState::of).orElse(RetrospectiveState.NOT_STARTED);
 
@@ -129,7 +129,7 @@ public class RetrospectiveService {
         .orElse(RetrospectiveState.NOT_STARTED);
   }
 
-  /** 12번: 회고 시작. 이미 있으면 그 회고를 그대로 돌려준다. 카드를 지워 처음으로 돌아간 세션 회고는 처음 시작할 때처럼 휴회를 고를 수 있다. */
+  /** 12번: 회고 시작. 이미 있으면 그 회고를 그대로 돌려준다. 저장한 적 없는 빈 세션 회고는 처음 시작할 때처럼 휴회를 고를 수 있다. */
   @Transactional
   public StartResult start(Long userId, RetrospectiveStartRequest request) {
 
@@ -138,7 +138,7 @@ public class RetrospectiveService {
             userId, request.weekId(), request.type());
     if (existing.isPresent()) {
       Retrospective r = existing.get();
-      if (request.wantsRest() && r.getType() == RetrospectiveType.SESSION && r.isRestartedBlank()) {
+      if (request.wantsRest() && r.getType() == RetrospectiveType.SESSION && r.isUnsavedBlank()) {
         r.changeRested(true);
       }
       return new StartResult(

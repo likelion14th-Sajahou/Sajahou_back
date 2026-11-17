@@ -243,6 +243,7 @@ class RetrospectiveServiceTest {
   @DisplayName("15번: 3단계까지 쓰다 휴회했던 회고를 해제하면 3단계 그대로 이어 쓴다")
   void rest_off_keepsStep() {
     Retrospective session = mySessionAtStep3();
+    ReflectionTestUtils.setField(session, "lastSavedAt", DONE_AT); // 3단계까지 쓴 회고 = 저장한 적 있음
     session.changeRested(true);
 
     RetrospectiveRestResponse response = retrospectiveService.changeRested(ME, 101L, false);
@@ -252,16 +253,89 @@ class RetrospectiveServiceTest {
   }
 
   @Test
-  @DisplayName("15번: 시작 전에 휴회했던 회고를 해제하면 2단계부터 시작한다")
-  void rest_off_fromRestedStart_startsAtStep2() {
-    Retrospective rested = Retrospective.startRested(ME, WEEK);
-    ReflectionTestUtils.setField(rested, "id", 101L);
-    when(retrospectiveRepository.findByIdAndUserId(101L, ME)).thenReturn(Optional.of(rested));
+  @DisplayName("15번: 시작 전에 휴회했던 회고를 해제하면 시작 전(NOT_STARTED)으로 돌아가고, 시작하면 2단계부터다")
+  void rest_off_fromRestedStart_backToNotStarted() {
+    Retrospective rested = myRestedStart();
 
     RetrospectiveRestResponse response = retrospectiveService.changeRested(ME, 101L, false);
 
-    assertThat(response.state()).isEqualTo(RetrospectiveState.IN_PROGRESS);
+    assertThat(response.id()).isEqualTo(101L);
+    assertThat(response.state()).isEqualTo(RetrospectiveState.NOT_STARTED);
     assertThat(rested.getCurrentStep()).isEqualTo(2);
+  }
+
+  private Retrospective myRestedStart() {
+    Retrospective rested = Retrospective.startRested(ME, WEEK);
+    ReflectionTestUtils.setField(rested, "id", 101L);
+    when(retrospectiveRepository.findByIdAndUserId(101L, ME)).thenReturn(Optional.of(rested));
+    return rested;
+  }
+
+  @Test
+  @DisplayName("15번 뒤 11번·홈: 시작 전 휴회를 해제한 빈 회고는 처음처럼 NOT_STARTED·id null이고 이번 주 칸을 띄운다")
+  void current_home_afterUnrestFromStart_lookNotStarted() {
+    Retrospective rested = myRestedStart();
+    retrospectiveService.changeRested(ME, 101L, false);
+    iAmBackend();
+    currentWeekIs10();
+    when(retrospectiveRepository.findAllByUserId(ME)).thenReturn(List.of(rested));
+    when(retrospectiveRepository.findByUserIdAndWeekIdAndType(ME, WEEK, RetrospectiveType.SESSION))
+        .thenReturn(Optional.of(rested));
+
+    RetrospectiveCurrentResponse current = retrospectiveService.getCurrent(ME);
+    HomeRetroSummary home = retrospectiveService.homeSummary(ME, WEEK);
+
+    assertThat(current.session().id()).isNull();
+    assertThat(current.session().state()).isEqualTo(RetrospectiveState.NOT_STARTED);
+    assertThat(current.session().currentStep()).isNull();
+    assertThat(home.sessionRetrospectiveId()).isNull();
+    assertThat(home.state()).isEqualTo(RetrospectiveState.NOT_STARTED);
+    assertThat(home.showThisWeekSlot()).isTrue();
+  }
+
+  @Test
+  @DisplayName("15번 뒤: 시작 전 휴회를 해제한 회고는 12번(rested true)이나 15번으로 다시 휴회하면 RESTED")
+  void rest_again_afterUnrestFromStart() {
+    Retrospective viaStart = Retrospective.startRested(ME, WEEK);
+    viaStart.changeRested(false);
+    when(retrospectiveRepository.findByUserIdAndWeekIdAndType(ME, WEEK, RetrospectiveType.SESSION))
+        .thenReturn(Optional.of(viaStart));
+
+    StartResult started = retrospectiveService.start(ME, request(RetrospectiveType.SESSION, true));
+
+    assertThat(started.created()).isFalse();
+    assertThat(started.response().state()).isEqualTo(RetrospectiveState.RESTED);
+    verify(retrospectiveRepository, never()).save(any(Retrospective.class));
+
+    Retrospective viaRest = myRestedStart();
+    retrospectiveService.changeRested(ME, 101L, false);
+
+    RetrospectiveRestResponse rested = retrospectiveService.changeRested(ME, 101L, true);
+
+    assertThat(rested.state()).isEqualTo(RetrospectiveState.RESTED);
+    assertThat(viaRest.isRested()).isTrue();
+  }
+
+  @Test
+  @DisplayName("15번 뒤: 휴회 해제 후 한 번이라도 임시저장한 회고는 15번·11번·홈 모두 IN_PROGRESS")
+  void unrest_thenSaved_staysInProgress() {
+    Retrospective r = myRestedStart();
+    retrospectiveService.changeRested(ME, 101L, false);
+    r.saveDraft(memo("이번 주 고민"), DONE_AT);
+    iAmBackend();
+    currentWeekIs10();
+    when(retrospectiveRepository.findAllByUserId(ME)).thenReturn(List.of(r));
+    when(retrospectiveRepository.findByUserIdAndWeekIdAndType(ME, WEEK, RetrospectiveType.SESSION))
+        .thenReturn(Optional.of(r));
+
+    retrospectiveService.changeRested(ME, 101L, true);
+    RetrospectiveRestResponse unrested = retrospectiveService.changeRested(ME, 101L, false);
+
+    assertThat(unrested.state()).isEqualTo(RetrospectiveState.IN_PROGRESS);
+    assertThat(retrospectiveService.getCurrent(ME).session().state())
+        .isEqualTo(RetrospectiveState.IN_PROGRESS);
+    assertThat(retrospectiveService.homeSummary(ME, WEEK).state())
+        .isEqualTo(RetrospectiveState.IN_PROGRESS);
   }
 
   @Test
@@ -665,6 +739,7 @@ class RetrospectiveServiceTest {
   @DisplayName("홈: 이번 주 세션 회고를 쓰는 중이면 IN_PROGRESS와 그 id, 이번 주 칸 표시")
   void homeSummary_inProgress() {
     Retrospective thisWeek = retro(101L, WEEK, RetrospectiveType.SESSION, false);
+    ReflectionTestUtils.setField(thisWeek, "lastSavedAt", DONE_AT); // 쓰는 중 = 저장한 적 있음
     when(retrospectiveRepository.findByUserIdAndWeekIdAndType(ME, WEEK, RetrospectiveType.SESSION))
         .thenReturn(Optional.of(thisWeek));
     when(retrospectiveRepository.findAllByUserId(ME)).thenReturn(List.of(thisWeek));
@@ -819,6 +894,7 @@ class RetrospectiveServiceTest {
     currentWeekIs10();
     Retrospective session10 = sessionOf(101L, 10L, AssignmentMode.LATER, false);
     ReflectionTestUtils.setField(session10, "currentStep", 3);
+    ReflectionTestUtils.setField(session10, "lastSavedAt", DONE_AT); // 3단계까지 쓴 회고 = 저장한 적 있음
     Retrospective assignment9 = retro(95L, 9L, RetrospectiveType.ASSIGNMENT, true);
     when(retrospectiveRepository.findAllByUserId(ME))
         .thenReturn(
