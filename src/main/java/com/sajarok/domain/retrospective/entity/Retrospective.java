@@ -128,14 +128,11 @@ public class Retrospective extends BaseTimeEntity {
   }
 
   /**
-   * 카드를 지워 처음으로 돌아간 뒤({@link #restart}) 아직 아무것도 저장하지 않은 회고. 이번 주 화면(11번)·홈에서는 처음 쓰는 것처럼 '시작 전'으로 보여
-   * 준다. 한 번 저장(14번)하면 다시 '작성 중'으로 보인다.
+   * 저장(14번)한 적 없는 빈 작성 중 회고: 시작 전 휴회를 해제했거나, 처음부터(16번)·카드 삭제({@link #restart}) 뒤 아직 저장하지 않은 회고. 이번
+   * 주 화면(11번)·홈·15번 응답에서는 처음 쓰는 것처럼 '시작 전'으로 보여 준다. 글 칸·첨부는 14번에서만 채워져서 lastSavedAt이 없으면 내용도 없다.
    */
-  public boolean isRestartedBlank() {
-    return status == RetrospectiveStatus.IN_PROGRESS
-        && !rested
-        && completedAt != null
-        && lastSavedAt == null;
+  public boolean isUnsavedBlank() {
+    return status == RetrospectiveStatus.IN_PROGRESS && !rested && lastSavedAt == null;
   }
 
   private void clearToStep2() {

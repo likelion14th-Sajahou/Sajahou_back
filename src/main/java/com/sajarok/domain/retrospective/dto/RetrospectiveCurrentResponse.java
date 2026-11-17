@@ -33,7 +33,7 @@ public record RetrospectiveCurrentResponse(
   /**
    * 이번 주 세션 회고. 아직 없으면 id·currentStep·assignmentMode·lastSavedAt이 null이고 NOT_STARTED.
    *
-   * <p>카드를 지워 처음으로 돌아간 뒤 아직 저장하지 않은 회고도 처음 쓰는 것처럼 똑같이 보여 준다(시작하기 → 12번이 그 회고를 그대로 돌려줌).
+   * <p>저장한 적 없는 빈 회고(휴회 해제·처음부터·카드 삭제 뒤)도 처음 쓰는 것처럼 똑같이 보여 준다(시작하기 → 12번이 그 회고를 그대로 돌려줌).
    */
   public record SessionView(
       Long id,
@@ -43,7 +43,7 @@ public record RetrospectiveCurrentResponse(
       OffsetDateTime lastSavedAt) {
 
     public static SessionView of(Retrospective r) {
-      if (r == null || r.isRestartedBlank()) {
+      if (r == null || r.isUnsavedBlank()) {
         return new SessionView(null, RetrospectiveState.NOT_STARTED, null, null, null);
       }
       return new SessionView(
@@ -57,7 +57,7 @@ public record RetrospectiveCurrentResponse(
 
   /**
    * 과제를 '나중에 쓸게요(LATER)'로 고른 주의 과제 회고 하나. 시작 전이면 id·currentStep·lastSavedAt이 null이고 NOT_STARTED.
-   * 카드를 지워 처음으로 돌아간 뒤 아직 저장하지 않은 과제 회고도 시작 전처럼 보여 준다.
+   * 저장한 적 없는 빈 과제 회고도 시작 전처럼 보여 준다.
    *
    * @param deadline 그 주 과제 회고 마감. 파트 일정이 없으면 null
    */
@@ -73,7 +73,7 @@ public record RetrospectiveCurrentResponse(
      * @param assignment 그 주 과제 회고. 아직 시작 안 했으면 null
      */
     public static OpenAssignment of(Retrospective assignment, WeekSchedule schedule) {
-      if (assignment == null || assignment.isRestartedBlank()) {
+      if (assignment == null || assignment.isUnsavedBlank()) {
         return new OpenAssignment(
             null,
             schedule.weekNumber(),
